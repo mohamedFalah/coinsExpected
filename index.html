@@ -1,0 +1,1604 @@
+<!DOCTYPE html>
+<html lang="en" class="dark" id="html-root">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EA SPORTS FC 27 Ultimate Team - Coin & Squad Builder</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Tailwind Configuration: Customizing theme colors, dark mode behavior, and typography
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        fc: {
+                            dark: '#0a0e17',
+                            card: '#131b2e',
+                            cardHover: '#1c2642',
+                            accent: '#00f2fe',
+                            accentHover: '#4facfe',
+                            gold: '#f59e0b',
+                            goldLight: '#fbbf24',
+                            pitchDark: '#12372a',
+                            pitchLight: '#1b4d3e',
+                            border: '#2a3b5c'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        arabic: ['Cairo', 'Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- FontAwesome, Google Fonts (Inter & Cairo for Arabic) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        .pitch-bg {
+            background: radial-gradient(circle at center, #1b4d3e 0%, #0f2c22 100%);
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.6);
+        }
+        .pitch-lines {
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0e17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2a3b5c;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00f2fe;
+        }
+        .player-card-glow {
+            box-shadow: 0 4px 20px -2px rgba(0, 242, 254, 0.15);
+            transition: all 0.2s ease-in-out;
+        }
+        .player-card-glow:hover {
+            box-shadow: 0 6px 25px 0 rgba(0, 242, 254, 0.35);
+            transform: translateY(-3px);
+        }
+        /* RTL support tweaks */
+        [dir="rtl"] {
+            font-family: 'Cairo', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-fc-dark text-gray-100 font-sans min-h-screen selection:bg-fc-accent selection:text-fc-dark">
+
+    <header class="sticky top-0 z-50 bg-fc-card/95 backdrop-blur border-b border-fc-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <div class="flex items-center space-x-3 rtl:space-x-reverse">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-tr from-fc-accent to-blue-600 flex items-center justify-center font-black text-xl text-fc-dark shadow-lg shadow-fc-accent/20">
+                    FC
+                </div>
+                <div>
+                    <h1 class="text-xl font-black tracking-wider bg-gradient-to-r from-white via-gray-200 to-fc-accent bg-clip-text text-transparent">
+                        EA SPORTS FC <span class="text-fc-accent">27</span>
+                    </h1>
+                    <p id="txt-header-subtitle" class="text-xs text-gray-400 font-medium">ULTIMATE TEAM COIN & SQUAD OPTIMIZER</p>
+                </div>
+            </div>
+
+            <!-- Tab Navigation Switches -->
+            <div class="hidden md:flex items-center space-x-2 rtl:space-x-reverse bg-fc-dark/80 p-1.5 rounded-xl border border-fc-border">
+                <button onclick="switchTab('calculator')" id="nav-calculator" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse bg-fc-accent text-fc-dark shadow-md">
+                    <i class="fa-solid fa-calculator"></i>
+                    <span data-i18n="navCalculator">Pack Calculator</span>
+                </button>
+                <button onclick="switchTab('squad')" id="nav-squad" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span data-i18n="navSquad">Squad Builder</span>
+                </button>
+                <button onclick="switchTab('database')" id="nav-database" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-database"></i>
+                    <span data-i18n="navDatabase">Database / Config</span>
+                </button>
+            </div>
+
+            <!-- Header Budget Widget, Language Switcher & Config Gear Button -->
+            <div class="flex items-center space-x-3 rtl:space-x-reverse">
+                <div class="hidden sm:flex flex-col text-right rtl:text-left">
+                    <span data-i18n="activeBudget" class="text-xs text-gray-400">Active Budget</span>
+                    <span id="header-budget-display" class="text-sm font-bold text-fc-gold">0 Coins</span>
+                </div>
+                <!-- Language Selector -->
+                <select id="language-selector" onchange="changeLanguage(this.value)" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
+                    <option value="en">English</option>
+                    <option value="ar">العربية (Arabic)</option>
+                </select>
+                <button onclick="openSettingsModal()" class="p-2.5 rounded-xl bg-fc-card hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all" title="Configuration Settings">
+                    <i class="fa-solid fa-gear text-lg"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Mobile Navigation bar -->
+        <div class="md:hidden flex items-center justify-around bg-fc-dark/90 border-t border-fc-border py-2 px-4">
+            <button onclick="switchTab('calculator')" id="mob-nav-calculator" class="flex flex-col items-center text-xs font-bold text-fc-accent">
+                <i class="fa-solid fa-calculator text-base mb-0.5"></i>
+                <span data-i18n="navCalculator">Pack Calc</span>
+            </button>
+            <button onclick="switchTab('squad')" id="mob-nav-squad" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-shield-halved text-base mb-0.5"></i>
+                <span data-i18n="navSquad">Squad</span>
+            </button>
+            <button onclick="switchTab('database')" id="mob-nav-database" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-database text-base mb-0.5"></i>
+                <span data-i18n="navDatabase">Database</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- ================= VIEW 1: PACK CALCULATOR ================= -->
+        <div id="view-calculator" class="space-y-8">
+            <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl">
+                <div class="max-w-3xl">
+                    <span data-i18n="step12" class="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-fc-accent border border-blue-500/20">STEP 1 & 2</span>
+                    <h2 data-i18n="calcTitle" class="text-2xl md:text-3xl font-extrabold mt-3 mb-2">FC Points & Premium Gold Pack Calculator</h2>
+                    <p data-i18n="calcDesc" class="text-gray-400 text-sm md:text-base">
+                        Calculate your exact expected coin returns from purchasing Premium Gold Packs and quick-selling all received items. Modify pack costs or quick-sell bounds anytime via settings.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                    <!-- Left Column: Preset Points & Custom Inputs -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <div>
+                            <label data-i18n="selectPresetPts" class="block text-sm font-semibold text-gray-300 mb-3">Select Preset FC Points Package</label>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3" id="preset-points-container">
+                                <!-- Populated dynamically by renderPresetPoints() -->
+                            </div>
+                        </div>
+
+                        <div>
+                            <label data-i18n="enterCustomPts" class="block text-sm font-semibold text-gray-300 mb-2">Or Enter Custom FC Points</label>
+                            <div class="relative">
+                                <input type="number" id="custom-fc-points" min="100" step="50" placeholder="e.g. 4500" 
+                                    class="w-full bg-fc-dark border border-fc-border rounded-xl px-4 py-3.5 text-lg font-bold text-white focus:outline-none focus:border-fc-accent transition-all rtl:text-left"
+                                    oninput="handleCustomPointsInput(this.value)">
+                                <div class="absolute right-4 rtl:right-auto rtl:left-4 top-3.5 text-xs font-bold text-gray-400 bg-fc-card px-2.5 py-1.5 rounded-lg border border-fc-border">
+                                    FC PTS
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Configuration Overview Badge -->
+                        <div class="bg-fc-dark/60 rounded-xl p-4 border border-fc-border/60 flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <span data-i18n="cfgPackCost" class="text-xs text-gray-400 block">Pack Cost Config</span>
+                                <span class="text-sm font-bold text-white"><span id="cfg-pack-cost-display">100</span> <span data-i18n="ptsPerPack">FC Points / Pack</span></span>
+                            </div>
+                            <div>
+                                <span data-i18n="cfgQsRange" class="text-xs text-gray-400 block">Quick-Sell Range</span>
+                                <span class="text-sm font-bold text-white"><span id="cfg-min-display">1,200</span> - <span id="cfg-max-display">1,400</span> <span data-i18n="coinsWord">Coins</span></span>
+                            </div>
+                            <div>
+                                <span data-i18n="cfgExpReturn" class="text-xs text-gray-400 block">Expected Return</span>
+                                <span class="text-sm font-bold text-fc-gold"><span id="cfg-expected-display">1,300</span> <span data-i18n="coinsPerPack">Coins / Pack</span></span>
+                            </div>
+                            <button onclick="openSettingsModal()" class="text-xs font-bold text-fc-accent hover:underline flex items-center space-x-1 rtl:space-x-reverse">
+                                <i class="fa-solid fa-sliders"></i>
+                                <span data-i18n="editConfig">Edit Config</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Results & Transfer Trigger -->
+                    <div class="bg-fc-dark rounded-2xl border border-fc-border p-6 flex flex-col justify-between shadow-lg">
+                        <div class="space-y-6">
+                            <div class="flex items-center justify-between border-b border-fc-border pb-4">
+                                <span data-i18n="packsPurchasable" class="text-sm font-bold text-gray-400">Packs Purchasable</span>
+                                <span id="calc-packs-count" class="text-2xl font-black text-white">0</span>
+                            </div>
+                            <div class="flex items-center justify-between border-b border-fc-border pb-4">
+                                <span data-i18n="remainingPts" class="text-sm font-bold text-gray-400">Remaining FC Points</span>
+                                <span id="calc-remaining-pts" class="text-lg font-bold text-gray-300">0</span>
+                            </div>
+
+                            <div class="space-y-3 pt-2">
+                                <span data-i18n="coinReturnProj" class="text-xs font-bold uppercase tracking-wider text-gray-400">Coin Return Projections</span>
+                                <div class="flex items-center justify-between text-sm">
+                                    <span data-i18n="minReturn" class="text-gray-400">Minimum Return</span>
+                                    <span id="calc-min-coins" class="font-bold text-gray-300">0 Coins</span>
+                                </div>
+                                <div class="flex items-center justify-between text-sm bg-fc-card p-3 rounded-xl border border-fc-accent/30">
+                                    <span data-i18n="expectedCoins" class="font-bold text-white">Expected Coins (Primary)</span>
+                                    <span id="calc-expected-coins" class="text-lg font-extrabold text-fc-gold">0 Coins</span>
+                                </div>
+                                <div class="flex items-center justify-between text-sm">
+                                    <span data-i18n="maxReturn" class="text-gray-400">Maximum Return</span>
+                                    <span id="calc-max-coins" class="font-bold text-gray-300">0 Coins</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-8">
+                            <button onclick="transferCoinsToSquadBuilder()" class="w-full py-4 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-sm md:text-base shadow-lg shadow-fc-accent/25 transition-all flex items-center justify-center space-x-2 rtl:space-x-reverse">
+                                <span data-i18n="buildSquadBtn">BUILD MY SQUAD WITH EXPECTED COINS</span>
+                                <i class="fa-solid fa-arrow-right rtl:rotate-180"></i>
+                            </button>
+                            <p data-i18n="buildSquadHint" class="text-center text-[11px] text-gray-400 mt-2">Passes expected quick-sell coins directly to the squad optimizer</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= VIEW 2: SQUAD BUILDER ================= -->
+        <div id="view-squad" class="hidden space-y-8">
+            <!-- Controls Bar: Budget Input & Formation Switcher -->
+            <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl flex flex-wrap items-center justify-between gap-6">
+                <div class="flex flex-wrap items-center gap-4">
+                    <div>
+                        <label data-i18n="squadBudget" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Squad Budget (Coins)</label>
+                        <div class="relative">
+                            <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
+                                class="bg-fc-dark border border-fc-border rounded-xl px-4 py-2.5 text-lg font-black text-fc-gold w-48 focus:outline-none focus:border-fc-accent rtl:text-left"
+                                onchange="updateBudgetFromInput(this.value)">
+                            <button onclick="syncBudgetFromCalculator()" class="absolute right-2 rtl:right-auto rtl:left-2 top-2 text-xs bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2 py-1.5 rounded-lg text-fc-accent font-bold" title="Use Expected Calculator Coins" data-i18n="syncCalc">
+                                Sync Calc
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label data-i18n="formationLabel" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Formation</label>
+                        <select id="formation-select" onchange="changeFormation(this.value)"
+                            class="bg-fc-dark border border-fc-border rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                            <option value="4-3-3">4-3-3 (Attack / Standard)</option>
+                            <option value="4-4-2">4-4-2 (Flat)</option>
+                            <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
+                            <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
+                            <option value="3-5-2">3-5-2 (Balanced)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3 rtl:space-x-reverse">
+                    <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-sm shadow-lg shadow-fc-accent/25 transition-all flex items-center space-x-2 rtl:space-x-reverse">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
+                    </button>
+                    <button onclick="openExplanationModal()" class="p-3 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all" title="How was this squad built?">
+                        <i class="fa-solid fa-circle-info text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Pitch & Visualization Area -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                <!-- Left 3 Cols: Football Pitch -->
+                <div class="lg:col-span-3 bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                    <div class="absolute inset-0 pitch-bg pitch-lines opacity-90 pointer-events-none"></div>
+                    
+                    <div class="absolute inset-10 border-2 border-white/10 rounded-2xl pointer-events-none flex flex-col justify-between items-center">
+                        <div class="w-32 h-16 border-b-2 border-x-2 border-white/10 rounded-b-xl"></div>
+                        <div class="w-full h-0 border-t border-white/10"></div>
+                        <div class="w-32 h-16 border-t-2 border-x-2 border-white/10 rounded-t-xl"></div>
+                    </div>
+                    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-white/10 rounded-full pointer-events-none"></div>
+
+                    <!-- Dynamic Pitch Row Container -->
+                    <div id="pitch-container" class="relative z-10 min-h-[620px] flex flex-col justify-between py-6 px-4">
+                        <!-- Populated by renderFootballPitch() -->
+                    </div>
+                </div>
+
+                <!-- Right 1 Col: Squad Summary & Next Best Upgrade -->
+                <div class="space-y-6">
+                    <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-5">
+                        <div class="flex items-center justify-between border-b border-fc-border pb-4">
+                            <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
+                            <span id="squad-overall-badge" class="px-3 py-1 rounded-lg bg-fc-accent/10 border border-fc-accent/30 text-fc-accent font-black text-sm">OVR --</span>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm">
+                                <span data-i18n="availableBudget" class="text-gray-400">Available Budget</span>
+                                <span id="summary-budget" class="font-bold text-fc-gold">0 Coins</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span data-i18n="totalSquadCost" class="text-gray-400">Total Squad Cost</span>
+                                <span id="summary-cost" class="font-bold text-white">0 Coins</span>
+                            </div>
+                            <div class="flex justify-between text-sm border-t border-fc-border pt-2">
+                                <span data-i18n="remainingCoins" class="text-gray-400">Remaining Coins</span>
+                                <span id="summary-remaining" class="font-bold text-emerald-400">0 Coins</span>
+                            </div>
+                        </div>
+
+                        <div class="border-t border-fc-border pt-4 space-y-2">
+                            <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Position Group Quality</span>
+                            <div id="group-breakdown" class="space-y-2 text-xs">
+                                <!-- Populated by renderSquadSummary() -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Next Best Upgrade Helper Card -->
+                    <div class="bg-gradient-to-br from-fc-card to-blue-950/30 border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
+                        <div class="flex items-center space-x-2 rtl:space-x-reverse text-fc-accent">
+                            <i class="fa-solid fa-arrow-trend-up"></i>
+                            <h3 data-i18n="nextBestUpgrade" class="font-extrabold text-sm text-white">NEXT BEST UPGRADE</h3>
+                        </div>
+                        <div id="next-upgrade-content" class="text-xs text-gray-300 space-y-2">
+                            <p data-i18n="optimizeFirst" class="italic text-gray-400">Optimize a squad first to calculate the highest-impact player upgrade.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= VIEW 3: DATABASE & CONFIG ================= -->
+        <div id="view-database" class="hidden space-y-8">
+            <div class="bg-fc-card border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <span data-i18n="dataArch" class="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-fc-accent border border-blue-500/20">DATA ARCHITECTURE</span>
+                        <h2 data-i18n="dbManagerTitle" class="text-2xl md:text-3xl font-extrabold mt-3 mb-2">FC 27 Player Database & Config Manager</h2>
+                        <p data-i18n="dbManagerDesc" class="text-gray-400 text-sm">Inspect, export, or import EA SPORTS FC 27 player datasets and configuration settings in real-time.</p>
+                    </div>
+                    <div class="flex items-center space-x-3 rtl:space-x-reverse">
+                        <button onclick="exportDatabaseJSON()" class="px-4 py-2.5 rounded-xl bg-fc-dark border border-fc-border hover:bg-fc-cardHover text-sm font-bold text-white flex items-center space-x-2 rtl:space-x-reverse">
+                            <i class="fa-solid fa-download"></i>
+                            <span data-i18n="exportDb">Export DB JSON</span>
+                        </button>
+                        <button onclick="resetDefaultDatabase()" class="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-sm font-bold text-red-400 flex items-center space-x-2 rtl:space-x-reverse">
+                            <i class="fa-solid fa-rotate-right"></i>
+                            <span data-i18n="resetDefaults">Reset Defaults</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-fc-dark rounded-xl p-6 border border-fc-border space-y-4">
+                    <h3 data-i18n="importDbTitle" class="font-bold text-sm text-white">Import Custom FUTBIN FC 27 Database (JSON)</h3>
+                    <p data-i18n="importDbDesc" class="text-xs text-gray-400">Paste your updated player JSON or upload a data payload to instantly sync prices and player attributes.</p>
+                    <textarea id="import-json-textarea" rows="6" placeholder="Paste JSON database payload here..." class="w-full bg-fc-card border border-fc-border rounded-xl p-4 text-xs font-mono text-gray-300 focus:outline-none focus:border-fc-accent rtl:text-left"></textarea>
+                    <div class="flex justify-end">
+                        <button onclick="importDatabaseJSON()" data-i18n="importSyncBtn" class="px-6 py-2.5 rounded-xl bg-fc-accent text-fc-dark font-bold text-sm hover:bg-fc-accentHover transition-all">
+                            Import & Sync Database
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ===== Live Scrape / Sync from EasySBC.io ===== -->
+                <!--
+                    NOTE FOR DEVELOPERS:
+                    EasySBC's player list is a client-rendered (React/Next.js) page — the HTML
+                    document itself contains no player data, it's fetched by their frontend from
+                    an internal API *after* the page loads in a real browser. That means:
+                      1) A plain fetch() of the players page URL will NOT return player JSON.
+                      2) Cross-origin requests to easysbc.io's real API may be blocked by CORS
+                         unless their API explicitly allows external origins.
+                    This block makes a best-effort, multi-strategy attempt (direct fetch -> CORS
+                    proxy fallback -> scan for embedded JSON like __NEXT_DATA__) and is transparent
+                    in the log about what it tried and why it failed. The guaranteed-to-work path
+                    is still the manual "Import & Sync Database" box above: open the EasySBC page,
+                    open DevTools -> Network tab -> XHR/Fetch, reload, find the JSON request that
+                    returns the player list, and either paste that URL into the field below or
+                    paste the JSON body directly into the import box above.
+                -->
+                <div class="bg-fc-dark rounded-xl p-6 border border-fc-border space-y-4">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <h3 data-i18n="scrapeTitle" class="font-bold text-sm text-white flex items-center space-x-2 rtl:space-x-reverse">
+                            <i class="fa-solid fa-satellite-dish text-fc-accent"></i>
+                            <span data-i18n="scrapeTitle">Live Scrape / Sync from EasySBC.io</span>
+                        </h3>
+                        <button onclick="toggleScrapeHelp()" data-i18n="scrapeHelpToggle" class="text-xs font-bold text-fc-accent hover:text-fc-accentHover flex items-center space-x-1 rtl:space-x-reverse">
+                            <i class="fa-solid fa-circle-question"></i>
+                            <span data-i18n="scrapeHelpToggle">How do I find the real data endpoint?</span>
+                        </button>
+                    </div>
+                    <p data-i18n="scrapeDesc" class="text-xs text-gray-400">Pulls live ratings, prices and attributes directly from EasySBC's own player API (found via their site's network requests) and syncs them into the database below. The full EasySBC database has 1000+ pages (~20k players) sorted by meta rating, so pick how many pages to pull — each page is about 20 players.</p>
+
+                    <div id="scrape-help-panel" class="hidden bg-fc-card border border-fc-border rounded-xl p-4 text-xs text-gray-300 space-y-2">
+                        <p data-i18n="scrapeHelpStep1" class="font-bold text-white">1. Open the EasySBC players page in your browser.</p>
+                        <p data-i18n="scrapeHelpStep2">2. Open DevTools (F12) → Network tab → filter by "Fetch/XHR".</p>
+                        <p data-i18n="scrapeHelpStep3">3. Reload the page and look for a request returning JSON player data.</p>
+                        <p data-i18n="scrapeHelpStep4">4. Copy that request's URL (without the page number) and paste it into the field below, then click "Scrape & Sync Now".</p>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <div class="flex-1">
+                            <label data-i18n="scrapeUrlLabel" class="text-xs text-gray-500 block mb-1">API Base URL (page number is appended automatically)</label>
+                            <input id="scrape-url-input" type="text" value="https://api-fc27.easysbc.io/players?v2"
+                                class="w-full bg-fc-card border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-300 focus:outline-none focus:border-fc-accent rtl:text-left" dir="ltr">
+                        </div>
+                        <div class="w-full sm:w-40">
+                            <label data-i18n="scrapePagesLabel" class="text-xs text-gray-500 block mb-1">Pages to fetch</label>
+                            <input id="scrape-pages-input" type="number" min="1" max="100" value="15"
+                                class="w-full bg-fc-card border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-300 focus:outline-none focus:border-fc-accent" dir="ltr">
+                        </div>
+                    </div>
+                    <button id="btn-scrape" onclick="scrapeEasySBCPlayers()" class="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-fc-accent text-fc-dark font-bold text-sm hover:bg-fc-accentHover transition-all flex items-center justify-center space-x-2 rtl:space-x-reverse whitespace-nowrap">
+                        <i class="fa-solid fa-download"></i>
+                        <span data-i18n="scrapeBtn">Scrape & Sync Now</span>
+                    </button>
+                    <div id="scrape-progress-bar-track" class="hidden w-full bg-fc-card rounded-full h-1.5 overflow-hidden">
+                        <div id="scrape-progress-bar-fill" class="bg-fc-accent h-1.5 rounded-full transition-all" style="width:0%"></div>
+                    </div>
+
+                    <div>
+                        <span data-i18n="scrapeLogTitle" class="text-xs font-bold text-gray-400">Scrape Log</span>
+                        <div id="scrape-status-log" class="mt-2 bg-black/30 border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-400 max-h-40 overflow-y-auto space-y-1">
+                            <div class="text-gray-600" data-i18n="scrapeLogIdle">— idle —</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="db-stats-grid">
+                    <!-- Populated by updateDatabaseStats() -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- ================= MODALS ================= -->
+
+    <!-- Player Details Modal -->
+    <div id="player-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
+            <button onclick="closePlayerModal()" class="absolute top-5 right-5 rtl:right-auto rtl:left-5 text-gray-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div id="modal-player-content"></div>
+        </div>
+    </div>
+
+    <!-- Settings / Config Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between border-b border-fc-border pb-4">
+                <h3 data-i18n="appConfigTitle" class="text-lg font-black text-white">Application Configuration</h3>
+                <button onclick="closeSettingsModal()" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label data-i18n="cfgPackCostLbl" class="block text-xs font-bold text-gray-300 mb-1">Premium Gold Pack FC Point Cost</label>
+                    <input type="number" id="setting-pack-cost" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent rtl:text-left">
+                </div>
+                <div>
+                    <label data-i18n="cfgQsMinLbl" class="block text-xs font-bold text-gray-300 mb-1">Quick-Sell Minimum Coins / Pack</label>
+                    <input type="number" id="setting-qs-min" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent rtl:text-left">
+                </div>
+                <div>
+                    <label data-i18n="cfgQsMaxLbl" class="block text-xs font-bold text-gray-300 mb-1">Quick-Sell Maximum Coins / Pack</label>
+                    <input type="number" id="setting-qs-max" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent rtl:text-left">
+                </div>
+                <div>
+                    <label data-i18n="cfgQsExpLbl" class="block text-xs font-bold text-gray-300 mb-1">Expected Quick-Sell Coins / Pack (Default)</label>
+                    <input type="number" id="setting-qs-expected" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-fc-gold focus:outline-none focus:border-fc-accent rtl:text-left">
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-3 rtl:space-x-reverse pt-4 border-t border-fc-border">
+                <button onclick="closeSettingsModal()" data-i18n="cancelBtn" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white">Cancel</button>
+                <button onclick="saveSettings()" data-i18n="saveChangesBtn" class="px-5 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-bold hover:bg-fc-accentHover">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Explanation Modal ("How was this squad built?") -->
+    <div id="explanation-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-xl w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between border-b border-fc-border pb-4">
+                <h3 data-i18n="howBuiltTitle" class="text-lg font-black text-white flex items-center space-x-2 rtl:space-x-reverse">
+                    <i class="fa-solid fa-circle-info text-fc-accent"></i>
+                    <span>How was this squad built?</span>
+                </h3>
+                <button onclick="closeExplanationModal()" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div id="explanation-content" class="space-y-4 text-sm text-gray-300 max-h-[60vh] overflow-y-auto pr-2"></div>
+
+            <div class="flex justify-end pt-4 border-t border-fc-border">
+                <button onclick="closeExplanationModal()" data-i18n="closeBtn" class="px-5 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-bold hover:bg-fc-accentHover">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= JAVASCRIPT APPLICATION CORE ================= -->
+    <script>
+        let currentLanguage = 'en';
+
+        const i18n = {
+            en: {
+                subtitle: "ULTIMATE TEAM COIN & SQUAD OPTIMIZER",
+                navCalculator: "Pack Calculator",
+                navSquad: "Squad Builder",
+                navDatabase: "Database / Config",
+                activeBudget: "Active Budget",
+                step12: "STEP 1 & 2",
+                calcTitle: "FC Points & Premium Gold Pack Calculator",
+                calcDesc: "Calculate your exact expected coin returns from purchasing Premium Gold Packs and quick-selling all received items. Modify pack costs or quick-sell bounds anytime via settings.",
+                selectPresetPts: "Select Preset FC Points Package",
+                enterCustomPts: "Or Enter Custom FC Points",
+                cfgPackCost: "Pack Cost Config",
+                ptsPerPack: "FC Points / Pack",
+                cfgQsRange: "Quick-Sell Range",
+                coinsWord: "Coins",
+                cfgExpReturn: "Expected Return",
+                coinsPerPack: "Coins / Pack",
+                editConfig: "Edit Config",
+                packsPurchasable: "Packs Purchasable",
+                remainingPts: "Remaining FC Points",
+                coinReturnProj: "Coin Return Projections",
+                minReturn: "Minimum Return",
+                expectedCoins: "Expected Coins (Primary)",
+                maxReturn: "Maximum Return",
+                buildSquadBtn: "BUILD MY SQUAD WITH EXPECTED COINS",
+                buildSquadHint: "Passes expected quick-sell coins directly to the squad optimizer",
+                squadBudget: "Squad Budget (Coins)",
+                syncCalc: "Sync Calc",
+                formationLabel: "Formation",
+                optimizeBtn: "OPTIMIZE BEST SQUAD",
+                squadSummary: "Squad Summary",
+                availableBudget: "Available Budget",
+                totalSquadCost: "Total Squad Cost",
+                remainingCoins: "Remaining Coins",
+                posGroupQuality: "Position Group Quality",
+                nextBestUpgrade: "NEXT BEST UPGRADE",
+                optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
+                dataArch: "DATA ARCHITECTURE",
+                dbManagerTitle: "FC 27 Player Database & Config Manager",
+                dbManagerDesc: "Inspect, export, or import EA SPORTS FC 27 player datasets and configuration settings in real-time.",
+                exportDb: "Export DB JSON",
+                resetDefaults: "Reset Defaults",
+                importDbTitle: "Import Custom FUTBIN FC 27 Database (JSON)",
+                importDbDesc: "Paste your updated player JSON or upload a data payload to instantly sync prices and player attributes.",
+                importSyncBtn: "Import & Sync Database",
+                appConfigTitle: "Application Configuration",
+                cfgPackCostLbl: "Premium Gold Pack FC Point Cost",
+                cfgQsMinLbl: "Quick-Sell Minimum Coins / Pack",
+                cfgQsMaxLbl: "Quick-Sell Maximum Coins / Pack",
+                cfgQsExpLbl: "Expected Quick-Sell Coins / Pack (Default)",
+                cancelBtn: "Cancel",
+                saveChangesBtn: "Save Changes",
+                howBuiltTitle: "How was this squad built?",
+                closeBtn: "Close",
+                emptySlot: "Empty Slot",
+                totalPlayers: "Total Players",
+                maxRating: "Max Rating",
+                maxPrice: "Max Price",
+                formationsActive: "Formations Active",
+                scrapeTitle: "Live Scrape / Sync from EasySBC.io",
+                scrapeDesc: "EasySBC loads its player list dynamically via JavaScript, so this button makes a best-effort attempt (direct request, then a public CORS proxy, then a scan for embedded page data) to pull live ratings/prices and sync them into the database below. It may not always succeed — check the log for details.",
+                scrapeHelpToggle: "How do I find the real data endpoint?",
+                scrapeHelpStep1: "1. Open the EasySBC players page in your browser.",
+                scrapeHelpStep2: "2. Open DevTools (F12) → Network tab → filter by \"Fetch/XHR\".",
+                scrapeHelpStep3: "3. Reload the page and look for a request returning JSON player data.",
+                scrapeHelpStep4: "4. Copy that request's URL (without the page number) and paste it into the field below, then click \"Scrape & Sync Now\".",
+                scrapeUrlLabel: "API Base URL (page number is appended automatically)",
+                scrapePagesLabel: "Pages to fetch",
+                scrapeBtn: "Scrape & Sync Now",
+                scrapeLogTitle: "Scrape Log",
+                scrapeLogIdle: "— idle —"
+            },
+            ar: {
+                subtitle: "مُحسّن تشكيلة وكوينز ألتميت تيم",
+                navCalculator: "حاسبة الباكجات",
+                navSquad: "صانع التشكيلات",
+                navDatabase: "قاعدة البيانات / الإعدادات",
+                activeBudget: "الميزانية الحالية",
+                step12: "الخطوة ١ و ٢",
+                calcTitle: "حاسبة نقاط FC وباكجات الجولد المميزة",
+                calcDesc: "احسب عائدات الكوينز المتوقعة بدقة من شراء باكجات الجولد المميزة والبيع السريع لجميع العناصر. يمكنك تعديل تكلفة الباكجات أو حدود البيع السريع في أي وقت.",
+                selectPresetPts: "اختر حزمة نقاط FC الجاهزة",
+                enterCustomPts: "أو أدخل نقاط FC مخصصة",
+                cfgPackCost: "تلفة الباكج",
+                ptsPerPack: "نقطة FC / باكج",
+                cfgQsRange: "نطاق البيع السريع",
+                coinsWord: "كوينز",
+                cfgExpReturn: "العائد المتوقع",
+                coinsPerPack: "كوينز / باكج",
+                editConfig: "تعديل الإعدادات",
+                packsPurchasable: "الباكجات القابلة للشراء",
+                remainingPts: "نقاط FC المتبقية",
+                coinReturnProj: "توقعات عائدات الكوينز",
+                minReturn: "الحد الأدنى للعائد",
+                expectedCoins: "الكوينز المتوقعة (الأساسي)",
+                maxReturn: "الحد الأقصى للعائد",
+                buildSquadBtn: "اصنع تشكيلتي بالكوينز المتوقعة",
+                buildSquadHint: "ينقل كوينز البيع السريع المتوقعة مباشرة إلى محسن التشكيلة",
+                squadBudget: "ميزانية التشكيلة (كوينز)",
+                syncCalc: "مزامنة الحاسبة",
+                formationLabel: "التشكيلة",
+                optimizeBtn: "تحسين أفضل تشكيلة",
+                squadSummary: "ملخص التشكيلة",
+                availableBudget: "الميزانية المتاحة",
+                totalSquadCost: "إجمالي تكلفة التشكيلة",
+                remainingCoins: "الكوينز المتبقية",
+                posGroupQuality: "جودة مراكز الخطوط",
+                nextBestUpgrade: "الترقية التالية المقترحة",
+                optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
+                dataArch: "هندسة البيانات",
+                dbManagerTitle: "مدير قاعدة بيانات لاعبي FC 27 والإعدادات",
+                dbManagerDesc: "استعرض، صدّر، أو استورد مجموعات بيانات لاعبي EA SPORTS FC 27 وإعدادات التطبيق في الوقت الفعلي.",
+                exportDb: "تصدير قاعدة البيانات JSON",
+                resetDefaults: "إعادة ضبط الافتراضيات",
+                importDbTitle: "استيراد قاعدة بيانات FUTBIN FC 27 مخصصة (JSON)",
+                importDbDesc: "الصق ملف JSON المحدث للاعبين أو حمّل بيانات لمزامنة الأسعار وخصائص اللاعبين فوراً.",
+                importSyncBtn: "استيراد ومزامنة قاعدة البيانات",
+                appConfigTitle: "إعدادات التطبيق",
+                cfgPackCostLbl: "تكلفة باكج الجولد المميز بنقاط FC",
+                cfgQsMinLbl: "الحد الأدنى لبيع الباكج السريع (كوينز)",
+                cfgQsMaxLbl: "الحد الأقصى لبيع الباكج السريع (كوينز)",
+                cfgQsExpLbl: "متوقع البيع السريع للباكج (افتراضي)",
+                cancelBtn: "إلغاء",
+                saveChangesBtn: "حفظ التغييرات",
+                howBuiltTitle: "كيف تم بناء هذه التشكيلة؟",
+                closeBtn: "إغلاق",
+                emptySlot: "مكان فارغ",
+                totalPlayers: "إجمالي اللاعبين",
+                maxRating: "أعلى تقييم",
+                maxPrice: "أعلى سعر",
+                formationsActive: "تشكيلات مفعلة",
+                scrapeTitle: "سحب/مزامنة مباشرة من EasySBC.io",
+                scrapeDesc: "يقوم موقع EasySBC بتحميل قائمة اللاعبين ديناميكياً عبر جافاسكريبت، لذا يقوم هذا الزر بمحاولة قصوى (طلب مباشر، ثم وسيط CORS عام، ثم فحص بيانات الصفحة المضمّنة) لسحب التقييمات والأسعار الحية ومزامنتها مع قاعدة البيانات أدناه. قد لا ينجح دائماً — راجع السجل للتفاصيل.",
+                scrapeHelpToggle: "كيف أجد نقطة البيانات الحقيقية؟",
+                scrapeHelpStep1: "١. افتح صفحة لاعبي EasySBC في متصفحك.",
+                scrapeHelpStep2: "٢. افتح أدوات المطور (F12) ← تبويب Network ← صفّي حسب \"Fetch/XHR\".",
+                scrapeHelpStep3: "٣. أعد تحميل الصفحة وابحث عن طلب يُرجع بيانات لاعبين بصيغة JSON.",
+                scrapeHelpStep4: "٤. انسخ رابط ذلك الطلب (بدون رقم الصفحة) والصقه في الحقل أدناه، ثم اضغط \"سحب ومزامنة الآن\".",
+                scrapeUrlLabel: "رابط الـ API الأساسي (يُضاف رقم الصفحة تلقائياً)",
+                scrapePagesLabel: "عدد الصفحات",
+                scrapeBtn: "سحب ومزامنة الآن",
+                scrapeLogTitle: "سجل السحب",
+                scrapeLogIdle: "— خامل —"
+            }
+        };
+
+        window.changeLanguage = function(lang) {
+            currentLanguage = lang;
+            const htmlRoot = document.getElementById('html-root');
+            if (lang === 'ar') {
+                htmlRoot.setAttribute('dir', 'rtl');
+                htmlRoot.setAttribute('lang', 'ar');
+            } else {
+                htmlRoot.setAttribute('dir', 'ltr');
+                htmlRoot.setAttribute('lang', 'en');
+            }
+
+            // Translate static data-i18n attributes
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (i18n[lang][key]) {
+                    el.innerText = i18n[lang][key];
+                }
+            });
+
+            window.renderPresetPoints();
+            window.calculatePackReturns();
+            window.updateDatabaseStats();
+            window.runSquadOptimizer();
+        };
+
+        let appConfig = {
+            packCost: 100,      // FC points required per Gold Pack
+            qsMin: 1200,       // Minimum quick-sell return in coins
+            qsMax: 1400,       // Maximum quick-sell return in coins
+            qsExpected: 1300   // Average expected quick-sell return in coins
+        };
+
+        const presetPointsList = [100, 500, 1050, 2200, 5750, 12000];
+        let currentSelectedPoints = 2200;
+        let expectedCoinsResult = 28600;
+
+        let squadState = {
+            budget: 200000,
+            formation: '4-3-3',
+            selectedXI: {},
+            totalCost: 0,
+            avgRating: 0,
+            explanationLog: []
+        };
+
+        let fc27Database = [
+            // Goalkeepers
+            { id: 'gk_1', name: 'Alisson', rating: 89, pos: 'GK', alt: [], price: 45000, att: { div: 86, han: 85, kic: 85, ref: 89, spe: 52, pos: 90 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Alisson' },
+            { id: 'gk_2', name: 'Courtois', rating: 90, pos: 'GK', alt: [], price: 60000, att: { div: 85, han: 89, kic: 74, ref: 94, spe: 46, pos: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Courtois' },
+            { id: 'gk_3', name: 'Maignan', rating: 87, pos: 'GK', alt: [], price: 22000, att: { div: 84, han: 83, kic: 86, ref: 88, spe: 54, pos: 85 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Maignan' },
+            { id: 'gk_4', name: 'Ter Stegen', rating: 88, pos: 'GK', alt: [], price: 32000, att: { div: 87, han: 85, kic: 88, ref: 90, spe: 44, pos: 86 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Ter+Stegen' },
+            { id: 'gk_5', name: 'Onana', rating: 84, pos: 'GK', alt: [], price: 9000, att: { div: 82, han: 83, kic: 85, ref: 84, spe: 48, pos: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Onana' },
+            { id: 'gk_6', name: 'Raya', rating: 85, pos: 'GK', alt: [], price: 14000, att: { div: 83, han: 84, kic: 87, ref: 86, spe: 50, pos: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Raya' },
+
+            // Center Backs (CB)
+            { id: 'cb_1', name: 'Van Dijk', rating: 90, pos: 'CB', alt: [], price: 85000, att: { pac: 78, sho: 60, pas: 72, dri: 72, def: 91, phy: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Van+Dijk' },
+            { id: 'cb_2', name: 'Ruben Dias', rating: 89, pos: 'CB', alt: [], price: 55000, att: { pac: 68, sho: 39, pas: 68, dri: 68, def: 89, phy: 89 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Dias' },
+            { id: 'cb_3', name: 'Saliba', rating: 88, pos: 'CB', alt: [], price: 48000, att: { pac: 83, sho: 40, pas: 75, dri: 74, def: 88, phy: 84 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Saliba' },
+            { id: 'cb_4', name: 'Rudiger', rating: 87, pos: 'CB', alt: [], price: 38000, att: { pac: 83, sho: 50, pas: 72, dri: 68, def: 86, phy: 87 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rudiger' },
+            { id: 'cb_5', name: 'Marquinhos', rating: 87, pos: 'CB', alt: [], price: 30000, att: { pac: 79, sho: 35, pas: 76, dri: 76, def: 87, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Marquinhos' },
+            { id: 'cb_6', name: 'Araujo', rating: 86, pos: 'CB', alt: ['RB'], price: 25000, att: { pac: 84, sho: 51, pas: 65, dri: 69, def: 85, phy: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Araujo' },
+            { id: 'cb_7', name: 'Konate', rating: 85, pos: 'CB', alt: [], price: 18000, att: { pac: 82, sho: 45, pas: 66, dri: 68, def: 85, phy: 87 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Konate' },
+            { id: 'cb_8', name: 'Gvardiol', rating: 85, pos: 'CB', alt: ['LB'], price: 16000, att: { pac: 83, sho: 55, pas: 74, dri: 78, def: 83, phy: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Gvardiol' },
+            { id: 'cb_9', name: 'Tomori', rating: 84, pos: 'CB', alt: [], price: 12000, att: { pac: 86, sho: 35, pas: 62, dri: 70, def: 84, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Tomori' },
+            { id: 'cb_10', name: 'Pau Torres', rating: 83, pos: 'CB', alt: [], price: 7000, att: { pac: 70, sho: 40, pas: 78, dri: 76, def: 83, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Torres' },
+
+            // Left Backs (LB) & Right Backs (RB)
+            { id: 'lb_1', name: 'Theo Hernandez', rating: 88, pos: 'LB', alt: ['LWB'], price: 65000, att: { pac: 96, sho: 72, pas: 78, dri: 83, def: 82, phy: 84 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Theo' },
+            { id: 'lb_2', name: 'Dimarco', rating: 85, pos: 'LB', alt: ['LWB'], price: 19000, att: { pac: 86, sho: 78, pas: 85, dri: 82, def: 78, phy: 68 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Dimarco' },
+            { id: 'lb_3', name: 'Grimaldo', rating: 86, pos: 'LB', alt: ['LWB'], price: 24000, att: { pac: 85, sho: 80, pas: 87, dri: 84, def: 79, phy: 65 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Grimaldo' },
+            { id: 'lb_4', name: 'Davies', rating: 84, pos: 'LB', alt: ['LM'], price: 15000, att: { pac: 95, sho: 68, pas: 77, dri: 86, def: 76, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Davies' },
+            { id: 'lb_5', name: 'Mendy', rating: 83, pos: 'LB', alt: [], price: 9000, att: { pac: 91, sho: 60, pas: 75, dri: 80, def: 80, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Mendy' },
+
+            { id: 'rb_1', name: 'Carvajal', rating: 87, pos: 'RB', alt: [], price: 35000, att: { pac: 82, sho: 60, pas: 81, dri: 82, def: 84, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Carvajal' },
+            { id: 'rb_2', name: 'Trent Alexander-Arnold', rating: 88, pos: 'RB', alt: ['RWB', 'CM'], price: 42000, att: { pac: 78, sho: 75, pas: 91, dri: 83, def: 80, phy: 71 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Trent' },
+            { id: 'rb_3', name: 'Hakimi', rating: 85, pos: 'RB', alt: ['RWB'], price: 21000, att: { pac: 93, sho: 73, pas: 80, dri: 84, def: 78, phy: 74 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Hakimi' },
+            { id: 'rb_4', name: 'Walker', rating: 85, pos: 'RB', alt: ['CB'], price: 23000, att: { pac: 92, sho: 60, pas: 76, dri: 78, def: 82, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Walker' },
+            { id: 'rb_5', name: 'Kounde', rating: 86, pos: 'RB', alt: ['CB'], price: 28000, att: { pac: 86, sho: 50, pas: 78, dri: 80, def: 85, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Kounde' },
+
+            // Midfielders (CM, CDM, CAM)
+            { id: 'cm_1', name: 'Rodri', rating: 91, pos: 'CDM', alt: ['CM'], price: 95000, att: { pac: 66, sho: 79, pas: 87, dri: 84, def: 87, phy: 86 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rodri' },
+            { id: 'cm_2', name: 'Valverde', rating: 89, pos: 'CM', alt: ['RM', 'RB'], price: 75000, att: { pac: 90, sho: 82, pas: 85, dri: 85, def: 81, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Valverde' },
+            { id: 'cm_3', name: 'Bellingham', rating: 90, pos: 'CM', alt: ['CAM'], price: 110000, att: { pac: 84, sho: 87, pas: 85, dri: 89, def: 80, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Bellingham' },
+            { id: 'cm_4', name: 'De Bruyne', rating: 90, pos: 'CM', alt: ['CAM'], price: 90000, att: { pac: 72, sho: 88, pas: 94, dri: 86, def: 65, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=De+Bruyne' },
+            { id: 'cm_5', name: 'Rice', rating: 88, pos: 'CDM', alt: ['CM'], price: 50000, att: { pac: 78, sho: 76, pas: 83, dri: 82, def: 87, phy: 86 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rice' },
+            { id: 'cm_6', name: 'Tchouameni', rating: 87, pos: 'CDM', alt: ['CM'], price: 38000, att: { pac: 79, sho: 72, pas: 80, dri: 80, def: 86, phy: 85 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Tchouameni' },
+            { id: 'cm_7', name: 'Barella', rating: 87, pos: 'CM', alt: [], price: 34000, att: { pac: 83, sho: 78, pas: 85, dri: 87, def: 80, phy: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Barella' },
+            { id: 'cm_8', name: 'Odegaard', rating: 88, pos: 'CM', alt: ['CAM'], price: 42000, att: { pac: 76, sho: 80, pas: 90, dri: 88, def: 62, phy: 68 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Odegaard' },
+            { id: 'cm_9', name: 'Pedri', rating: 87, pos: 'CM', alt: ['CAM'], price: 36000, att: { pac: 79, sho: 75, pas: 86, dri: 90, def: 75, phy: 73 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Pedri' },
+            { id: 'cm_10', name: 'Camavinga', rating: 85, pos: 'CM', alt: ['CDM', 'LB'], price: 20000, att: { pac: 80, sho: 70, pas: 82, dri: 85, def: 81, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Camavinga' },
+            { id: 'cm_11', name: 'Mac Allister', rating: 85, pos: 'CM', alt: ['CDM'], price: 15000, att: { pac: 74, sho: 81, pas: 85, dri: 84, def: 79, phy: 77 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Mac+Allister' },
+            { id: 'cm_12', name: 'Kimmich', rating: 87, pos: 'CM', alt: ['CDM', 'RB'], price: 32000, att: { pac: 71, sho: 76, pas: 89, dri: 84, def: 83, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Kimmich' },
+            { id: 'cm_13', name: 'Tonali', rating: 84, pos: 'CM', alt: ['CDM'], price: 11000, att: { pac: 81, sho: 72, pas: 82, dri: 81, def: 80, phy: 81 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Tonali' },
+
+            // Wingers & Attacking Midfielders (CAM, LW, RW, LM, RM)
+            { id: 'cam_1', name: 'Musiala', rating: 89, pos: 'CAM', alt: ['LM'], price: 70000, att: { pac: 85, sho: 82, pas: 84, dri: 92, def: 55, phy: 60 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Musiala' },
+            { id: 'cam_2', name: 'Wirtz', rating: 89, pos: 'CAM', alt: ['LM', 'CF'], price: 72000, att: { pac: 84, sho: 83, pas: 89, dri: 91, def: 52, phy: 65 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Wirtz' },
+            { id: 'cam_3', name: 'Maddison', rating: 85, pos: 'CAM', alt: [], price: 16000, att: { pac: 75, sho: 83, pas: 87, dri: 86, def: 50, phy: 62 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Maddison' },
+            { id: 'cam_4', name: 'Bruno Fernandes', rating: 88, pos: 'CAM', alt: ['CM'], price: 45000, att: { pac: 75, sho: 87, pas: 90, dri: 84, def: 70, phy: 76 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Bruno+F' },
+
+            { id: 'lw_1', name: 'Vinicius Jr', rating: 90, pos: 'LW', alt: [], price: 130000, att: { pac: 95, sho: 85, pas: 81, dri: 94, def: 30, phy: 68 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Vini+Jr' },
+            { id: 'lw_2', name: 'Neymar Jr', rating: 88, pos: 'LW', alt: ['CAM'], price: 50000, att: { pac: 86, sho: 83, pas: 86, dri: 93, def: 38, phy: 58 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Neymar' },
+            { id: 'lw_3', name: 'Leao', rating: 87, pos: 'LW', alt: ['LM'], price: 40000, att: { pac: 94, sho: 82, pas: 78, dri: 88, def: 35, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Leao' },
+            { id: 'lw_4', name: 'Diaz', rating: 86, pos: 'LW', alt: ['LM'], price: 26000, att: { pac: 91, sho: 79, pas: 77, dri: 89, def: 42, phy: 70 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Luis+Diaz' },
+            { id: 'lw_5', name: 'Gakpo', rating: 84, pos: 'LW', alt: ['ST'], price: 10000, att: { pac: 87, sho: 82, pas: 79, dri: 84, def: 40, phy: 74 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Gakpo' },
+
+            { id: 'rw_1', name: 'Salah', rating: 90, pos: 'RW', alt: ['RM'], price: 95000, att: { pac: 89, sho: 89, pas: 83, dri: 89, def: 45, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Salah' },
+            { id: 'rw_2', name: 'Saka', rating: 88, pos: 'RW', alt: ['RM'], price: 58000, att: { pac: 87, sho: 83, pas: 86, dri: 88, def: 60, phy: 72 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Saka' },
+            { id: 'rw_3', name: 'Dembele', rating: 87, pos: 'RW', alt: ['LW'], price: 48000, att: { pac: 93, sho: 81, pas: 83, dri: 90, def: 35, phy: 56 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Dembele' },
+            { id: 'rw_4', name: 'Rodrygo', rating: 86, pos: 'RW', alt: ['LW', 'ST'], price: 30000, att: { pac: 90, sho: 82, pas: 80, dri: 89, def: 38, phy: 62 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rodrygo' },
+            { id: 'rw_5', name: 'Bowen', rating: 84, pos: 'RW', alt: ['RM'], price: 11000, att: { pac: 85, sho: 83, pas: 80, dri: 83, def: 52, phy: 76 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Bowen' },
+
+            // Strikers (ST, CF)
+            { id: 'st_1', name: 'Mbappe', rating: 92, pos: 'ST', alt: ['LW'], price: 250000, att: { pac: 97, sho: 90, pas: 81, dri: 92, def: 38, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Mbappe' },
+            { id: 'st_2', name: 'Haaland', rating: 91, pos: 'ST', alt: [], price: 180000, att: { pac: 89, sho: 93, pas: 66, dri: 80, def: 45, phy: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Haaland' },
+            { id: 'st_3', name: 'Kane', rating: 90, pos: 'ST', alt: ['CF'], price: 80000, att: { pac: 68, sho: 94, pas: 86, dri: 85, def: 50, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Kane' },
+            { id: 'st_4', name: 'Lautaro Martinez', rating: 89, pos: 'ST', alt: [], price: 62000, att: { pac: 85, sho: 89, pas: 76, dri: 87, def: 55, phy: 84 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Lautaro' },
+            { id: 'st_5', name: 'Griezmann', rating: 88, pos: 'ST', alt: ['CF', 'CAM'], price: 42000, att: { pac: 81, sho: 88, pas: 87, dri: 88, def: 58, phy: 73 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Griezmann' },
+            { id: 'st_6', name: 'Isak', rating: 86, pos: 'ST', alt: [], price: 28000, att: { pac: 90, sho: 86, pas: 77, dri: 85, def: 35, phy: 74 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Isak' },
+            { id: 'st_7', name: 'Osimhen', rating: 87, pos: 'ST', alt: [], price: 35000, att: { pac: 92, sho: 86, pas: 68, dri: 80, def: 42, phy: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Osimhen' },
+            { id: 'st_8', name: 'Watkins', rating: 85, pos: 'ST', alt: [], price: 16000, att: { pac: 88, sho: 84, pas: 76, dri: 82, def: 48, phy: 77 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Watkins' },
+            { id: 'st_9', name: 'Openda', rating: 84, pos: 'ST', alt: [], price: 12000, att: { pac: 93, sho: 83, pas: 71, dri: 82, def: 36, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Openda' },
+            { id: 'st_10', name: 'Boniface', rating: 83, pos: 'ST', alt: [], price: 7500, att: { pac: 84, sho: 82, pas: 73, dri: 81, def: 35, phy: 85 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Boniface' }
+        ];
+
+        /* Formation slot layouts & coordinates */
+        const formationSlots = {
+            '4-3-3': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'LB', label: 'Left Back', row: 3 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'RB', label: 'Right Back', row: 3 },
+                { pos: 'CM', label: 'Central Mid 1', row: 2 },
+                { pos: 'CM', label: 'Central Mid 2', row: 2 },
+                { pos: 'CM', label: 'Central Mid 3', row: 2 },
+                { pos: 'LW', label: 'Left Winger', row: 1 },
+                { pos: 'ST', label: 'Striker', row: 1 },
+                { pos: 'RW', label: 'Right Winger', row: 1 }
+            ],
+            '4-4-2': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'LB', label: 'Left Back', row: 3 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'RB', label: 'Right Back', row: 3 },
+                { pos: 'LM', label: 'Left Mid', row: 2 },
+                { pos: 'CM', label: 'Central Mid 1', row: 2 },
+                { pos: 'CM', label: 'Central Mid 2', row: 2 },
+                { pos: 'RM', label: 'Right Mid', row: 2 },
+                { pos: 'ST', label: 'Striker 1', row: 1 },
+                { pos: 'ST', label: 'Striker 2', row: 1 }
+            ],
+            '4-2-3-1': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'LB', label: 'Left Back', row: 3 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'RB', label: 'Right Back', row: 3 },
+                { pos: 'CDM', label: 'Defensive Mid 1', row: 2 },
+                { pos: 'CDM', label: 'Defensive Mid 2', row: 2 },
+                { pos: 'LW', label: 'Left Winger', row: 1.5 },
+                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
+                { pos: 'RW', label: 'Right Winger', row: 1.5 },
+                { pos: 'ST', label: 'Striker', row: 1 }
+            ],
+            '4-1-2-1-2': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'LB', label: 'Left Back', row: 3 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'RB', label: 'Right Back', row: 3 },
+                { pos: 'CDM', label: 'Defensive Mid', row: 2.5 },
+                { pos: 'CM', label: 'Left Mid', row: 2 },
+                { pos: 'CM', label: 'Right Mid', row: 2 },
+                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
+                { pos: 'ST', label: 'Striker 1', row: 1 },
+                { pos: 'ST', label: 'Striker 2', row: 1 }
+            ],
+            '3-5-2': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'CB', label: 'Center Back 3', row: 3 },
+                { pos: 'LM', label: 'Left Mid', row: 2 },
+                { pos: 'CDM', label: 'Defensive Mid 1', row: 2 },
+                { pos: 'CDM', label: 'Defensive Mid 2', row: 2 },
+                { pos: 'RM', label: 'Right Mid', row: 2 },
+                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
+                { pos: 'ST', label: 'Striker 1', row: 1 },
+                { pos: 'ST', label: 'Striker 2', row: 1 }
+            ]
+        };
+
+        window.switchTab = function(tabId) {
+            ['calculator', 'squad', 'database'].forEach(t => {
+                const view = document.getElementById(`view-${t}`);
+                const nav = document.getElementById(`nav-${t}`);
+                const mobNav = document.getElementById(`mob-nav-${t}`);
+                if (view) view.classList.add('hidden');
+                if (nav) nav.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card";
+                if (mobNav) mobNav.className = "flex flex-col items-center text-xs font-bold text-gray-400";
+            });
+            const targetView = document.getElementById(`view-${tabId}`);
+            const targetNav = document.getElementById(`nav-${tabId}`);
+            const targetMobNav = document.getElementById(`mob-nav-${tabId}`);
+            if (targetView) targetView.classList.remove('hidden');
+            if (targetNav) targetNav.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse bg-fc-accent text-fc-dark shadow-md";
+            if (targetMobNav) targetMobNav.className = "flex flex-col items-center text-xs font-bold text-fc-accent";
+        };
+
+        window.renderPresetPoints = function() {
+            const container = document.getElementById('preset-points-container');
+            if (!container) return;
+            container.innerHTML = '';
+            presetPointsList.forEach(pts => {
+                const isActive = currentSelectedPoints === pts;
+                const btn = document.createElement('button');
+                btn.className = `p-3.5 rounded-xl border font-extrabold text-sm transition-all flex flex-col items-center justify-center space-y-1 ${
+                    isActive ? 'bg-fc-accent/10 border-fc-accent text-fc-accent shadow-lg shadow-fc-accent/10' : 'bg-fc-dark border-fc-border text-gray-300 hover:border-gray-500'
+                }`;
+                btn.innerHTML = `
+                    <span class="text-lg">${pts.toLocaleString()}</span>
+                    <span class="text-[10px] font-medium text-gray-400">FC ${currentLanguage === 'ar' ? 'نقطة' : 'Points'}</span>
+                `;
+                btn.onclick = () => {
+                    currentSelectedPoints = pts;
+                    const customInput = document.getElementById('custom-fc-points');
+                    if (customInput) customInput.value = '';
+                    window.renderPresetPoints();
+                    window.calculatePackReturns();
+                };
+                container.appendChild(btn);
+            });
+        };
+
+        window.handleCustomPointsInput = function(val) {
+            const num = parseInt(val);
+            if (!isNaN(num) && num > 0) {
+                currentSelectedPoints = num;
+                document.querySelectorAll('#preset-points-container button').forEach(b => {
+                    b.className = "p-3.5 rounded-xl border bg-fc-dark border-fc-border text-gray-300 font-extrabold text-sm flex flex-col items-center justify-center space-y-1";
+                });
+                window.calculatePackReturns();
+            }
+        };
+
+        window.calculatePackReturns = function() {
+            const packsCount = Math.floor(currentSelectedPoints / appConfig.packCost);
+            const remainingPts = currentSelectedPoints % (packsCount > 0 ? (currentSelectedPoints / packsCount) : appConfig.packCost);
+            
+            const minCoins = packsCount * appConfig.qsMin;
+            const expectedCoins = packsCount * appConfig.qsExpected;
+            const maxCoins = packsCount * appConfig.qsMax;
+
+            expectedCoinsResult = expectedCoins;
+
+            const elPacks = document.getElementById('calc-packs-count');
+            const elRemPts = document.getElementById('calc-remaining-pts');
+            const elMinCoins = document.getElementById('calc-min-coins');
+            const elExpCoins = document.getElementById('calc-expected-coins');
+            const elMaxCoins = document.getElementById('calc-max-coins');
+            const cfgPackCost = document.getElementById('cfg-pack-cost-display');
+            const cfgMin = document.getElementById('cfg-min-display');
+            const cfgMax = document.getElementById('cfg-max-display');
+            const cfgExp = document.getElementById('cfg-expected-display');
+            const headerBudget = document.getElementById('header-budget-display');
+
+            const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'Coins';
+
+            if (elPacks) elPacks.innerText = packsCount.toLocaleString();
+            if (elRemPts) elRemPts.innerText = (currentSelectedPoints - (packsCount * appConfig.packCost)).toLocaleString();
+            if (elMinCoins) elMinCoins.innerText = minCoins.toLocaleString() + ' ' + coinLabel;
+            if (elExpCoins) elExpCoins.innerText = expectedCoins.toLocaleString() + ' ' + coinLabel;
+            if (elMaxCoins) elMaxCoins.innerText = maxCoins.toLocaleString() + ' ' + coinLabel;
+            
+            if (cfgPackCost) cfgPackCost.innerText = appConfig.packCost;
+            if (cfgMin) cfgMin.innerText = appConfig.qsMin.toLocaleString();
+            if (cfgMax) cfgMax.innerText = appConfig.qsMax.toLocaleString();
+            if (cfgExp) cfgExp.innerText = appConfig.qsExpected.toLocaleString();
+            if (headerBudget) headerBudget.innerText = expectedCoins.toLocaleString() + ' ' + coinLabel;
+        };
+
+        window.transferCoinsToSquadBuilder = function() {
+            squadState.budget = expectedCoinsResult;
+            const squadInput = document.getElementById('squad-budget-input');
+            if (squadInput) squadInput.value = expectedCoinsResult;
+            window.switchTab('squad');
+            window.runSquadOptimizer();
+        };
+
+        window.syncBudgetFromCalculator = function() {
+            squadState.budget = expectedCoinsResult;
+            const squadInput = document.getElementById('squad-budget-input');
+            if (squadInput) squadInput.value = expectedCoinsResult;
+            window.runSquadOptimizer();
+        };
+
+        window.updateBudgetFromInput = function(val) {
+            const num = parseInt(val);
+            if (!isNaN(num) && num >= 0) {
+                squadState.budget = num;
+                window.runSquadOptimizer();
+            }
+        };
+
+        window.changeFormation = function(formKey) {
+            squadState.formation = formKey;
+            window.runSquadOptimizer();
+        };
+
+        function calculatePlayerScore(player, targetPos) {
+            let base = player.rating * 10;
+            if (player.pos === targetPos) {
+                base += 50;
+            } else if (player.alt && player.alt.includes(targetPos)) {
+                base += 20;
+            } else {
+                base -= 200;
+            }
+
+            const att = player.att;
+            if (targetPos === 'GK') {
+                base += (att.ref || 80) * 0.5 + (att.div || 80) * 0.3;
+            } else if (targetPos === 'CB') {
+                base += (att.def || 75) * 0.6 + (att.pac || 75) * 0.3 + (att.phy || 75) * 0.3;
+            } else if (targetPos === 'LB' || targetPos === 'RB' || targetPos === 'LWB' || targetPos === 'RWB') {
+                base += (att.pac || 75) * 0.5 + (att.def || 70) * 0.3 + (att.pas || 70) * 0.2;
+            } else if (targetPos === 'CDM' || targetPos === 'CM') {
+                base += (att.pas || 75) * 0.4 + (att.def || 70) * 0.3 + (att.dri || 70) * 0.3;
+            } else if (targetPos === 'CAM' || targetPos === 'LM' || targetPos === 'RM') {
+                base += (att.dri || 75) * 0.4 + (att.pas || 70) * 0.3 + (att.pac || 75) * 0.3;
+            } else if (targetPos === 'LW' || targetPos === 'RW') {
+                base += (att.pac || 80) * 0.5 + (att.dri || 75) * 0.3 + (att.sho || 75) * 0.2;
+            } else if (targetPos === 'ST' || targetPos === 'CF') {
+                base += (att.sho || 80) * 0.6 + (att.pac || 80) * 0.3 + (att.dri || 75) * 0.1;
+            }
+            return base;
+        }
+
+        window.runSquadOptimizer = function() {
+            const slots = formationSlots[squadState.formation];
+            const budget = squadState.budget;
+            
+            squadState.explanationLog = [];
+            const startingLogText = currentLanguage === 'ar' ? 
+                `بدء تحسين التشكيلة <span class="text-white font-bold">${squadState.formation}</span> بميزانية كوينز إجمالية قدرها <span class="text-fc-gold font-bold">${budget.toLocaleString()} كوينز</span>.` :
+                `Starting optimization for formation <span class="text-white font-bold">${squadState.formation}</span> with total coin budget of <span class="text-fc-gold font-bold">${budget.toLocaleString()} coins</span>.`;
+            squadState.explanationLog.push(startingLogText);
+
+            let candidateMap = {};
+            let totalMinCost = 0;
+
+            slots.forEach((slot, idx) => {
+                const eligible = fc27Database.filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
+                eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                candidateMap[idx] = eligible;
+                if (eligible.length > 0) {
+                    totalMinCost += eligible[eligible.length - 1].price;
+                }
+            });
+
+            if (totalMinCost > budget) {
+                const warnText = currentLanguage === 'ar' ? 
+                    `<span class="text-amber-400 font-semibold">تحذير:</span> الحد الأدنى لتكلفة التشكيلة يتجاوز الميزانية الحالية. سيختار المحسن أرخص تشكيلة ممكنة.` :
+                    `<span class="text-amber-400 font-semibold">Warning:</span> Minimum possible squad cost exceeds current budget. Optimizer will select the cheapest possible viable squad.`;
+                squadState.explanationLog.push(warnText);
+            }
+
+            let selectedXI = {};
+            let usedPlayerIds = new Set();
+            let currentSpent = 0;
+
+            let sortedSlotIndices = slots.map((s, i) => i);
+            sortedSlotIndices.sort((a, b) => {
+                const pA = slots[a].pos;
+                const pB = slots[b].pos;
+                const weight = { 'ST': 1, 'CB': 2, 'CM': 3, 'GK': 4, 'LW': 5, 'RW': 5, 'CAM': 6, 'LB': 7, 'RB': 7, 'CDM': 3, 'LM': 5, 'RM': 5 };
+                return (weight[pA] || 9) - (weight[pB] || 9);
+            });
+
+            sortedSlotIndices.forEach(slotIdx => {
+                const slot = slots[slotIdx];
+                const candidates = candidateMap[slotIdx];
+                
+                let bestCandidate = null;
+                let bestScore = -99999;
+
+                for (let cand of candidates) {
+                    if (usedPlayerIds.has(cand.id)) continue;
+                    const remainingSlotsCount = slots.length - Object.keys(selectedXI).length - 1;
+                    const estimatedFutureCost = remainingSlotsCount * 7000;
+                    
+                    if (currentSpent + cand.price + estimatedFutureCost <= budget || Object.keys(selectedXI).length === slots.length - 1) {
+                        const score = calculatePlayerScore(cand, slot.pos);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestCandidate = cand;
+                        }
+                    }
+                }
+
+                if (!bestCandidate && candidates.length > 0) {
+                    for (let cand of candidates) {
+                        if (!usedPlayerIds.has(cand.id)) {
+                            bestCandidate = cand;
+                            break;
+                        }
+                    }
+                }
+
+                if (bestCandidate) {
+                    selectedXI[slotIdx] = bestCandidate;
+                    usedPlayerIds.add(bestCandidate.id);
+                    currentSpent += bestCandidate.price;
+                    const selectionLogText = currentLanguage === 'ar' ?
+                        `تم اختيار <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}) مقابل <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>.` :
+                        `Selected <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}) for <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>.`;
+                    squadState.explanationLog.push(selectionLogText);
+                }
+            });
+
+            squadState.selectedXI = selectedXI;
+            squadState.totalCost = currentSpent;
+
+            let totalRating = 0;
+            let count = 0;
+            Object.values(selectedXI).forEach(p => {
+                if (p) {
+                    totalRating += p.rating;
+                    count++;
+                }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+        };
+
+        function renderFootballPitch() {
+            const container = document.getElementById('pitch-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const slots = formationSlots[squadState.formation];
+            let rows = { 1: [], 1.5: [], 2: [], 2.5: [], 3: [], 4: [] };
+            slots.forEach((slot, idx) => {
+                if (!rows[slot.row]) rows[slot.row] = [];
+                rows[slot.row].push({ slot, idx, player: squadState.selectedXI[idx] });
+            });
+
+            [1, 1.5, 2, 2.5, 3, 4].forEach(rowNum => {
+                const rowItems = rows[rowNum];
+                if (!rowItems || rowItems.length === 0) return;
+
+                const rowDiv = document.createElement('div');
+                rowDiv.className = "flex justify-around items-center w-full my-2";
+
+                rowItems.forEach(item => {
+                    const player = item.player;
+                    const card = document.createElement('div');
+                    card.className = "w-28 sm:w-32 bg-fc-card/95 hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent rounded-xl p-2.5 text-center cursor-pointer player-card-glow transition-all flex flex-col items-center relative group";
+                    
+                    const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
+
+                    if (player) {
+                        card.innerHTML = `
+                            <div class="absolute top-1.5 left-2 rtl:left-auto rtl:right-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
+                            <div class="absolute top-1.5 right-2 rtl:right-auto rtl:left-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
+                            <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
+                            <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
+                            <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
+                        `;
+                        card.onclick = () => window.openPlayerModal(player, item.slot.label);
+                    } else {
+                        const emptyTxt = currentLanguage === 'ar' ? 'مكان فارغ' : 'Empty Slot';
+                        card.innerHTML = `
+                            <div class="text-xs text-gray-500 font-bold py-6">${emptyTxt}</div>
+                            <div class="text-[10px] text-gray-400">${item.slot.label}</div>
+                        `;
+                    }
+                    rowDiv.appendChild(card);
+                });
+
+                container.appendChild(rowDiv);
+            });
+        }
+
+        function renderSquadSummary() {
+            const badge = document.getElementById('squad-overall-badge');
+            const sumBudget = document.getElementById('summary-budget');
+            const sumCost = document.getElementById('summary-cost');
+            const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'Coins';
+
+            if (badge) badge.innerText = `OVR ${squadState.avgRating}`;
+            if (sumBudget) sumBudget.innerText = squadState.budget.toLocaleString() + ' ' + coinLabel;
+            if (sumCost) sumCost.innerText = squadState.totalCost.toLocaleString() + ' ' + coinLabel;
+            
+            const remaining = squadState.budget - squadState.totalCost;
+            const remEl = document.getElementById('summary-remaining');
+            if (remEl) {
+                remEl.innerText = remaining.toLocaleString() + ' ' + coinLabel;
+                remEl.className = remaining >= 0 ? "font-bold text-emerald-400" : "font-bold text-red-400";
+            }
+
+            let groups = { 
+                [currentLanguage === 'ar' ? 'الهجوم' : 'Attack']: [], 
+                [currentLanguage === 'ar' ? 'الوسط' : 'Midfield']: [], 
+                [currentLanguage === 'ar' ? 'الدفاع' : 'Defence']: [], 
+                [currentLanguage === 'ar' ? 'حارس المرمى' : 'Goalkeeper']: [] 
+            };
+            const slots = formationSlots[squadState.formation];
+            slots.forEach((slot, idx) => {
+                const p = squadState.selectedXI[idx];
+                if (!p) return;
+                if (['ST', 'CF', 'LW', 'RW'].includes(slot.pos)) groups[currentLanguage === 'ar' ? 'الهجوم' : 'Attack'].push(p);
+                else if (['CM', 'CDM', 'CAM', 'LM', 'RM'].includes(slot.pos)) groups[currentLanguage === 'ar' ? 'الوسط' : 'Midfield'].push(p);
+                else if (['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(slot.pos)) groups[currentLanguage === 'ar' ? 'الدفاع' : 'Defence'].push(p);
+                else if (slot.pos === 'GK') groups[currentLanguage === 'ar' ? 'حارس المرمى' : 'Goalkeeper'].push(p);
+            });
+
+            const breakdownContainer = document.getElementById('group-breakdown');
+            if (!breakdownContainer) return;
+            breakdownContainer.innerHTML = '';
+            Object.keys(groups).forEach(groupName => {
+                const list = groups[groupName];
+                if (list.length === 0) return;
+                const avgRtg = Math.round(list.reduce((acc, curr) => acc + curr.rating, 0) / list.length);
+                
+                const row = document.createElement('div');
+                row.className = "flex justify-between items-center bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60";
+                const avgText = currentLanguage === 'ar' ? `معدل ${avgRtg} (${list.length} لاعبين)` : `Avg ${avgRtg} (${list.length} players)`;
+                row.innerHTML = `
+                    <span class="text-gray-300 font-semibold">${groupName}</span>
+                    <span class="font-bold text-fc-accent">${avgText}</span>
+                `;
+                breakdownContainer.appendChild(row);
+            });
+        }
+
+        function calculateNextBestUpgrade() {
+            const container = document.getElementById('next-upgrade-content');
+            if (!container) return;
+            let bestUpgradeCandidate = null;
+            let maxRatingImprovement = 0;
+            let minAdditionalCost = 999999;
+
+            const remainingBudget = squadState.budget - squadState.totalCost;
+            const slots = formationSlots[squadState.formation];
+
+            slots.forEach((slot, idx) => {
+                const currentPlayer = squadState.selectedXI[idx];
+                if (!currentPlayer) return;
+
+                const alternatives = fc27Database.filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && p.rating > currentPlayer.rating);
+                
+                alternatives.forEach(alt => {
+                    const costDiff = alt.price - currentPlayer.price;
+                    if (costDiff > 0 && costDiff <= (remainingBudget + 50000)) {
+                        const rtgDiff = alt.rating - currentPlayer.rating;
+                        if (rtgDiff >= maxRatingImprovement) {
+                            maxRatingImprovement = rtgDiff;
+                            if (costDiff < minAdditionalCost) {
+                                minAdditionalCost = costDiff;
+                                bestUpgradeCandidate = { current: currentPlayer, upgrade: alt, costDiff, slot: slot.label };
+                            }
+                        }
+                    }
+                });
+            });
+
+            const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'coins';
+
+            if (bestUpgradeCandidate) {
+                container.innerHTML = `
+                    <div class="space-y-1.5">
+                        <div class="font-bold text-white">${bestUpgradeCandidate.slot}: ${currentLanguage === 'ar' ? 'الترقية إلى' : 'Upgrade to'} ${bestUpgradeCandidate.upgrade.name} (${bestUpgradeCandidate.upgrade.rating} OVR)</div>
+                        <div class="flex justify-between text-gray-400">
+                            <span>${currentLanguage === 'ar' ? 'الحالي' : 'Current'}: ${bestUpgradeCandidate.current.name} (${bestUpgradeCandidate.current.rating})</span>
+                            <span class="text-fc-gold font-bold">+${bestUpgradeCandidate.costDiff.toLocaleString()} ${coinLabel}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const msg = currentLanguage === 'ar' ? 'تشكيلتك مُحسّنة للغاية! وفّر المزيد من الكوينز لفتح ترقيات أعلى مستوى.' : 'Your squad is heavily optimized! Save more coins to unlock higher tier upgrades.';
+                container.innerHTML = `<p class="italic text-gray-400">${msg}</p>`;
+            }
+        }
+
+        window.openPlayerModal = function(player, slotLabel) {
+            const modal = document.getElementById('player-modal');
+            const content = document.getElementById('modal-player-content');
+            if (!modal || !content) return;
+            
+            const priceLbl = currentLanguage === 'ar' ? 'السعر' : 'Price';
+            const coinLbl = currentLanguage === 'ar' ? 'كوينز' : 'coins';
+            const whyText = currentLanguage === 'ar' ? 'لماذا تم اختيار هذا اللاعب:' : 'Why this player was selected:';
+            const whyDesc = currentLanguage === 'ar' ? 
+                `أعلى مرشح متاح وبأسعار معقولة لمركز <span class="text-white font-semibold">${slotLabel}</span> مع الحفاظ على التشكيلة الأساسية ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.` :
+                `Highest-rated affordable candidate available for the <span class="text-white font-semibold">${slotLabel}</span> position while keeping the total starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.`;
+
+            content.innerHTML = `
+                <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
+                    <img src="${player.photo}" class="w-16 h-16 rounded-2xl border-2 border-fc-accent object-cover bg-fc-dark" alt="${player.name}">
+                    <div>
+                        <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30">${player.pos}</span>
+                        <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
+                        <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span> | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
+                    </div>
+                </div>
+
+                <div class="space-y-3 pt-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                        ${Object.entries(player.att).map(([k, v]) => `
+                            <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
+                                <span class="text-gray-400 uppercase text-[10px] block">${k}</span>
+                                <span class="font-black text-white text-sm">${v}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
+                    <span class="text-xs font-bold text-fc-accent">${whyText}</span>
+                    <p class="text-xs text-gray-300">${whyDesc}</p>
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closePlayerModal = function() {
+            const modal = document.getElementById('player-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        };
+
+        window.openSettingsModal = function() {
+            const elCost = document.getElementById('setting-pack-cost');
+            const elMin = document.getElementById('setting-qs-min');
+            const elMax = document.getElementById('setting-qs-max');
+            const elExp = document.getElementById('setting-qs-expected');
+
+            if (elCost) elCost.value = appConfig.packCost;
+            if (elMin) elMin.value = appConfig.qsMin;
+            if (elMax) elMax.value = appConfig.qsMax;
+            if (elExp) elExp.value = appConfig.qsExpected;
+
+            const modal = document.getElementById('settings-modal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }
+        };
+
+        window.closeSettingsModal = function() {
+            const modal = document.getElementById('settings-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        };
+
+        window.saveSettings = function() {
+            const elCost = document.getElementById('setting-pack-cost');
+            const elMin = document.getElementById('setting-qs-min');
+            const elMax = document.getElementById('setting-qs-max');
+            const elExp = document.getElementById('setting-qs-expected');
+
+            appConfig.packCost = elCost ? parseInt(elCost.value) || 100 : 100;
+            appConfig.qsMin = elMin ? parseInt(elMin.value) || 1200 : 1200;
+            appConfig.qsMax = elMax ? parseInt(elMax.value) || 1400 : 1400;
+            appConfig.qsExpected = elExp ? parseInt(elExp.value) || 1300 : 1300;
+
+            window.closeSettingsModal();
+            window.calculatePackReturns();
+        };
+
+        window.openExplanationModal = function() {
+            const modal = document.getElementById('explanation-modal');
+            const container = document.getElementById('explanation-content');
+            if (!modal || !container) return;
+            
+            const logicTitle = currentLanguage === 'ar' ? 'خطوات ومنطق المحسن:' : 'Optimizer Logic & Steps:';
+
+            container.innerHTML = `
+                <div class="space-y-3">
+                    <h4 class="font-bold text-white">${logicTitle}</h4>
+                    <ul class="space-y-2">
+                        ${squadState.explanationLog.map(log => `<li class="text-xs bg-fc-dark p-2.5 rounded-xl border border-fc-border">${log}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closeExplanationModal = function() {
+            const modal = document.getElementById('explanation-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        };
+
+        window.updateDatabaseStats = function() {
+            const grid = document.getElementById('db-stats-grid');
+            if (!grid) return;
+            
+            const tPlayers = currentLanguage === 'ar' ? 'إجمالي اللاعبين' : 'Total Players';
+            const mRating = currentLanguage === 'ar' ? 'أعلى تقييم' : 'Max Rating';
+            const mPrice = currentLanguage === 'ar' ? 'أعلى سعر' : 'Max Price';
+            const fActive = currentLanguage === 'ar' ? 'تشكيلات نشطة' : 'Formations Active';
+            const coinLbl = currentLanguage === 'ar' ? 'ك' : 'c';
+
+            grid.innerHTML = `
+                <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
+                    <span class="text-xs text-gray-400 block">${tPlayers}</span>
+                    <span class="text-xl font-black text-white mt-1 block">${fc27Database.length}</span>
+                </div>
+                <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
+                    <span class="text-xs text-gray-400 block">${mRating}</span>
+                    <span class="text-xl font-black text-fc-gold mt-1 block">${Math.max(...fc27Database.map(p => p.rating))}</span>
+                </div>
+                <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
+                    <span class="text-xs text-gray-400 block">${mPrice}</span>
+                    <span class="text-xl font-black text-fc-accent mt-1 block">${Math.max(...fc27Database.map(p => p.price)).toLocaleString()}${coinLbl}</span>
+                </div>
+                <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
+                    <span class="text-xs text-gray-400 block">${fActive}</span>
+                    <span class="text-xl font-black text-white mt-1 block">5</span>
+                </div>
+            `;
+        };
+
+        window.exportDatabaseJSON = function() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fc27Database, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "fc27_futbin_database.json");
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        };
+
+        window.importDatabaseJSON = function() {
+            const textarea = document.getElementById('import-json-textarea');
+            if (!textarea) return;
+            const txt = textarea.value;
+            try {
+                const parsed = JSON.parse(txt);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    fc27Database = parsed;
+                    window.updateDatabaseStats();
+                    window.runSquadOptimizer();
+                }
+            } catch(e) {
+                console.error("JSON parsing error: " + e.message);
+            }
+        };
+
+        window.resetDefaultDatabase = function() {
+            window.location.reload();
+        };
+
+        // ===================================================================
+        // LIVE SCRAPE / SYNC — real EasySBC player API
+        // ===================================================================
+        // EasySBC's visible page (www.easysbc.io) is client-rendered and has
+        // no player data in its raw HTML. Their frontend actually pulls data
+        // from a separate API host: api-fc27.easysbc.io/players?v2&page=N
+        // which returns { players: [...], totalPages } sorted by meta rating.
+        // Confirmed response shape per player:
+        //   { resourceId, name, rating, positions[], preferredPosition,
+        //     attributes[6], price, playerUrl, ... }
+        // attributes[] order is confirmed as:
+        //   Outfield -> [pace, shooting, passing, dribbling, defending, physical]
+        //   GK       -> [diving, handling, kicking, reflexes, speed, positioning]
+        // The full DB is 1000+ pages (~20k players), so we fetch a
+        // user-controlled number of pages (default 15 ≈ 300 top players,
+        // already sorted best-to-worst by meta rating) rather than the whole
+        // thing. A CORS proxy fallback is kept in case the API host doesn't
+        // allow requests from this page's origin.
+
+        const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+        const EASYSBC_PLAYERS_PER_PAGE = 20; // as observed from the live API
+
+        function scrapeLog(msg, type) {
+            const box = document.getElementById('scrape-status-log');
+            if (!box) return;
+            if (box.dataset.fresh !== 'true') {
+                box.innerHTML = '';
+                box.dataset.fresh = 'true';
+            }
+            const colors = { info: 'text-gray-400', ok: 'text-green-400', warn: 'text-fc-gold', err: 'text-red-400' };
+            const line = document.createElement('div');
+            line.className = colors[type] || colors.info;
+            line.textContent = msg;
+            box.appendChild(line);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function setScrapeProgress(pct) {
+            const track = document.getElementById('scrape-progress-bar-track');
+            const fill = document.getElementById('scrape-progress-bar-fill');
+            if (!track || !fill) return;
+            if (pct === null) {
+                track.classList.add('hidden');
+                fill.style.width = '0%';
+            } else {
+                track.classList.remove('hidden');
+                fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+            }
+        }
+
+        window.toggleScrapeHelp = function() {
+            const panel = document.getElementById('scrape-help-panel');
+            if (panel) panel.classList.toggle('hidden');
+        };
+
+        // Map one raw EasySBC player record into our fc27Database schema.
+        function mapEasySbcPlayer(p) {
+            const pos = (p.preferredPosition || (p.positions && p.positions[0]) || 'CM').toUpperCase();
+            const isGK = pos === 'GK';
+            const a = Array.isArray(p.attributes) ? p.attributes : [70, 70, 70, 70, 70, 70];
+            const att = isGK
+                ? { div: a[0], han: a[1], kic: a[2], ref: a[3], spe: a[4], pos: a[5] }
+                : { pac: a[0], sho: a[1], pas: a[2], dri: a[3], def: a[4], phy: a[5] };
+            const allPositions = Array.isArray(p.positions) ? p.positions : [pos];
+            const alt = allPositions.filter(x => x !== pos);
+            return {
+                id: 'easysbc_' + (p.resourceId ?? p.assetId ?? Math.random().toString(36).slice(2)),
+                name: p.name || p.cardName || 'Unknown',
+                rating: p.rating || 75,
+                pos, alt,
+                price: typeof p.price === 'number' && p.price > 0 ? p.price : 0,
+                att,
+                photo: p.playerUrl || `https://placehold.co/120x120/1b4d3e/ffffff?text=${encodeURIComponent(p.name || 'Player')}`
+            };
+        }
+
+        // Fetch one page of the EasySBC API, trying a direct request first and
+        // falling back to a CORS proxy if the browser blocks the direct call.
+        async function fetchEasySbcPage(baseUrl, page, preferProxy) {
+            const pageUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=' + page;
+            const strategies = preferProxy
+                ? [{ url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'proxy' }, { url: pageUrl, label: 'direct' }]
+                : [{ url: pageUrl, label: 'direct' }, { url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'proxy' }];
+
+            let lastErr = null;
+            for (const s of strategies) {
+                try {
+                    const res = await fetch(s.url, { headers: { 'Accept': 'application/json' } });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    if (!data || !Array.isArray(data.players)) throw new Error('Unexpected response shape (no players[] array)');
+                    return { data, usedProxy: s.label === 'proxy' };
+                } catch (err) {
+                    lastErr = err;
+                }
+            }
+            throw lastErr || new Error('All fetch strategies failed');
+        }
+
+        window.scrapeEasySBCPlayers = async function() {
+            const btn = document.getElementById('btn-scrape');
+            const logBox = document.getElementById('scrape-status-log');
+            if (logBox) logBox.dataset.fresh = 'false';
+
+            const urlInput = document.getElementById('scrape-url-input');
+            const pagesInput = document.getElementById('scrape-pages-input');
+            const baseUrl = (urlInput && urlInput.value.trim()) || 'https://api-fc27.easysbc.io/players?v2';
+            const pageCount = Math.max(1, Math.min(100, parseInt(pagesInput && pagesInput.value) || 15));
+
+            if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-not-allowed'); }
+            setScrapeProgress(0);
+            scrapeLog(`Fetching ${pageCount} page(s) (~${pageCount * EASYSBC_PLAYERS_PER_PAGE} players) from ${baseUrl} ...`, 'info');
+
+            const collected = [];
+            let preferProxy = false;
+            let failures = 0;
+
+            for (let page = 1; page <= pageCount; page++) {
+                try {
+                    const { data, usedProxy } = await fetchEasySbcPage(baseUrl, page, preferProxy);
+                    if (page === 1) {
+                        preferProxy = usedProxy;
+                        scrapeLog(usedProxy ? 'Direct request was blocked (CORS) — using proxy for remaining pages.' : 'Direct request succeeded — no proxy needed.', usedProxy ? 'warn' : 'ok');
+                        if (typeof data.totalPages === 'number') {
+                            scrapeLog(`EasySBC reports ${data.totalPages} total pages available (~${data.totalPages * EASYSBC_PLAYERS_PER_PAGE} players). Fetching ${pageCount} of them.`, 'info');
+                        }
+                    }
+                    collected.push(...data.players);
+                    setScrapeProgress((page / pageCount) * 100);
+                } catch (err) {
+                    failures++;
+                    scrapeLog(`Page ${page} failed: ${err.message}`, 'err');
+                    if (page === 1) {
+                        // If the very first page fails outright, stop early — further
+                        // pages will fail the same way.
+                        scrapeLog('Could not reach the EasySBC API at all (network blocked or URL changed). Falling back to whatever is in the Import box, if anything.', 'warn');
+                        break;
+                    }
+                }
+            }
+
+            if (collected.length > 0) {
+                const normalized = collected.map(mapEasySbcPlayer);
+                fc27Database = normalized;
+                window.updateDatabaseStats();
+                window.runSquadOptimizer();
+                scrapeLog(`Database synced with ${normalized.length} players from EasySBC` + (failures > 0 ? ` (${failures} page(s) failed and were skipped).` : '.'), 'ok');
+            } else {
+                scrapeLog('No players were retrieved. Use the "How do I find the real data endpoint?" guide above to re-check the URL, or paste JSON directly into the Import box.', 'warn');
+            }
+
+            setScrapeProgress(null);
+            if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-not-allowed'); }
+        };
+
+
+        window.addEventListener('DOMContentLoaded', () => {
+            window.renderPresetPoints();
+            window.calculatePackReturns();
+            window.updateDatabaseStats();
+            window.runSquadOptimizer();
+        });
+    </script>
+</body>
+</html>
