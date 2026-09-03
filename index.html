@@ -711,85 +711,11 @@
             explanationLog: []
         };
 
-        let fc27Database = [
-            // Goalkeepers
-            { id: 'gk_1', name: 'Alisson', rating: 89, pos: 'GK', alt: [], price: 45000, att: { div: 86, han: 85, kic: 85, ref: 89, spe: 52, pos: 90 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Alisson' },
-            { id: 'gk_2', name: 'Courtois', rating: 90, pos: 'GK', alt: [], price: 60000, att: { div: 85, han: 89, kic: 74, ref: 94, spe: 46, pos: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Courtois' },
-            { id: 'gk_3', name: 'Maignan', rating: 87, pos: 'GK', alt: [], price: 22000, att: { div: 84, han: 83, kic: 86, ref: 88, spe: 54, pos: 85 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Maignan' },
-            { id: 'gk_4', name: 'Ter Stegen', rating: 88, pos: 'GK', alt: [], price: 32000, att: { div: 87, han: 85, kic: 88, ref: 90, spe: 44, pos: 86 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Ter+Stegen' },
-            { id: 'gk_5', name: 'Onana', rating: 84, pos: 'GK', alt: [], price: 9000, att: { div: 82, han: 83, kic: 85, ref: 84, spe: 48, pos: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Onana' },
-            { id: 'gk_6', name: 'Raya', rating: 85, pos: 'GK', alt: [], price: 14000, att: { div: 83, han: 84, kic: 87, ref: 86, spe: 50, pos: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Raya' },
-
-            // Center Backs (CB)
-            { id: 'cb_1', name: 'Van Dijk', rating: 90, pos: 'CB', alt: [], price: 85000, att: { pac: 78, sho: 60, pas: 72, dri: 72, def: 91, phy: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Van+Dijk' },
-            { id: 'cb_2', name: 'Ruben Dias', rating: 89, pos: 'CB', alt: [], price: 55000, att: { pac: 68, sho: 39, pas: 68, dri: 68, def: 89, phy: 89 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Dias' },
-            { id: 'cb_3', name: 'Saliba', rating: 88, pos: 'CB', alt: [], price: 48000, att: { pac: 83, sho: 40, pas: 75, dri: 74, def: 88, phy: 84 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Saliba' },
-            { id: 'cb_4', name: 'Rudiger', rating: 87, pos: 'CB', alt: [], price: 38000, att: { pac: 83, sho: 50, pas: 72, dri: 68, def: 86, phy: 87 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rudiger' },
-            { id: 'cb_5', name: 'Marquinhos', rating: 87, pos: 'CB', alt: [], price: 30000, att: { pac: 79, sho: 35, pas: 76, dri: 76, def: 87, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Marquinhos' },
-            { id: 'cb_6', name: 'Araujo', rating: 86, pos: 'CB', alt: ['RB'], price: 25000, att: { pac: 84, sho: 51, pas: 65, dri: 69, def: 85, phy: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Araujo' },
-            { id: 'cb_7', name: 'Konate', rating: 85, pos: 'CB', alt: [], price: 18000, att: { pac: 82, sho: 45, pas: 66, dri: 68, def: 85, phy: 87 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Konate' },
-            { id: 'cb_8', name: 'Gvardiol', rating: 85, pos: 'CB', alt: ['LB'], price: 16000, att: { pac: 83, sho: 55, pas: 74, dri: 78, def: 83, phy: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Gvardiol' },
-            { id: 'cb_9', name: 'Tomori', rating: 84, pos: 'CB', alt: [], price: 12000, att: { pac: 86, sho: 35, pas: 62, dri: 70, def: 84, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Tomori' },
-            { id: 'cb_10', name: 'Pau Torres', rating: 83, pos: 'CB', alt: [], price: 7000, att: { pac: 70, sho: 40, pas: 78, dri: 76, def: 83, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Torres' },
-
-            // Left Backs (LB) & Right Backs (RB)
-            { id: 'lb_1', name: 'Theo Hernandez', rating: 88, pos: 'LB', alt: ['LWB'], price: 65000, att: { pac: 96, sho: 72, pas: 78, dri: 83, def: 82, phy: 84 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Theo' },
-            { id: 'lb_2', name: 'Dimarco', rating: 85, pos: 'LB', alt: ['LWB'], price: 19000, att: { pac: 86, sho: 78, pas: 85, dri: 82, def: 78, phy: 68 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Dimarco' },
-            { id: 'lb_3', name: 'Grimaldo', rating: 86, pos: 'LB', alt: ['LWB'], price: 24000, att: { pac: 85, sho: 80, pas: 87, dri: 84, def: 79, phy: 65 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Grimaldo' },
-            { id: 'lb_4', name: 'Davies', rating: 84, pos: 'LB', alt: ['LM'], price: 15000, att: { pac: 95, sho: 68, pas: 77, dri: 86, def: 76, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Davies' },
-            { id: 'lb_5', name: 'Mendy', rating: 83, pos: 'LB', alt: [], price: 9000, att: { pac: 91, sho: 60, pas: 75, dri: 80, def: 80, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Mendy' },
-
-            { id: 'rb_1', name: 'Carvajal', rating: 87, pos: 'RB', alt: [], price: 35000, att: { pac: 82, sho: 60, pas: 81, dri: 82, def: 84, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Carvajal' },
-            { id: 'rb_2', name: 'Trent Alexander-Arnold', rating: 88, pos: 'RB', alt: ['RWB', 'CM'], price: 42000, att: { pac: 78, sho: 75, pas: 91, dri: 83, def: 80, phy: 71 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Trent' },
-            { id: 'rb_3', name: 'Hakimi', rating: 85, pos: 'RB', alt: ['RWB'], price: 21000, att: { pac: 93, sho: 73, pas: 80, dri: 84, def: 78, phy: 74 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Hakimi' },
-            { id: 'rb_4', name: 'Walker', rating: 85, pos: 'RB', alt: ['CB'], price: 23000, att: { pac: 92, sho: 60, pas: 76, dri: 78, def: 82, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Walker' },
-            { id: 'rb_5', name: 'Kounde', rating: 86, pos: 'RB', alt: ['CB'], price: 28000, att: { pac: 86, sho: 50, pas: 78, dri: 80, def: 85, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Kounde' },
-
-            // Midfielders (CM, CDM, CAM)
-            { id: 'cm_1', name: 'Rodri', rating: 91, pos: 'CDM', alt: ['CM'], price: 95000, att: { pac: 66, sho: 79, pas: 87, dri: 84, def: 87, phy: 86 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rodri' },
-            { id: 'cm_2', name: 'Valverde', rating: 89, pos: 'CM', alt: ['RM', 'RB'], price: 75000, att: { pac: 90, sho: 82, pas: 85, dri: 85, def: 81, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Valverde' },
-            { id: 'cm_3', name: 'Bellingham', rating: 90, pos: 'CM', alt: ['CAM'], price: 110000, att: { pac: 84, sho: 87, pas: 85, dri: 89, def: 80, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Bellingham' },
-            { id: 'cm_4', name: 'De Bruyne', rating: 90, pos: 'CM', alt: ['CAM'], price: 90000, att: { pac: 72, sho: 88, pas: 94, dri: 86, def: 65, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=De+Bruyne' },
-            { id: 'cm_5', name: 'Rice', rating: 88, pos: 'CDM', alt: ['CM'], price: 50000, att: { pac: 78, sho: 76, pas: 83, dri: 82, def: 87, phy: 86 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rice' },
-            { id: 'cm_6', name: 'Tchouameni', rating: 87, pos: 'CDM', alt: ['CM'], price: 38000, att: { pac: 79, sho: 72, pas: 80, dri: 80, def: 86, phy: 85 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Tchouameni' },
-            { id: 'cm_7', name: 'Barella', rating: 87, pos: 'CM', alt: [], price: 34000, att: { pac: 83, sho: 78, pas: 85, dri: 87, def: 80, phy: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Barella' },
-            { id: 'cm_8', name: 'Odegaard', rating: 88, pos: 'CM', alt: ['CAM'], price: 42000, att: { pac: 76, sho: 80, pas: 90, dri: 88, def: 62, phy: 68 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Odegaard' },
-            { id: 'cm_9', name: 'Pedri', rating: 87, pos: 'CM', alt: ['CAM'], price: 36000, att: { pac: 79, sho: 75, pas: 86, dri: 90, def: 75, phy: 73 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Pedri' },
-            { id: 'cm_10', name: 'Camavinga', rating: 85, pos: 'CM', alt: ['CDM', 'LB'], price: 20000, att: { pac: 80, sho: 70, pas: 82, dri: 85, def: 81, phy: 80 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Camavinga' },
-            { id: 'cm_11', name: 'Mac Allister', rating: 85, pos: 'CM', alt: ['CDM'], price: 15000, att: { pac: 74, sho: 81, pas: 85, dri: 84, def: 79, phy: 77 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Mac+Allister' },
-            { id: 'cm_12', name: 'Kimmich', rating: 87, pos: 'CM', alt: ['CDM', 'RB'], price: 32000, att: { pac: 71, sho: 76, pas: 89, dri: 84, def: 83, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Kimmich' },
-            { id: 'cm_13', name: 'Tonali', rating: 84, pos: 'CM', alt: ['CDM'], price: 11000, att: { pac: 81, sho: 72, pas: 82, dri: 81, def: 80, phy: 81 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Tonali' },
-
-            // Wingers & Attacking Midfielders (CAM, LW, RW, LM, RM)
-            { id: 'cam_1', name: 'Musiala', rating: 89, pos: 'CAM', alt: ['LM'], price: 70000, att: { pac: 85, sho: 82, pas: 84, dri: 92, def: 55, phy: 60 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Musiala' },
-            { id: 'cam_2', name: 'Wirtz', rating: 89, pos: 'CAM', alt: ['LM', 'CF'], price: 72000, att: { pac: 84, sho: 83, pas: 89, dri: 91, def: 52, phy: 65 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Wirtz' },
-            { id: 'cam_3', name: 'Maddison', rating: 85, pos: 'CAM', alt: [], price: 16000, att: { pac: 75, sho: 83, pas: 87, dri: 86, def: 50, phy: 62 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Maddison' },
-            { id: 'cam_4', name: 'Bruno Fernandes', rating: 88, pos: 'CAM', alt: ['CM'], price: 45000, att: { pac: 75, sho: 87, pas: 90, dri: 84, def: 70, phy: 76 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Bruno+F' },
-
-            { id: 'lw_1', name: 'Vinicius Jr', rating: 90, pos: 'LW', alt: [], price: 130000, att: { pac: 95, sho: 85, pas: 81, dri: 94, def: 30, phy: 68 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Vini+Jr' },
-            { id: 'lw_2', name: 'Neymar Jr', rating: 88, pos: 'LW', alt: ['CAM'], price: 50000, att: { pac: 86, sho: 83, pas: 86, dri: 93, def: 38, phy: 58 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Neymar' },
-            { id: 'lw_3', name: 'Leao', rating: 87, pos: 'LW', alt: ['LM'], price: 40000, att: { pac: 94, sho: 82, pas: 78, dri: 88, def: 35, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Leao' },
-            { id: 'lw_4', name: 'Diaz', rating: 86, pos: 'LW', alt: ['LM'], price: 26000, att: { pac: 91, sho: 79, pas: 77, dri: 89, def: 42, phy: 70 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Luis+Diaz' },
-            { id: 'lw_5', name: 'Gakpo', rating: 84, pos: 'LW', alt: ['ST'], price: 10000, att: { pac: 87, sho: 82, pas: 79, dri: 84, def: 40, phy: 74 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Gakpo' },
-
-            { id: 'rw_1', name: 'Salah', rating: 90, pos: 'RW', alt: ['RM'], price: 95000, att: { pac: 89, sho: 89, pas: 83, dri: 89, def: 45, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Salah' },
-            { id: 'rw_2', name: 'Saka', rating: 88, pos: 'RW', alt: ['RM'], price: 58000, att: { pac: 87, sho: 83, pas: 86, dri: 88, def: 60, phy: 72 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Saka' },
-            { id: 'rw_3', name: 'Dembele', rating: 87, pos: 'RW', alt: ['LW'], price: 48000, att: { pac: 93, sho: 81, pas: 83, dri: 90, def: 35, phy: 56 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Dembele' },
-            { id: 'rw_4', name: 'Rodrygo', rating: 86, pos: 'RW', alt: ['LW', 'ST'], price: 30000, att: { pac: 90, sho: 82, pas: 80, dri: 89, def: 38, phy: 62 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Rodrygo' },
-            { id: 'rw_5', name: 'Bowen', rating: 84, pos: 'RW', alt: ['RM'], price: 11000, att: { pac: 85, sho: 83, pas: 80, dri: 83, def: 52, phy: 76 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Bowen' },
-
-            // Strikers (ST, CF)
-            { id: 'st_1', name: 'Mbappe', rating: 92, pos: 'ST', alt: ['LW'], price: 250000, att: { pac: 97, sho: 90, pas: 81, dri: 92, def: 38, phy: 78 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Mbappe' },
-            { id: 'st_2', name: 'Haaland', rating: 91, pos: 'ST', alt: [], price: 180000, att: { pac: 89, sho: 93, pas: 66, dri: 80, def: 45, phy: 88 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Haaland' },
-            { id: 'st_3', name: 'Kane', rating: 90, pos: 'ST', alt: ['CF'], price: 80000, att: { pac: 68, sho: 94, pas: 86, dri: 85, def: 50, phy: 83 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Kane' },
-            { id: 'st_4', name: 'Lautaro Martinez', rating: 89, pos: 'ST', alt: [], price: 62000, att: { pac: 85, sho: 89, pas: 76, dri: 87, def: 55, phy: 84 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Lautaro' },
-            { id: 'st_5', name: 'Griezmann', rating: 88, pos: 'ST', alt: ['CF', 'CAM'], price: 42000, att: { pac: 81, sho: 88, pas: 87, dri: 88, def: 58, phy: 73 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Griezmann' },
-            { id: 'st_6', name: 'Isak', rating: 86, pos: 'ST', alt: [], price: 28000, att: { pac: 90, sho: 86, pas: 77, dri: 85, def: 35, phy: 74 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Isak' },
-            { id: 'st_7', name: 'Osimhen', rating: 87, pos: 'ST', alt: [], price: 35000, att: { pac: 92, sho: 86, pas: 68, dri: 80, def: 42, phy: 82 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Osimhen' },
-            { id: 'st_8', name: 'Watkins', rating: 85, pos: 'ST', alt: [], price: 16000, att: { pac: 88, sho: 84, pas: 76, dri: 82, def: 48, phy: 77 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Watkins' },
-            { id: 'st_9', name: 'Openda', rating: 84, pos: 'ST', alt: [], price: 12000, att: { pac: 93, sho: 83, pas: 71, dri: 82, def: 36, phy: 75 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Openda' },
-            { id: 'st_10', name: 'Boniface', rating: 83, pos: 'ST', alt: [], price: 7500, att: { pac: 84, sho: 82, pas: 73, dri: 81, def: 35, phy: 85 }, photo: 'https://placehold.co/120x120/1b4d3e/ffffff?text=Boniface' }
-        ];
+        // Player database now defaults to a LIVE pull from EasySBC's API on
+        // startup instead of a hardcoded list — see scrapeEasySBCPlayers()
+        // below and the DOMContentLoaded handler at the bottom of this file.
+        // Starts empty; populated asynchronously right after load.
+        let fc27Database = [];
 
         /* Formation slot layouts & coordinates */
         const formationSlots = {
@@ -1386,6 +1312,10 @@
             const mPrice = currentLanguage === 'ar' ? 'أعلى سعر' : 'Max Price';
             const fActive = currentLanguage === 'ar' ? 'تشكيلات نشطة' : 'Formations Active';
             const coinLbl = currentLanguage === 'ar' ? 'ك' : 'c';
+            const dash = '—';
+
+            const maxRating = fc27Database.length > 0 ? Math.max(...fc27Database.map(p => p.rating)) : dash;
+            const maxPrice = fc27Database.length > 0 ? Math.max(...fc27Database.map(p => p.price)).toLocaleString() + coinLbl : dash;
 
             grid.innerHTML = `
                 <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
@@ -1394,11 +1324,11 @@
                 </div>
                 <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
                     <span class="text-xs text-gray-400 block">${mRating}</span>
-                    <span class="text-xl font-black text-fc-gold mt-1 block">${Math.max(...fc27Database.map(p => p.rating))}</span>
+                    <span class="text-xl font-black text-fc-gold mt-1 block">${maxRating}</span>
                 </div>
                 <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
                     <span class="text-xs text-gray-400 block">${mPrice}</span>
-                    <span class="text-xl font-black text-fc-accent mt-1 block">${Math.max(...fc27Database.map(p => p.price)).toLocaleString()}${coinLbl}</span>
+                    <span class="text-xl font-black text-fc-accent mt-1 block">${maxPrice}</span>
                 </div>
                 <div class="bg-fc-dark p-4 rounded-xl border border-fc-border text-center">
                     <span class="text-xs text-gray-400 block">${fActive}</span>
@@ -1596,8 +1526,14 @@
         window.addEventListener('DOMContentLoaded', () => {
             window.renderPresetPoints();
             window.calculatePackReturns();
+            // Player database defaults to a LIVE pull from EasySBC's API — no
+            // more hardcoded list. Render once immediately (empty state,
+            // shows "Empty Slot" placeholders + dashes in stats) so the UI
+            // isn't blank while the fetch is in flight, then scrape runs and
+            // re-renders both once real data arrives.
             window.updateDatabaseStats();
             window.runSquadOptimizer();
+            window.scrapeEasySBCPlayers();
         });
     </script>
 </body>
