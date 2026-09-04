@@ -266,6 +266,8 @@
                             <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
                             <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
                             <option value="3-5-2">3-5-2 (Balanced)</option>
+                            <option value="4-5-1">4-5-1 (Defensive Wide)</option>
+                            <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
                         </select>
                     </div>
                 </div>
@@ -787,6 +789,32 @@
                 { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
                 { pos: 'ST', label: 'Striker 1', row: 1 },
                 { pos: 'ST', label: 'Striker 2', row: 1 }
+            ],
+            '4-5-1': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'LB', label: 'Left Back', row: 3 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'RB', label: 'Right Back', row: 3 },
+                { pos: 'LM', label: 'Left Mid', row: 2 },
+                { pos: 'CM', label: 'Central Mid 1', row: 2 },
+                { pos: 'CDM', label: 'Defensive Mid', row: 2 },
+                { pos: 'CM', label: 'Central Mid 2', row: 2 },
+                { pos: 'RM', label: 'Right Mid', row: 2 },
+                { pos: 'ST', label: 'Striker', row: 1 }
+            ],
+            '4-4-1-1': [
+                { pos: 'GK', label: 'Goalkeeper', row: 4 },
+                { pos: 'LB', label: 'Left Back', row: 3 },
+                { pos: 'CB', label: 'Center Back 1', row: 3 },
+                { pos: 'CB', label: 'Center Back 2', row: 3 },
+                { pos: 'RB', label: 'Right Back', row: 3 },
+                { pos: 'LM', label: 'Left Mid', row: 2 },
+                { pos: 'CM', label: 'Central Mid 1', row: 2 },
+                { pos: 'CM', label: 'Central Mid 2', row: 2 },
+                { pos: 'RM', label: 'Right Mid', row: 2 },
+                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
+                { pos: 'ST', label: 'Striker', row: 1 }
             ]
         };
 
@@ -1110,21 +1138,30 @@
             calculateNextBestUpgrade();
         };
 
-        // Finds up to 2 best-fit bench alternatives per slot — same scoring
-        // used for initial selection, excluding anyone already placed
-        // elsewhere in the XI (no duplicate players across slots) and the
-        // slot's own current player. Powers the "Alternatives" list in the
-        // player modal.
+        // Finds up to 2 best-fit, BUDGET-AFFORDABLE bench alternatives per
+        // slot — same scoring used for initial selection, but filtered so a
+        // swap-in never blows the squad budget. "Affordable" here means: the
+        // rest of the squad's cost (every other slot) plus this candidate's
+        // price still fits within squadState.budget. High-rated but
+        // unaffordable players are excluded entirely rather than shown and
+        // pushing the squad over budget if clicked.
         function computeSlotAlternatives() {
             const slots = formationSlots[squadState.formation];
             const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
             const alternatives = {};
             slots.forEach((slot, idx) => {
                 const currentPlayer = squadState.selectedXI[idx];
+                // Cost of every OTHER already-selected slot (excluding this
+                // one's own current player) — whatever's left of the budget
+                // after that is the most this slot can spend.
+                const restOfSquadCost = squadState.totalCost - (currentPlayer ? currentPlayer.price : 0);
+                const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
+
                 const eligible = fc27Database.filter(p =>
                     (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
                     !usedIds.has(p.id) &&
-                    (!currentPlayer || p.id !== currentPlayer.id)
+                    (!currentPlayer || p.id !== currentPlayer.id) &&
+                    p.price <= priceCeiling
                 );
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 alternatives[idx] = eligible.slice(0, 2);
@@ -1398,7 +1435,7 @@
             const alternativesSection = (typeof slotIdx === 'number') ? `
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${altsTitle}</span>
-                    ${alternatives.length === 0 ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد بدائل متاحة في قاعدة البيانات الحالية.' : 'No other eligible candidates in the current database.'}</p>` : `
+                    ${alternatives.length === 0 ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد بدائل تناسب هذا المركز ضمن ميزانيتك الحالية.' : 'No other candidates for this position fit within your current budget.'}</p>` : `
                     <div class="space-y-2">
                         ${alternatives.map(alt => {
                             const altMetaTag = typeof alt.meta === 'number' ? ` · MR ${alt.meta.toFixed(1)}` : '';
