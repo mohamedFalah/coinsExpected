@@ -964,28 +964,33 @@
                 `Starting optimization for formation <span class="text-white font-bold">${squadState.formation}</span> with total coin budget of <span class="text-fc-gold font-bold">${budget.toLocaleString()} coins</span>.`;
             squadState.explanationLog.push(startingLogText);
 
-            let candidateMap = {};
-            let totalMinCost = 0;
+            // Budget policy: build a squad that costs <= budget whenever a
+            // viable one exists. Only if that's impossible (not enough
+            // affordable eligible players to fill every slot) do we allow
+            // going over — capped at BUDGET_TOLERANCE coins over budget. If
+            // even that tolerance isn't enough, we still complete the squad
+            // (can't leave slots empty) but the log calls out the overshoot.
+            const BUDGET_TOLERANCE = 50000;
+            const hardCap = budget + BUDGET_TOLERANCE;
 
+            let candidateMap = {};
             slots.forEach((slot, idx) => {
                 const eligible = fc27Database.filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
-                if (eligible.length > 0) {
-                    totalMinCost += eligible[eligible.length - 1].price;
-                }
             });
 
-            if (totalMinCost > budget) {
-                const warnText = currentLanguage === 'ar' ? 
-                    `<span class="text-amber-400 font-semibold">تحذير:</span> الحد الأدنى لتكلفة التشكيلة يتجاوز الميزانية الحالية. سيختار المحسن أرخص تشكيلة ممكنة.` :
-                    `<span class="text-amber-400 font-semibold">Warning:</span> Minimum possible squad cost exceeds current budget. Optimizer will select the cheapest possible viable squad.`;
-                squadState.explanationLog.push(warnText);
+            // Cheapest still-eligible, still-unused candidate's price for a
+            // slot — a real (not flat-guessed) lower bound on what it will
+            // cost to fill that slot, used to reserve budget for slots still
+            // to come so we don't overspend early and get stuck later.
+            function cheapestAvailablePrice(slotIdx, usedIds) {
+                let min = Infinity;
+                for (const cand of candidateMap[slotIdx]) {
+                    if (!usedIds.has(cand.id) && cand.price < min) min = cand.price;
+                }
+                return isFinite(min) ? min : 0;
             }
-
-            let selectedXI = {};
-            let usedPlayerIds = new Set();
-            let currentSpent = 0;
 
             let sortedSlotIndices = slots.map((s, i) => i);
             sortedSlotIndices.sort((a, b) => {
@@ -995,34 +1000,72 @@
                 return (weight[pA] || 9) - (weight[pB] || 9);
             });
 
-            sortedSlotIndices.forEach(slotIdx => {
+            const totalMinCost = sortedSlotIndices.reduce((sum, idx) => sum + cheapestAvailablePrice(idx, new Set()), 0);
+
+            if (totalMinCost > hardCap) {
+                const overBy = (totalMinCost - budget).toLocaleString();
+                const warnText = currentLanguage === 'ar' ?
+                    `<span class="text-red-400 font-semibold">تحذير:</span> حتى بأرخص تشكيلة ممكنة، وحتى مع هامش تجاوز 50,000 كوينز، تتجاوز التكلفة ميزانيتك بحوالي ${overBy} كوينز. سيتم بناء أرخص تشكيلة متاحة رغم ذلك.` :
+                    `<span class="text-red-400 font-semibold">Warning:</span> Even the cheapest possible squad exceeds your budget by roughly ${overBy} coins — beyond the 50,000 coin tolerance. Building the cheapest available squad anyway.`;
+                squadState.explanationLog.push(warnText);
+            } else if (totalMinCost > budget) {
+                const warnText = currentLanguage === 'ar' ?
+                    `<span class="text-amber-400 font-semibold">ملاحظة:</span> الحد الأدنى لتكلفة التشكيلة يتجاوز ميزانيتك قليلاً. سيُسمح للمحسن بتجاوز الميزانية حتى 50,000 كوينز فقط لإكمال التشكيلة.` :
+                    `<span class="text-amber-400 font-semibold">Note:</span> The minimum possible squad cost slightly exceeds your budget. The optimizer is allowed to go up to 50,000 coins over budget to complete a viable squad.`;
+                squadState.explanationLog.push(warnText);
+            }
+
+            let selectedXI = {};
+            let usedPlayerIds = new Set();
+            let currentSpent = 0;
+
+            for (let i = 0; i < sortedSlotIndices.length; i++) {
+                const slotIdx = sortedSlotIndices[i];
                 const slot = slots[slotIdx];
                 const candidates = candidateMap[slotIdx];
-                
-                let bestCandidate = null;
-                let bestScore = -99999;
+                const remainingSlotIndices = sortedSlotIndices.slice(i + 1);
 
-                for (let cand of candidates) {
+                let bestCandidate = null;
+                let bestScore = -Infinity;
+                let usedTolerance = false;
+                let unavoidableOvershoot = false;
+
+                // Pass 1: stay strictly within budget, reserving a real lower
+                // bound for whatever slots are still left to fill.
+                for (const cand of candidates) {
                     if (usedPlayerIds.has(cand.id)) continue;
-                    const remainingSlotsCount = slots.length - Object.keys(selectedXI).length - 1;
-                    const estimatedFutureCost = remainingSlotsCount * 7000;
-                    
-                    if (currentSpent + cand.price + estimatedFutureCost <= budget || Object.keys(selectedXI).length === slots.length - 1) {
+                    const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
+                    if (currentSpent + cand.price + remainingMinCost <= budget) {
                         const score = calculatePlayerScore(cand, slot.pos);
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestCandidate = cand;
+                        if (score > bestScore) { bestScore = score; bestCandidate = cand; }
+                    }
+                }
+
+                // Pass 2: nothing fit strictly within budget — relax up to
+                // the 50,000 coin tolerance ceiling.
+                if (!bestCandidate) {
+                    for (const cand of candidates) {
+                        if (usedPlayerIds.has(cand.id)) continue;
+                        const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
+                        if (currentSpent + cand.price + remainingMinCost <= hardCap) {
+                            const score = calculatePlayerScore(cand, slot.pos);
+                            if (score > bestScore) { bestScore = score; bestCandidate = cand; usedTolerance = true; }
                         }
                     }
                 }
 
-                if (!bestCandidate && candidates.length > 0) {
-                    for (let cand of candidates) {
-                        if (!usedPlayerIds.has(cand.id)) {
-                            bestCandidate = cand;
-                            break;
-                        }
+                // Pass 3: even the tolerance can't fit anyone here — take the
+                // cheapest eligible candidate so the slot isn't left empty.
+                // This only happens when totalMinCost already exceeded
+                // hardCap above, so it's a known, logged unavoidable case.
+                if (!bestCandidate) {
+                    let cheapest = null;
+                    for (const cand of candidates) {
+                        if (usedPlayerIds.has(cand.id)) continue;
+                        if (!cheapest || cand.price < cheapest.price) cheapest = cand;
                     }
+                    bestCandidate = cheapest;
+                    unavoidableOvershoot = !!cheapest;
                 }
 
                 if (bestCandidate) {
@@ -1030,12 +1073,15 @@
                     usedPlayerIds.add(bestCandidate.id);
                     currentSpent += bestCandidate.price;
                     const metaTag = typeof bestCandidate.meta === 'number' ? ` · MR ${bestCandidate.meta.toFixed(1)}` : '';
+                    const noteTag = unavoidableOvershoot
+                        ? (currentLanguage === 'ar' ? ' ⚠️ تجاوز غير قابل للتفادي' : ' ⚠️ unavoidable overshoot')
+                        : (usedTolerance ? (currentLanguage === 'ar' ? ' (ضمن هامش الـ50,000)' : ' (within 50,000 tolerance)') : '');
                     const selectionLogText = currentLanguage === 'ar' ?
-                        `تم اختيار <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) مقابل <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>.` :
-                        `Selected <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) for <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>.`;
+                        `تم اختيار <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) مقابل <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>${noteTag}.` :
+                        `Selected <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) for <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>${noteTag}.`;
                     squadState.explanationLog.push(selectionLogText);
                 }
-            });
+            }
 
             squadState.selectedXI = selectedXI;
             squadState.totalCost = currentSpent;
