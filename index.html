@@ -1211,7 +1211,7 @@
             // immediately sees its own "why" + fresh alternatives (which
             // will include the just-benched player, making the swap
             // reversible with one more click).
-            window.openPlayerModal(altPlayer, slot.label, slotIdx);
+            window.openPlayerModal(altPlayer, slot.label, slotIdx, true);
         };
 
         function renderFootballPitch() {
@@ -1382,7 +1382,277 @@
             }
         }
 
-        window.openPlayerModal = function(player, slotLabel, slotIdx) {
+        // ===================================================================
+        // META ANALYST ENGINE
+        // ===================================================================
+        // Data-honesty note: EasySBC's API does NOT expose height, weight,
+        // body type, or AcceleRATE archetype (confirmed by inspecting live
+        // responses — those fields simply aren't there). So this engine:
+        //  - uses REAL data where we have it: meta rating, playStyles/
+        //    playStylesPlus, skill moves, weak foot, preferred foot, and the
+        //    6 core attributes
+        //  - clearly labels anything else (movement "feel", role suggestion)
+        //    as a stats-based estimate, never claimed as EA's own archetype
+        //    or role data
+        let analystFocus = 'meta';
+        let analystContext = null; // { player, slotIdx, slot }
+
+        // Focus-specific scoring. 'meta' reuses the real optimizer scoring;
+        // the other three re-weight the SAME real attributes toward a
+        // specific in-game feel, per the user's brief:
+        //   PACE/SPEED -> raw pace & acceleration-adjacent stats
+        //   AGILITY/"LIGHT" -> dribbling, skill moves, weak foot, low reliance on physical
+        //   PHYSICAL/GRIND -> physical + defending, dominating 50/50s
+        function getFocusScore(player, focusKey, targetPos) {
+            if (focusKey === 'meta') return calculatePlayerScore(player, targetPos);
+            const a = player.att;
+            const base = typeof player.meta === 'number' ? player.meta : player.rating;
+            if (player.pos === 'GK') {
+                if (focusKey === 'pace') return a.spe * 3 + a.ref * 1 + base * 0.5;
+                if (focusKey === 'agility') return a.kic * 2 + a.pos * 1.5 + base * 0.5;
+                if (focusKey === 'physical') return a.han * 1.5 + a.ref * 1.5 + a.div * 1 + base * 0.5;
+                return base;
+            }
+            const skillMoves = player.skillMoves || 3;
+            const weakFoot = player.weakFoot || 3;
+            if (focusKey === 'pace') return a.pac * 3 + a.dri * 1 + a.phy * 0.5 + base * 0.5;
+            if (focusKey === 'agility') return a.dri * 2.5 + a.pas * 1 + a.pac * 1 + skillMoves * 3 + weakFoot * 2 - a.phy * 0.3 + base * 0.5;
+            if (focusKey === 'physical') return a.phy * 3 + a.def * 1.5 + a.pac * 0.5 + base * 0.5;
+            return base;
+        }
+
+        // Best-fit candidate (+2 runner-ups) for a given focus, scoped to the
+        // same budget-affordability rule as the regular alternatives list —
+        // an "expert pick" that isn't affordable isn't a useful pick.
+        function computeFocusPicks(slotIdx, focusKey) {
+            const slots = formationSlots[squadState.formation];
+            const slot = slots[slotIdx];
+            const currentPlayer = squadState.selectedXI[slotIdx];
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+            const restOfSquadCost = squadState.totalCost - (currentPlayer ? currentPlayer.price : 0);
+            const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
+
+            const pool = fc27Database.filter(p =>
+                (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
+                !usedIds.has(p.id) &&
+                p.price <= priceCeiling
+            );
+            if (currentPlayer) pool.push(currentPlayer);
+            pool.sort((a, b) => getFocusScore(b, focusKey, slot.pos) - getFocusScore(a, focusKey, slot.pos));
+            return pool.slice(0, 3);
+        }
+
+        // Honest, stats-based approximation of in-game "feel" — explicitly
+        // NOT a claim about real AcceleRATE type or body type, since that
+        // data isn't available from the live feed.
+        function estimateMovementFeel(player) {
+            if (player.pos === 'GK') return null;
+            const { pac, dri, phy } = player.att;
+            if (pac >= 88 && phy <= 72) return {
+                en: 'Fast, lighter physical profile — likely feels quick off the mark rather than a top-end grinder.',
+                ar: 'ملف سريع وخفيف بدنياً — يمنح إحساساً بالانطلاقة السريعة أكثر من الاعتماد على القوة القصوى.'
+            };
+            if (pac >= 85 && phy >= 80) return {
+                en: 'High pace AND high physical — likely holds top speed even under contact, a rangier feel.',
+                ar: 'سرعة عالية مع قوة بدنية عالية — يحافظ على سرعته القصوى حتى مع الاحتكاك، بإحساس أكثر قوة.'
+            };
+            if (dri >= 88 && pac < 85) return {
+                en: 'Dribbling-led rather than pace-led — best felt on the left stick in tight spaces, not open sprints.',
+                ar: 'يعتمد على المراوغة أكثر من السرعة — إحساس أفضل في المساحات الضيقة وليس السباقات المفتوحة.'
+            };
+            if (phy >= 85) return {
+                en: 'Power-first profile — feels heavy and dominant in physical duels.',
+                ar: 'ملف يعتمد على القوة أولاً — إحساس ثقيل ومهيمن في المواجهات البدنية.'
+            };
+            return {
+                en: 'Balanced physical profile — no single extreme stat dominates the in-game feel.',
+                ar: 'ملف بدني متوازن — لا توجد صفة متطرفة واحدة تطغى على إحساسه داخل المباراة.'
+            };
+        }
+
+        // Rule-based tactical role suggestion from real attribute thresholds.
+        // Named roles match FC's real Player Roles system, but these are OUR
+        // heuristic suggestions from stats — not pulled from EA/EasySBC data
+        // (the API's playerRoleId has no public name lookup).
+        function getRoleSuggestion(player) {
+            const pos = player.pos;
+            const a = player.att;
+            if (pos === 'GK') {
+                if (a.kic >= 82 && a.spe >= 55) return { role: 'Sweeper Keeper', focus: 'Attack',
+                    en: 'High kicking and mobility let them act as an auxiliary sweeper and launch attacks with distribution, not just shot-stop.',
+                    ar: 'دقة الإرسال والحركة العالية تتيحان له دور الحارس الكاسح وبدء الهجمات بالتمرير، وليس فقط التصدي.' };
+                return { role: 'Goalkeeper', focus: 'Defend',
+                    en: 'Reflex/handling-led profile is best kept on pure shot-stopping rather than sweeping high up the pitch.',
+                    ar: 'ملفه يعتمد على ردود الفعل والإمساك بالكرة، فيُفضل إبقاؤه في التصدي التقليدي دون الكشف العالي.' };
+            }
+            if (pos === 'CB') {
+                if (a.pac >= 82) return { role: 'Ball-Playing Defender', focus: 'Build Up',
+                    en: 'Enough pace to safely step out of the back line and support build-up without being exposed in behind.',
+                    ar: 'سرعته تتيح له الخروج من خط الدفاع بأمان والمساهمة في بناء اللعب دون التعرض للخطر خلفه.' };
+                return { role: 'Stopper', focus: 'Defend',
+                    en: 'Strength/defending-led profile is best used as a pure last-line stopper rather than covering space in behind.',
+                    ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كخط دفاعي أخير دون تكليفه بتغطية المساحات الخلفية.' };
+            }
+            if (pos === 'LB' || pos === 'RB') {
+                if (a.pac >= 85 && a.dri >= 78) return { role: 'Attacking Wingback', focus: 'Attack',
+                    en: 'Pace and dribbling let them overlap and create in the final third without wrecking defensive shape.',
+                    ar: 'سرعته ومهارته تتيحان له التداخل والمشاركة الهجومية دون الإخلال الكبير بالتوازن الدفاعي.' };
+                return { role: 'Fullback', focus: 'Defend',
+                    en: 'A more balanced/defensive profile holds the line better than it bombs forward.',
+                    ar: 'ملفه الأكثر توازناً ودفاعياً يجعله أفضل في الثبات دفاعياً بدلاً من الاندفاع المستمر للأمام.' };
+            }
+            if (pos === 'CDM') {
+                if (a.pas >= 80 && a.dri >= 78) return { role: 'Deep-Lying Playmaker', focus: 'Build Up',
+                    en: 'Passing range and close control let them dictate tempo from deep, not just break up play.',
+                    ar: 'مدى تمريره وتحكمه بالكرة يتيحان التحكم بإيقاع اللعب من العمق، لا فقط قطع الكرات.' };
+                return { role: 'Holding', focus: 'Defend',
+                    en: 'Defending/physical-led profile screens the back four best, freeing creative midfielders to carry the ball.',
+                    ar: 'ملفه الدفاعي/البدني يجعله الأفضل في حماية خط الدفاع، ما يمنح لاعبي الإبداع حرية أكبر.' };
+            }
+            if (pos === 'CM') {
+                if (a.sho >= 78 && a.pac >= 78) return { role: 'Box-to-Box', focus: 'Attack',
+                    en: 'Enough shooting and pace to join the front line late without abandoning defensive duty entirely.',
+                    ar: 'تسديده وسرعته الكافيان يتيحان الانضمام للهجوم في اللحظة الأخيرة دون التخلي التام عن الدفاع.' };
+                return { role: 'Playmaker', focus: 'Support',
+                    en: 'Passing-led profile is best used dictating play from a deeper, central position.',
+                    ar: 'ملفه القائم على التمرير يجعله الأفضل في التحكم باللعب من مركز أعمق وأكثر مركزية.' };
+            }
+            if (pos === 'CAM') {
+                if (a.sho >= 82) return { role: 'Shadow Striker', focus: 'Attack',
+                    en: "Shooting rivals a real striker's, so pushing them almost level with the front line maximizes shot volume.",
+                    ar: 'قدرته التسديدية تضاهي المهاجمين، لذا دفعه ليكون شبه محاذٍ لخط الهجوم يعظّم عدد تسديداته.' };
+                return { role: 'Playmaker', focus: 'Attack',
+                    en: 'Passing/dribbling-led profile is best used creating chances just behind the striker.',
+                    ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' };
+            }
+            if (pos === 'LM' || pos === 'RM') {
+                if (a.def >= 60) return { role: 'Winger', focus: 'Support',
+                    en: 'Defending is actually usable here, so they can provide width and still track back some.',
+                    ar: 'قدرته الدفاعية قابلة للاستخدام فعلياً، فيمنح الاتساع مع مساهمة دفاعية جزئية.' };
+                return { role: 'Inside Forward', focus: 'Attack',
+                    en: 'Low defending means their value is entirely in attack — cutting inside maximizes usable output.',
+                    ar: 'ضعف قدرته الدفاعية يعني أن قيمته بالكامل في الهجوم، فالدخول للداخل يعظّم أثره الفعلي.' };
+            }
+            if (pos === 'LW' || pos === 'RW') {
+                if (a.sho >= 80) return { role: 'Inside Forward', focus: 'Attack',
+                    en: 'Striker-level shooting means cutting inside onto their stronger foot to shoot is the highest-value use of their attributes.',
+                    ar: 'قدرته التسديدية بمستوى المهاجمين، فالدخول للداخل نحو قدمه الأقوى للتسديد هو الاستغلال الأمثل.' };
+                return { role: 'Winger', focus: 'Attack',
+                    en: 'Dribbling/pace-led profile is best used holding width and beating the fullback outside.',
+                    ar: 'ملفه القائم على المراوغة والسرعة يجعله الأفضل في الثبات على الجناح وتخطي الظهير من الخارج.' };
+            }
+            if (pos === 'ST') {
+                if (a.pas >= 78 && a.dri >= 80) return { role: 'False 9', focus: 'Attack',
+                    en: 'Passing/dribbling on par with a creator lets them drop deep to link play before attacking the space they just opened.',
+                    ar: 'تمريره ومراوغته بمستوى صانع الألعاب يتيحان النزول للعمق لربط اللعب قبل مهاجمة المساحة التي فتحها.' };
+                return { role: 'Advanced Forward', focus: 'Attack',
+                    en: 'Pace/shooting-led with lighter passing means the highest-value job is getting in behind and finishing quickly.',
+                    ar: 'ملفه القائم على السرعة والتسديد مع تمرير أخف يعني أن قيمته الأعلى في الانطلاق خلف الدفاع والإنهاء السريع.' };
+            }
+            return { role: pos, focus: 'Balanced',
+                en: 'General-purpose role based on standard positioning for this slot.',
+                ar: 'دور عام يعتمد على التمركز القياسي لهذا المركز.' };
+        }
+
+        window.setAnalystFocus = function(focusKey) {
+            analystFocus = focusKey;
+            renderAnalystPanel();
+        };
+
+        function renderAnalystPanel() {
+            const container = document.getElementById('analyst-panel');
+            if (!container || !analystContext) return;
+            const isAr = currentLanguage === 'ar';
+            const { slotIdx, slot } = analystContext;
+
+            const picks = computeFocusPicks(slotIdx, analystFocus);
+            const topPick = picks[0] || analystContext.player;
+            const currentInSlot = squadState.selectedXI[slotIdx];
+            const isAlreadyInSlot = currentInSlot && topPick && currentInSlot.id === topPick.id;
+
+            const focusLabels = {
+                meta: isAr ? '🧠 الميتا (افتراضي)' : '🧠 Meta (Default)',
+                pace: isAr ? '⚡ التركيز على السرعة' : '⚡ Pace / Speed',
+                agility: isAr ? '🪶 خفيف / مرن' : '🪶 Agility / "Light"',
+                physical: isAr ? '💪 بدني / صراع' : '💪 Physical / Grind'
+            };
+            const focusButtons = Object.keys(focusLabels).map(key => `
+                <button onclick="window.setAnalystFocus('${key}')"
+                    class="px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${analystFocus === key ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border hover:border-fc-accent'}">
+                    ${focusLabels[key]}
+                </button>
+            `).join('');
+
+            const roleInfo = getRoleSuggestion(topPick);
+            const movement = estimateMovementFeel(topPick);
+            const psPlusTop = Array.isArray(topPick.playstylesPlus) ? topPick.playstylesPlus : [];
+            const psBaseTop = Array.isArray(topPick.playstyles) ? topPick.playstyles : [];
+            const hasPsTop = psPlusTop.length > 0 || psBaseTop.length > 0;
+            const topMeta = typeof topPick.meta === 'number' ? topPick.meta.toFixed(1) : null;
+
+            const pickHeaderText = analystFocus === 'meta'
+                ? (isAr ? 'الاختيار المُعتمد على الميتا' : 'The Meta Selection')
+                : (isAr ? `أفضل خيار لتركيز: ${focusLabels[analystFocus]}` : `Best Pick for ${focusLabels[analystFocus]}`);
+
+            const swapHint = isAr ? 'اضغط لاستبدال اللاعب الحالي بهذا الخيار' : 'Click to swap this pick into the starting XI';
+            const swapBtn = !isAlreadyInSlot ? `
+                <button onclick="window.swapAlternativeIntoSlot(${slotIdx}, '${topPick.id}')" title="${swapHint}"
+                    class="mt-2 w-full text-center text-[11px] font-bold text-fc-dark bg-fc-accent hover:bg-fc-accentHover rounded-lg py-1.5">
+                    ${isAr ? 'استخدام هذا الاختيار' : 'Use This Pick'}
+                </button>
+            ` : `<p class="mt-2 text-[11px] text-green-400 font-bold text-center">${isAr ? '✓ هذا هو اللاعب الحالي في التشكيلة' : '✓ Already your current starting player'}</p>`;
+
+            const movementBlock = movement ? `
+                <div class="text-xs text-gray-300">
+                    <span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (تقديري من الإحصائيات):' : 'Movement Feel (stat-based estimate):'}</span>
+                    ${isAr ? movement.ar : movement.en}
+                </div>
+            ` : `<div class="text-xs text-gray-500 italic">${isAr ? 'لا ينطبق تقدير الإحساس الحركي على حراس المرمى.' : 'Movement-feel estimate not applicable to goalkeepers.'}</div>`;
+
+            const playstyleBlock = hasPsTop ? `
+                <div class="flex flex-wrap gap-1.5">
+                    ${psPlusTop.map(s => `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">⚡ ${s}</span>`).join('')}
+                    ${psBaseTop.map(s => `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-fc-accent/10 text-fc-accent border border-fc-accent/30">${s}</span>`).join('')}
+                </div>
+            ` : `<p class="text-[11px] text-gray-500 italic">${isAr ? 'لا تتوفر بيانات PlayStyles لهذه البطاقة.' : 'No PlayStyle data available for this card.'}</p>`;
+
+            container.innerHTML = `
+                <div class="bg-fc-dark/60 border border-fc-border rounded-xl p-3.5 space-y-3">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <span class="text-xs font-bold text-white uppercase tracking-wider">🧠 ${isAr ? 'محلل الميتا' : 'Meta Analyst'}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">${focusButtons}</div>
+
+                    <div class="bg-fc-card/60 rounded-lg p-3 space-y-2 border border-fc-border/60">
+                        <div class="flex items-center gap-2">
+                            <img src="${topPick.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                            <div class="min-w-0">
+                                <span class="text-[10px] font-bold text-fc-accent uppercase block">${pickHeaderText}</span>
+                                <div class="text-xs font-bold text-white truncate">${topPick.name} <span class="text-gray-400 font-normal">(${topPick.rating} OVR${topMeta ? ` · MR ${topMeta}` : ''} · ${topPick.price.toLocaleString()}${isAr ? 'ك' : 'c'})</span></div>
+                            </div>
+                        </div>
+
+                        ${movementBlock}
+
+                        <div class="space-y-1">
+                            <span class="text-[11px] font-bold text-gray-400">PlayStyles</span>
+                            ${playstyleBlock}
+                        </div>
+
+                        <div class="text-xs text-gray-300 pt-1 border-t border-fc-border/60">
+                            <span class="font-bold text-fc-gold">${isAr ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:'}</span>
+                            <span class="font-bold text-white"> ${roleInfo.role} / ${roleInfo.focus}</span>
+                            <p class="text-gray-400 mt-0.5">${isAr ? roleInfo.ar : roleInfo.en}</p>
+                        </div>
+
+                        ${swapBtn}
+                    </div>
+                </div>
+            `;
+        }
+
+
+        window.openPlayerModal = function(player, slotLabel, slotIdx, preserveFocus) {
             const modal = document.getElementById('player-modal');
             const content = document.getElementById('modal-player-content');
             if (!modal || !content) return;
@@ -1486,9 +1756,17 @@
                     <p class="text-xs text-gray-300">${whyDesc}</p>
                 </div>
 
+                <div id="analyst-panel"></div>
+
                 ${alternativesSection}
             `;
-            
+
+            if (typeof slotIdx === 'number') {
+                if (!preserveFocus) analystFocus = 'meta';
+                analystContext = { player, slotIdx, slot: { pos: player.pos, label: slotLabel } };
+                renderAnalystPanel();
+            }
+
             modal.classList.remove('hidden');
             modal.classList.add('flex');
         };
