@@ -305,7 +305,10 @@
                     <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-5">
                         <div class="flex items-center justify-between border-b border-fc-border pb-4">
                             <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
-                            <span id="squad-overall-badge" class="px-3 py-1 rounded-lg bg-fc-accent/10 border border-fc-accent/30 text-fc-accent font-black text-sm">OVR --</span>
+                            <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                                <span id="squad-meta-badge" class="hidden px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 font-black text-sm">MR --</span>
+                                <span id="squad-overall-badge" class="px-3 py-1 rounded-lg bg-fc-accent/10 border border-fc-accent/30 text-fc-accent font-black text-sm">OVR --</span>
+                            </div>
                         </div>
 
                         <div class="space-y-3">
@@ -903,8 +906,21 @@
             window.runSquadOptimizer();
         };
 
+        // Returns the best available "meta quality" signal for a player:
+        // EasySBC's own metaRating when we have it (position/playstyle-aware,
+        // not just raw OVR), otherwise falls back to raw rating for players
+        // that came from manual JSON import without meta data.
+        function getMetaValue(player) {
+            return (typeof player.meta === 'number' && !isNaN(player.meta)) ? player.meta : player.rating;
+        }
+
         function calculatePlayerScore(player, targetPos) {
-            let base = player.rating * 10;
+            const hasMeta = typeof player.meta === 'number' && !isNaN(player.meta);
+            // Scale so meta rating (which runs higher than OVR, often 80-95+)
+            // and raw rating land in a comparable range for the position-fit
+            // bonuses/penalties below.
+            let base = hasMeta ? player.meta * 10 : player.rating * 10;
+
             if (player.pos === targetPos) {
                 base += 50;
             } else if (player.alt && player.alt.includes(targetPos)) {
@@ -913,21 +929,26 @@
                 base -= 200;
             }
 
-            const att = player.att;
-            if (targetPos === 'GK') {
-                base += (att.ref || 80) * 0.5 + (att.div || 80) * 0.3;
-            } else if (targetPos === 'CB') {
-                base += (att.def || 75) * 0.6 + (att.pac || 75) * 0.3 + (att.phy || 75) * 0.3;
-            } else if (targetPos === 'LB' || targetPos === 'RB' || targetPos === 'LWB' || targetPos === 'RWB') {
-                base += (att.pac || 75) * 0.5 + (att.def || 70) * 0.3 + (att.pas || 70) * 0.2;
-            } else if (targetPos === 'CDM' || targetPos === 'CM') {
-                base += (att.pas || 75) * 0.4 + (att.def || 70) * 0.3 + (att.dri || 70) * 0.3;
-            } else if (targetPos === 'CAM' || targetPos === 'LM' || targetPos === 'RM') {
-                base += (att.dri || 75) * 0.4 + (att.pas || 70) * 0.3 + (att.pac || 75) * 0.3;
-            } else if (targetPos === 'LW' || targetPos === 'RW') {
-                base += (att.pac || 80) * 0.5 + (att.dri || 75) * 0.3 + (att.sho || 75) * 0.2;
-            } else if (targetPos === 'ST' || targetPos === 'CF') {
-                base += (att.sho || 80) * 0.6 + (att.pac || 80) * 0.3 + (att.dri || 75) * 0.1;
+            // EasySBC's metaRating already accounts for position-specific
+            // attribute weighting (and playstyles), so only layer our own
+            // hand-tuned attribute bonus on top for players without it.
+            if (!hasMeta) {
+                const att = player.att;
+                if (targetPos === 'GK') {
+                    base += (att.ref || 80) * 0.5 + (att.div || 80) * 0.3;
+                } else if (targetPos === 'CB') {
+                    base += (att.def || 75) * 0.6 + (att.pac || 75) * 0.3 + (att.phy || 75) * 0.3;
+                } else if (targetPos === 'LB' || targetPos === 'RB' || targetPos === 'LWB' || targetPos === 'RWB') {
+                    base += (att.pac || 75) * 0.5 + (att.def || 70) * 0.3 + (att.pas || 70) * 0.2;
+                } else if (targetPos === 'CDM' || targetPos === 'CM') {
+                    base += (att.pas || 75) * 0.4 + (att.def || 70) * 0.3 + (att.dri || 70) * 0.3;
+                } else if (targetPos === 'CAM' || targetPos === 'LM' || targetPos === 'RM') {
+                    base += (att.dri || 75) * 0.4 + (att.pas || 70) * 0.3 + (att.pac || 75) * 0.3;
+                } else if (targetPos === 'LW' || targetPos === 'RW') {
+                    base += (att.pac || 80) * 0.5 + (att.dri || 75) * 0.3 + (att.sho || 75) * 0.2;
+                } else if (targetPos === 'ST' || targetPos === 'CF') {
+                    base += (att.sho || 80) * 0.6 + (att.pac || 80) * 0.3 + (att.dri || 75) * 0.1;
+                }
             }
             return base;
         }
@@ -1007,9 +1028,10 @@
                     selectedXI[slotIdx] = bestCandidate;
                     usedPlayerIds.add(bestCandidate.id);
                     currentSpent += bestCandidate.price;
+                    const metaTag = typeof bestCandidate.meta === 'number' ? ` · MR ${bestCandidate.meta.toFixed(1)}` : '';
                     const selectionLogText = currentLanguage === 'ar' ?
-                        `تم اختيار <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}) مقابل <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>.` :
-                        `Selected <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}) for <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>.`;
+                        `تم اختيار <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) مقابل <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>.` :
+                        `Selected <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) for <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>.`;
                     squadState.explanationLog.push(selectionLogText);
                 }
             });
@@ -1018,14 +1040,21 @@
             squadState.totalCost = currentSpent;
 
             let totalRating = 0;
+            let totalMeta = 0;
+            let metaCount = 0;
             let count = 0;
             Object.values(selectedXI).forEach(p => {
                 if (p) {
                     totalRating += p.rating;
                     count++;
+                    if (typeof p.meta === 'number' && !isNaN(p.meta)) {
+                        totalMeta += p.meta;
+                        metaCount++;
+                    }
                 }
             });
             squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
 
             renderFootballPitch();
             renderSquadSummary();
@@ -1083,11 +1112,20 @@
 
         function renderSquadSummary() {
             const badge = document.getElementById('squad-overall-badge');
+            const metaBadge = document.getElementById('squad-meta-badge');
             const sumBudget = document.getElementById('summary-budget');
             const sumCost = document.getElementById('summary-cost');
             const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'Coins';
 
             if (badge) badge.innerText = `OVR ${squadState.avgRating}`;
+            if (metaBadge) {
+                if (typeof squadState.avgMeta === 'number') {
+                    metaBadge.innerText = `MR ${squadState.avgMeta.toFixed(1)}`;
+                    metaBadge.classList.remove('hidden');
+                } else {
+                    metaBadge.classList.add('hidden');
+                }
+            }
             if (sumBudget) sumBudget.innerText = squadState.budget.toLocaleString() + ' ' + coinLabel;
             if (sumCost) sumCost.innerText = squadState.totalCost.toLocaleString() + ' ' + coinLabel;
             
@@ -1121,10 +1159,14 @@
                 const list = groups[groupName];
                 if (list.length === 0) return;
                 const avgRtg = Math.round(list.reduce((acc, curr) => acc + curr.rating, 0) / list.length);
-                
+                const metaVals = list.filter(p => typeof p.meta === 'number' && !isNaN(p.meta));
+                const avgMetaText = metaVals.length > 0
+                    ? ` · MR ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}`
+                    : '';
+
                 const row = document.createElement('div');
                 row.className = "flex justify-between items-center bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60";
-                const avgText = currentLanguage === 'ar' ? `معدل ${avgRtg} (${list.length} لاعبين)` : `Avg ${avgRtg} (${list.length} players)`;
+                const avgText = (currentLanguage === 'ar' ? `معدل ${avgRtg} (${list.length} لاعبين)` : `Avg ${avgRtg} (${list.length} players)`) + avgMetaText;
                 row.innerHTML = `
                     <span class="text-gray-300 font-semibold">${groupName}</span>
                     <span class="font-bold text-fc-accent">${avgText}</span>
@@ -1137,7 +1179,7 @@
             const container = document.getElementById('next-upgrade-content');
             if (!container) return;
             let bestUpgradeCandidate = null;
-            let maxRatingImprovement = 0;
+            let maxMetaImprovement = 0;
             let minAdditionalCost = 999999;
 
             const remainingBudget = squadState.budget - squadState.totalCost;
@@ -1147,14 +1189,15 @@
                 const currentPlayer = squadState.selectedXI[idx];
                 if (!currentPlayer) return;
 
-                const alternatives = fc27Database.filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && p.rating > currentPlayer.rating);
-                
+                const currentMeta = getMetaValue(currentPlayer);
+                const alternatives = fc27Database.filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && getMetaValue(p) > currentMeta);
+
                 alternatives.forEach(alt => {
                     const costDiff = alt.price - currentPlayer.price;
                     if (costDiff > 0 && costDiff <= (remainingBudget + 50000)) {
-                        const rtgDiff = alt.rating - currentPlayer.rating;
-                        if (rtgDiff >= maxRatingImprovement) {
-                            maxRatingImprovement = rtgDiff;
+                        const metaDiff = getMetaValue(alt) - currentMeta;
+                        if (metaDiff >= maxMetaImprovement) {
+                            maxMetaImprovement = metaDiff;
                             if (costDiff < minAdditionalCost) {
                                 minAdditionalCost = costDiff;
                                 bestUpgradeCandidate = { current: currentPlayer, upgrade: alt, costDiff, slot: slot.label };
@@ -1167,11 +1210,15 @@
             const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'coins';
 
             if (bestUpgradeCandidate) {
+                const upgradeHasMeta = typeof bestUpgradeCandidate.upgrade.meta === 'number';
+                const currentHasMeta = typeof bestUpgradeCandidate.current.meta === 'number';
+                const upgradeMetaTag = upgradeHasMeta ? ` · MR ${bestUpgradeCandidate.upgrade.meta.toFixed(1)}` : '';
+                const currentMetaTag = currentHasMeta ? ` · MR ${bestUpgradeCandidate.current.meta.toFixed(1)}` : '';
                 container.innerHTML = `
                     <div class="space-y-1.5">
-                        <div class="font-bold text-white">${bestUpgradeCandidate.slot}: ${currentLanguage === 'ar' ? 'الترقية إلى' : 'Upgrade to'} ${bestUpgradeCandidate.upgrade.name} (${bestUpgradeCandidate.upgrade.rating} OVR)</div>
+                        <div class="font-bold text-white">${bestUpgradeCandidate.slot}: ${currentLanguage === 'ar' ? 'الترقية إلى' : 'Upgrade to'} ${bestUpgradeCandidate.upgrade.name} (${bestUpgradeCandidate.upgrade.rating} OVR${upgradeMetaTag})</div>
                         <div class="flex justify-between text-gray-400">
-                            <span>${currentLanguage === 'ar' ? 'الحالي' : 'Current'}: ${bestUpgradeCandidate.current.name} (${bestUpgradeCandidate.current.rating})</span>
+                            <span>${currentLanguage === 'ar' ? 'الحالي' : 'Current'}: ${bestUpgradeCandidate.current.name} (${bestUpgradeCandidate.current.rating}${currentMetaTag})</span>
                             <span class="text-fc-gold font-bold">+${bestUpgradeCandidate.costDiff.toLocaleString()} ${coinLabel}</span>
                         </div>
                     </div>
@@ -1190,9 +1237,17 @@
             const priceLbl = currentLanguage === 'ar' ? 'السعر' : 'Price';
             const coinLbl = currentLanguage === 'ar' ? 'كوينز' : 'coins';
             const whyText = currentLanguage === 'ar' ? 'لماذا تم اختيار هذا اللاعب:' : 'Why this player was selected:';
-            const whyDesc = currentLanguage === 'ar' ? 
-                `أعلى مرشح متاح وبأسعار معقولة لمركز <span class="text-white font-semibold">${slotLabel}</span> مع الحفاظ على التشكيلة الأساسية ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.` :
-                `Highest-rated affordable candidate available for the <span class="text-white font-semibold">${slotLabel}</span> position while keeping the total starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.`;
+            const hasMeta = typeof player.meta === 'number';
+            const whyDesc = currentLanguage === 'ar'
+                ? (hasMeta
+                    ? `أفضل تقييم ميتا (Meta Rating) متاح لمركز <span class="text-white font-semibold">${slotLabel}</span> ضمن الميزانية — وهو تقييم EasySBC الفعلي لجودة الأداء في هذا المركز، وليس مجرد التقييم العام (OVR)، مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.`
+                    : `أعلى مرشح متاح وبأسعار معقولة لمركز <span class="text-white font-semibold">${slotLabel}</span> (لا تتوفر بيانات ميتا لهذا اللاعب، فتم الاعتماد على التقييم العام) مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.`)
+                : (hasMeta
+                    ? `Best affordable Meta Rating for the <span class="text-white font-semibold">${slotLabel}</span> position — EasySBC's own role-specific performance score, not just raw OVR — while keeping the starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.`
+                    : `Highest-rated affordable candidate available for the <span class="text-white font-semibold">${slotLabel}</span> position (no meta rating data available for this player, so overall rating was used) while keeping the total starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.`);
+            const metaLine = hasMeta
+                ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
+                : '';
 
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
@@ -1200,7 +1255,7 @@
                     <div>
                         <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30">${player.pos}</span>
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
-                        <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span> | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
+                        <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
                     </div>
                 </div>
 
@@ -1432,10 +1487,17 @@
                 : { pac: a[0], sho: a[1], pas: a[2], dri: a[3], def: a[4], phy: a[5] };
             const allPositions = Array.isArray(p.positions) ? p.positions : [pos];
             const alt = allPositions.filter(x => x !== pos);
+            // EasySBC's own metaRating is a real, community-driven "best card
+            // for this role" score (accounts for playstyles/roles, not just
+            // raw stats) — this is the actual meta signal we want to
+            // optimize squads around, not just raw OVR.
+            const meta = typeof p.metaRating === 'number' ? p.metaRating
+                : (typeof p.metaRatingZeroChem === 'number' ? p.metaRatingZeroChem : null);
             return {
                 id: 'easysbc_' + (p.resourceId ?? p.assetId ?? Math.random().toString(36).slice(2)),
                 name: p.name || p.cardName || 'Unknown',
                 rating: p.rating || 75,
+                meta,
                 pos, alt,
                 price: typeof p.price === 'number' && p.price > 0 ? p.price : 0,
                 att,
