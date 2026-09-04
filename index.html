@@ -168,13 +168,13 @@
 
                         <div>
                             <label data-i18n="enterCustomPts" class="block text-sm font-semibold text-gray-300 mb-2">Or Enter Custom FC Points</label>
-                            <div class="relative">
+                            <div class="w-full flex items-center bg-fc-dark border border-fc-border rounded-xl focus-within:border-fc-accent transition-all overflow-hidden">
                                 <input type="number" id="custom-fc-points" min="100" step="50" placeholder="e.g. 4500" 
-                                    class="w-full bg-fc-dark border border-fc-border rounded-xl px-4 py-3.5 text-lg font-bold text-white focus:outline-none focus:border-fc-accent transition-all rtl:text-left"
+                                    class="flex-1 min-w-0 bg-transparent px-4 py-3.5 text-lg font-bold text-white focus:outline-none text-left"
                                     oninput="handleCustomPointsInput(this.value)">
-                                <div class="absolute right-4 rtl:right-auto rtl:left-4 top-3.5 text-xs font-bold text-gray-400 bg-fc-card px-2.5 py-1.5 rounded-lg border border-fc-border">
+                                <span class="shrink-0 mx-3 text-xs font-bold text-gray-400 bg-fc-card px-2.5 py-1.5 rounded-lg border border-fc-border">
                                     FC PTS
-                                </div>
+                                </span>
                             </div>
                         </div>
 
@@ -247,11 +247,11 @@
                 <div class="flex flex-wrap items-center gap-4">
                     <div>
                         <label data-i18n="squadBudget" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Squad Budget (Coins)</label>
-                        <div class="relative">
+                        <div class="flex items-center gap-2">
                             <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
-                                class="bg-fc-dark border border-fc-border rounded-xl px-4 py-2.5 text-lg font-black text-fc-gold w-48 focus:outline-none focus:border-fc-accent rtl:text-left"
+                                class="bg-fc-dark border border-fc-border rounded-xl px-4 py-2.5 text-lg font-black text-fc-gold w-40 sm:w-48 min-w-0 focus:outline-none focus:border-fc-accent text-left"
                                 onchange="updateBudgetFromInput(this.value)">
-                            <button onclick="syncBudgetFromCalculator()" class="absolute right-2 rtl:right-auto rtl:left-2 top-2 text-xs bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2 py-1.5 rounded-lg text-fc-accent font-bold" title="Use Expected Calculator Coins" data-i18n="syncCalc">
+                            <button onclick="syncBudgetFromCalculator()" class="shrink-0 text-xs bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2.5 py-2 rounded-lg text-fc-accent font-bold whitespace-nowrap" title="Use Expected Calculator Coins" data-i18n="syncCalc">
                                 Sync Calc
                             </button>
                         </div>
@@ -457,7 +457,7 @@
 
     <!-- Player Details Modal -->
     <div id="player-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
-        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
             <button onclick="closePlayerModal()" class="absolute top-5 right-5 rtl:right-auto rtl:left-5 text-gray-400 hover:text-white text-lg">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -709,6 +709,7 @@
             budget: 200000,
             formation: '4-3-3',
             selectedXI: {},
+            alternatives: {},
             totalCost: 0,
             avgRating: 0,
             explanationLog: []
@@ -1056,9 +1057,78 @@
             squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
             squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
 
+            computeSlotAlternatives();
+
             renderFootballPitch();
             renderSquadSummary();
             calculateNextBestUpgrade();
+        };
+
+        // Finds up to 2 best-fit bench alternatives per slot — same scoring
+        // used for initial selection, excluding anyone already placed
+        // elsewhere in the XI (no duplicate players across slots) and the
+        // slot's own current player. Powers the "Alternatives" list in the
+        // player modal.
+        function computeSlotAlternatives() {
+            const slots = formationSlots[squadState.formation];
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+            const alternatives = {};
+            slots.forEach((slot, idx) => {
+                const currentPlayer = squadState.selectedXI[idx];
+                const eligible = fc27Database.filter(p =>
+                    (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
+                    !usedIds.has(p.id) &&
+                    (!currentPlayer || p.id !== currentPlayer.id)
+                );
+                eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                alternatives[idx] = eligible.slice(0, 2);
+            });
+            squadState.alternatives = alternatives;
+        }
+
+        // Swap a bench alternative into a slot (from the player modal). The
+        // player being replaced simply returns to the pool — clicking any of
+        // its own alternatives afterward (which will now include the player
+        // just swapped out) puts it right back, so swaps are reversible.
+        window.swapAlternativeIntoSlot = function(slotIdx, altPlayerId) {
+            const slots = formationSlots[squadState.formation];
+            const slot = slots[slotIdx];
+            const altPlayer = fc27Database.find(p => p.id === altPlayerId);
+            if (!slot || !altPlayer) return;
+
+            const outgoing = squadState.selectedXI[slotIdx];
+            squadState.selectedXI[slotIdx] = altPlayer;
+
+            let currentSpent = 0, totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) {
+                    currentSpent += p.price;
+                    totalRating += p.rating;
+                    count++;
+                    if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; }
+                }
+            });
+            squadState.totalCost = currentSpent;
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+
+            if (outgoing) {
+                const swapLogText = currentLanguage === 'ar' ?
+                    `تبديل يدوي في مركز <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${outgoing.name}</span> ← <span class="text-white font-bold">${altPlayer.name}</span>.` :
+                    `Manual swap at <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${outgoing.name}</span> → <span class="text-white font-bold">${altPlayer.name}</span>.`;
+                squadState.explanationLog.push(swapLogText);
+            }
+
+            computeSlotAlternatives();
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+
+            // Reopen the modal on the newly swapped-in player so the user
+            // immediately sees its own "why" + fresh alternatives (which
+            // will include the just-benched player, making the swap
+            // reversible with one more click).
+            window.openPlayerModal(altPlayer, slot.label, slotIdx);
         };
 
         function renderFootballPitch() {
@@ -1095,7 +1165,7 @@
                             <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
                             <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
                         `;
-                        card.onclick = () => window.openPlayerModal(player, item.slot.label);
+                        card.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
                     } else {
                         const emptyTxt = currentLanguage === 'ar' ? 'مكان فارغ' : 'Empty Slot';
                         card.innerHTML = `
@@ -1229,7 +1299,7 @@
             }
         }
 
-        window.openPlayerModal = function(player, slotLabel) {
+        window.openPlayerModal = function(player, slotLabel, slotIdx) {
             const modal = document.getElementById('player-modal');
             const content = document.getElementById('modal-player-content');
             if (!modal || !content) return;
@@ -1238,16 +1308,71 @@
             const coinLbl = currentLanguage === 'ar' ? 'كوينز' : 'coins';
             const whyText = currentLanguage === 'ar' ? 'لماذا تم اختيار هذا اللاعب:' : 'Why this player was selected:';
             const hasMeta = typeof player.meta === 'number';
+
+            const psPlus = Array.isArray(player.playstylesPlus) ? player.playstylesPlus : [];
+            const psBase = Array.isArray(player.playstyles) ? player.playstyles : [];
+            const hasPlaystyles = psPlus.length > 0 || psBase.length > 0;
+
+            // "Why" text: lead with meta vs raw-rating reasoning as before,
+            // then fold in a playstyle-specific clause only when the card
+            // actually has playstyle data — most base gold cards don't, and
+            // we say so rather than pretending otherwise.
+            const styleClauseAr = hasPlaystyles
+                ? ` كما يمتلك هذا اللاعب ${psPlus.length > 0 ? `<span class="text-purple-300 font-semibold">${psPlus.length} PlayStyle+</span>` : ''}${psPlus.length > 0 && psBase.length > 0 ? ' و' : ''}${psBase.length > 0 ? `<span class="text-fc-accent font-semibold">${psBase.length} PlayStyle</span>` : ''} تعزز أداءه الفعلي في هذا المركز تحديداً.`
+                : ` لا تتوفر بيانات أنماط لعب (PlayStyles) لهذه البطاقة، فاعتمد الاختيار على تقييم الميتا/الخصائص فقط.`;
+            const styleClauseEn = hasPlaystyles
+                ? ` This card also carries ${psPlus.length > 0 ? `<span class="text-purple-300 font-semibold">${psPlus.length} PlayStyle+</span>` : ''}${psPlus.length > 0 && psBase.length > 0 ? ' and ' : ''}${psBase.length > 0 ? `<span class="text-fc-accent font-semibold">${psBase.length} PlayStyle</span>` : ''} trait${(psPlus.length + psBase.length) > 1 ? 's' : ''} that specifically boost real in-game performance for this role.`
+                : ` No PlayStyle data is available for this card, so the pick was based on meta rating/attributes only.`;
+
             const whyDesc = currentLanguage === 'ar'
                 ? (hasMeta
-                    ? `أفضل تقييم ميتا (Meta Rating) متاح لمركز <span class="text-white font-semibold">${slotLabel}</span> ضمن الميزانية — وهو تقييم EasySBC الفعلي لجودة الأداء في هذا المركز، وليس مجرد التقييم العام (OVR)، مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.`
-                    : `أعلى مرشح متاح وبأسعار معقولة لمركز <span class="text-white font-semibold">${slotLabel}</span> (لا تتوفر بيانات ميتا لهذا اللاعب، فتم الاعتماد على التقييم العام) مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.`)
+                    ? `أفضل تقييم ميتا (Meta Rating) متاح لمركز <span class="text-white font-semibold">${slotLabel}</span> ضمن الميزانية — وهو تقييم EasySBC الفعلي لجودة الأداء في هذا المركز، وليس مجرد التقييم العام (OVR)، مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.${styleClauseAr}`
+                    : `أعلى مرشح متاح وبأسعار معقولة لمركز <span class="text-white font-semibold">${slotLabel}</span> (لا تتوفر بيانات ميتا لهذا اللاعب، فتم الاعتماد على التقييم العام) مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.${styleClauseAr}`)
                 : (hasMeta
-                    ? `Best affordable Meta Rating for the <span class="text-white font-semibold">${slotLabel}</span> position — EasySBC's own role-specific performance score, not just raw OVR — while keeping the starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.`
-                    : `Highest-rated affordable candidate available for the <span class="text-white font-semibold">${slotLabel}</span> position (no meta rating data available for this player, so overall rating was used) while keeping the total starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.`);
+                    ? `Best affordable Meta Rating for the <span class="text-white font-semibold">${slotLabel}</span> position — EasySBC's own role-specific performance score, not just raw OVR — while keeping the starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.${styleClauseEn}`
+                    : `Highest-rated affordable candidate available for the <span class="text-white font-semibold">${slotLabel}</span> position (no meta rating data available for this player, so overall rating was used) while keeping the total starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.${styleClauseEn}`);
             const metaLine = hasMeta
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
+
+            const playstylesSection = hasPlaystyles ? `
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles</span>
+                    <div class="flex flex-wrap gap-1.5">
+                        ${psPlus.map(s => `<span class="px-2 py-1 rounded-lg text-[11px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">⚡ ${s}</span>`).join('')}
+                        ${psBase.map(s => `<span class="px-2 py-1 rounded-lg text-[11px] font-bold bg-fc-accent/10 text-fc-accent border border-fc-accent/30">${s}</span>`).join('')}
+                    </div>
+                </div>
+            ` : '';
+
+            const alternatives = (typeof slotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[slotIdx] || []) : [];
+            const altsTitle = currentLanguage === 'ar' ? 'بدائل لهذا المركز' : 'Alternatives for this slot';
+            const altsHint = currentLanguage === 'ar' ? 'اضغط لاستبدال اللاعب الحالي' : 'Click to swap into the starting XI';
+            const swapLbl = currentLanguage === 'ar' ? 'استبدال' : 'Swap In';
+            const alternativesSection = (typeof slotIdx === 'number') ? `
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${altsTitle}</span>
+                    ${alternatives.length === 0 ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد بدائل متاحة في قاعدة البيانات الحالية.' : 'No other eligible candidates in the current database.'}</p>` : `
+                    <div class="space-y-2">
+                        ${alternatives.map(alt => {
+                            const altMetaTag = typeof alt.meta === 'number' ? ` · MR ${alt.meta.toFixed(1)}` : '';
+                            return `
+                            <button onclick="window.swapAlternativeIntoSlot(${slotIdx}, '${alt.id}')" title="${altsHint}"
+                                class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent rounded-xl p-2.5 text-left rtl:text-right transition-all">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <img src="${alt.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-bold text-white truncate">${alt.name}</div>
+                                        <div class="text-[10px] text-gray-400">${alt.rating} OVR${altMetaTag} · ${alt.price.toLocaleString()}${currentLanguage === 'ar' ? 'ك' : 'c'}</div>
+                                    </div>
+                                </div>
+                                <span class="shrink-0 text-[10px] font-bold text-fc-accent border border-fc-accent/40 rounded-lg px-2 py-1">${swapLbl}</span>
+                            </button>
+                        `; }).join('')}
+                    </div>
+                    `}
+                </div>
+            ` : '';
 
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
@@ -1271,10 +1396,14 @@
                     </div>
                 </div>
 
+                ${playstylesSection}
+
                 <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
                     <span class="text-xs font-bold text-fc-accent">${whyText}</span>
                     <p class="text-xs text-gray-300">${whyDesc}</p>
                 </div>
+
+                ${alternativesSection}
             `;
             
             modal.classList.remove('hidden');
@@ -1477,6 +1606,15 @@
             if (panel) panel.classList.toggle('hidden');
         };
 
+        // Turns one raw playstyle entry (shape varies: plain string, {name},
+        // or a bare numeric id if EasySBC hasn't attached a label yet) into a
+        // readable string for display.
+        function formatPlaystyleEntry(item) {
+            if (typeof item === 'string') return item;
+            if (item && typeof item === 'object') return item.name || item.label || item.playstyleName || `PlayStyle #${item.id ?? '?'}`;
+            return `PlayStyle #${item}`;
+        }
+
         // Map one raw EasySBC player record into our fc27Database schema.
         function mapEasySbcPlayer(p) {
             const pos = (p.preferredPosition || (p.positions && p.positions[0]) || 'CM').toUpperCase();
@@ -1493,6 +1631,13 @@
             // optimize squads around, not just raw OVR.
             const meta = typeof p.metaRating === 'number' ? p.metaRating
                 : (typeof p.metaRatingZeroChem === 'number' ? p.metaRatingZeroChem : null);
+            // PlayStyles are only populated by EasySBC for some cards (mostly
+            // specials/evolutions) — plain gold cards usually come back with
+            // empty arrays. We keep both tiers since PlayStyles+ (the
+            // upgraded, more impactful version) are a distinct signal from
+            // base PlayStyles.
+            const playstylesPlus = (Array.isArray(p.playStylesPlus) ? p.playStylesPlus : []).map(formatPlaystyleEntry);
+            const playstyles = (Array.isArray(p.playStyles) ? p.playStyles : []).map(formatPlaystyleEntry);
             return {
                 id: 'easysbc_' + (p.resourceId ?? p.assetId ?? Math.random().toString(36).slice(2)),
                 name: p.name || p.cardName || 'Unknown',
@@ -1501,6 +1646,11 @@
                 pos, alt,
                 price: typeof p.price === 'number' && p.price > 0 ? p.price : 0,
                 att,
+                skillMoves: typeof p.skillMoves === 'number' ? p.skillMoves : null,
+                weakFoot: typeof p.weakFoot === 'number' ? p.weakFoot : null,
+                foot: p.preferredFoot || null,
+                playstyles,
+                playstylesPlus,
                 photo: p.playerUrl || `https://placehold.co/120x120/1b4d3e/ffffff?text=${encodeURIComponent(p.name || 'Player')}`
             };
         }
