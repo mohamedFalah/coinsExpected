@@ -313,9 +313,9 @@
                 <!-- Right 1 Col: Squad Summary & Next Best Upgrade -->
                 <div class="space-y-6">
                     <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-5">
-                        <div class="flex items-center justify-between border-b border-fc-border pb-4">
-                            <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
-                            <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                        <div class="flex items-center justify-between flex-wrap gap-x-3 gap-y-2 border-b border-fc-border pb-4">
+                            <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white shrink-0">Squad Summary</h3>
+                            <div class="flex items-center flex-wrap gap-2 rtl:space-x-reverse">
                                 <span id="squad-chem-badge" class="px-3 py-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 font-black text-sm">CHEM --/33</span>
                                 <span id="squad-meta-badge" class="hidden px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 font-black text-sm">MR --</span>
                                 <span id="squad-overall-badge" class="px-3 py-1 rounded-lg bg-fc-accent/10 border border-fc-accent/30 text-fc-accent font-black text-sm">OVR --</span>
@@ -1382,6 +1382,29 @@
         // price still fits within squadState.budget. High-rated but
         // unaffordable players are excluded entirely rather than shown and
         // pushing the squad over budget if clicked.
+        // How much a hypothetical candidate at this slot would boost or hurt
+        // squad chemistry, expressed as a score multiplier (not an absolute
+        // bonus) so it scales sensibly whether the base score is a meta
+        // rating (~50-95) or one of the focus formulas (which can run much
+        // higher). +5% per chemistry point, up to +15% at full 3/3 —
+        // meaningful enough to break near-ties toward the better-linked
+        // player, without letting a mediocre but well-linked player leapfrog
+        // a genuinely much better one.
+        // How many chemistry points a hypothetical candidate would have if
+        // placed in this slot right now (temporarily swaps, reads, reverts).
+        function getResultingChemPoints(slotIdx, candidate) {
+            const original = squadState.selectedXI[slotIdx];
+            squadState.selectedXI[slotIdx] = candidate;
+            const chem = calculateSquadChemistry();
+            const points = (chem.perSlot[slotIdx] && chem.perSlot[slotIdx].points) || 0;
+            squadState.selectedXI[slotIdx] = original;
+            return points;
+        }
+
+        function chemistryMultiplier(slotIdx, candidate) {
+            return 1 + getResultingChemPoints(slotIdx, candidate) * 0.05;
+        }
+
         function computeSlotAlternatives() {
             const slots = formationSlots[squadState.formation];
             const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
@@ -1400,8 +1423,12 @@
                     (!currentPlayer || p.id !== currentPlayer.id) &&
                     p.price <= priceCeiling
                 );
-                eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
-                alternatives[idx] = eligible.slice(0, 2);
+                // Precompute each candidate's chemistry-adjusted score once
+                // before sorting — calling chemistryMultiplier from inside a
+                // comparator would recompute it many times over per candidate.
+                const scored = eligible.map(p => ({ player: p, score: calculatePlayerScore(p, slot.pos) * chemistryMultiplier(idx, p) }));
+                scored.sort((a, b) => b.score - a.score);
+                alternatives[idx] = scored.slice(0, 2).map(s => s.player);
             });
             squadState.alternatives = alternatives;
         }
@@ -1690,7 +1717,11 @@
 
         // Best-fit candidate (+2 runner-ups) for a given focus, scoped to the
         // same budget-affordability rule as the regular alternatives list —
-        // an "expert pick" that isn't affordable isn't a useful pick.
+        // an "expert pick" that isn't affordable isn't a useful pick. Also
+        // chemistry-weighted (see chemistryMultiplier) so the "meta" pick
+        // isn't just the best raw stats/meta rating in isolation — it favors
+        // whoever would actually link well with the rest of the XI too,
+        // same principle across all four focuses (Meta/Pace/Agility/Physical).
         function computeFocusPicks(slotIdx, focusKey) {
             const slots = formationSlots[squadState.formation];
             const slot = slots[slotIdx];
@@ -1705,8 +1736,9 @@
                 p.price <= priceCeiling
             );
             if (currentPlayer) pool.push(currentPlayer);
-            pool.sort((a, b) => getFocusScore(b, focusKey, slot.pos) - getFocusScore(a, focusKey, slot.pos));
-            return pool.slice(0, 3);
+            const scored = pool.map(p => ({ player: p, score: getFocusScore(p, focusKey, slot.pos) * chemistryMultiplier(slotIdx, p) }));
+            scored.sort((a, b) => b.score - a.score);
+            return scored.slice(0, 3).map(s => s.player);
         }
 
         // Honest, stats-based approximation of in-game "feel" — explicitly
@@ -1856,6 +1888,12 @@
             const psBaseTop = Array.isArray(topPick.playstyles) ? topPick.playstyles : [];
             const hasPsTop = psPlusTop.length > 0 || psBaseTop.length > 0;
             const topMeta = typeof topPick.meta === 'number' ? topPick.meta.toFixed(1) : null;
+            const topChemPoints = getResultingChemPoints(slotIdx, topPick);
+            const chemDotColor = topChemPoints >= 3 ? '#4ade80' : topChemPoints === 2 ? '#fbbf24' : topChemPoints === 1 ? '#f97316' : '#6b7280';
+            const chemDots = [0, 1, 2].map(i => `<span class="inline-block w-2 h-2 rotate-45 border" style="${i < topChemPoints ? `background-color:${chemDotColor};border-color:${chemDotColor};` : 'border-color:#6b7280;'}"></span>`).join(' ');
+            const chemNote = isAr
+                ? `يشمل تقييم الميتا تأثير الكيمياء المتوقعة (${topChemPoints}/3) لهذا المركز — ليس فقط تقييم اللاعب المنفرد.`
+                : `This pick already accounts for expected chemistry (${topChemPoints}/3) at this slot — not just the player's standalone rating.`;
 
             const pickHeaderText = analystFocus === 'meta'
                 ? (isAr ? 'الاختيار المُعتمد على الميتا' : 'The Meta Selection')
@@ -1893,11 +1931,16 @@
                     <div class="bg-fc-card/60 rounded-lg p-3 space-y-2 border border-fc-border/60">
                         <div class="flex items-center gap-2">
                             <img src="${topPick.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
-                            <div class="min-w-0">
+                            <div class="min-w-0 flex-1">
                                 <span class="text-[10px] font-bold text-fc-accent uppercase block">${pickHeaderText}</span>
                                 <div class="text-xs font-bold text-white truncate">${topPick.name} <span class="text-gray-400 font-normal">(${topPick.rating} OVR${topMeta ? ` · MR ${topMeta}` : ''} · ${topPick.price.toLocaleString()}${isAr ? 'ك' : 'c'})</span></div>
                             </div>
+                            <div class="shrink-0 flex flex-col items-center gap-0.5" title="${isAr ? 'الكيمياء المتوقعة' : 'Expected chemistry'}">
+                                <div class="flex gap-0.5">${chemDots}</div>
+                                <span class="text-[9px] font-bold text-gray-400">${topChemPoints}/3</span>
+                            </div>
                         </div>
+                        <p class="text-[10px] text-gray-500 italic">${chemNote}</p>
 
                         ${movementBlock}
 
@@ -1976,6 +2019,9 @@
                     <div class="space-y-2">
                         ${alternatives.map(alt => {
                             const altMetaTag = typeof alt.meta === 'number' ? ` · MR ${alt.meta.toFixed(1)}` : '';
+                            const altChem = typeof slotIdx === 'number' ? getResultingChemPoints(slotIdx, alt) : null;
+                            const altChemColor = altChem >= 3 ? '#4ade80' : altChem === 2 ? '#fbbf24' : altChem === 1 ? '#f97316' : '#6b7280';
+                            const altChemDots = altChem === null ? '' : `<div class="flex gap-0.5 shrink-0" title="${currentLanguage === 'ar' ? 'الكيمياء المتوقعة' : 'Expected chemistry'}: ${altChem}/3">${[0,1,2].map(i => `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${i < altChem ? `background-color:${altChemColor};border-color:${altChemColor};` : 'border-color:#6b7280;'}"></span>`).join(' ')}</div>`;
                             return `
                             <button onclick="window.swapAlternativeIntoSlot(${slotIdx}, '${alt.id}')" title="${altsHint}"
                                 class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent rounded-xl p-2.5 text-left rtl:text-right transition-all">
@@ -1986,7 +2032,10 @@
                                         <div class="text-[10px] text-gray-400">${alt.rating} OVR${altMetaTag} · ${alt.price.toLocaleString()}${currentLanguage === 'ar' ? 'ك' : 'c'}</div>
                                     </div>
                                 </div>
-                                <span class="shrink-0 text-[10px] font-bold text-fc-accent border border-fc-accent/40 rounded-lg px-2 py-1">${swapLbl}</span>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    ${altChemDots}
+                                    <span class="text-[10px] font-bold text-fc-accent border border-fc-accent/40 rounded-lg px-2 py-1">${swapLbl}</span>
+                                </div>
                             </button>
                         `; }).join('')}
                     </div>
