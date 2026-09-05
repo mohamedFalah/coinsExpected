@@ -270,6 +270,14 @@
                             <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
                         </select>
                     </div>
+
+                    <div>
+                        <label data-i18n="managerLabel" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Manager (optional, +1 chem match)</label>
+                        <select id="manager-select" onchange="setSquadManager(this.value)"
+                            class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[220px]">
+                            <option value="">— No Manager —</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="flex items-center space-x-3 rtl:space-x-reverse">
@@ -308,6 +316,7 @@
                         <div class="flex items-center justify-between border-b border-fc-border pb-4">
                             <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
                             <div class="flex items-center space-x-2 rtl:space-x-reverse">
+                                <span id="squad-chem-badge" class="px-3 py-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 font-black text-sm">CHEM --/33</span>
                                 <span id="squad-meta-badge" class="hidden px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 font-black text-sm">MR --</span>
                                 <span id="squad-overall-badge" class="px-3 py-1 rounded-lg bg-fc-accent/10 border border-fc-accent/30 text-fc-accent font-black text-sm">OVR --</span>
                             </div>
@@ -554,6 +563,7 @@
                 squadBudget: "Squad Budget (Coins)",
                 syncCalc: "Sync Calc",
                 formationLabel: "Formation",
+                managerLabel: "Manager (optional, +1 chem match)",
                 optimizeBtn: "OPTIMIZE BEST SQUAD",
                 squadSummary: "Squad Summary",
                 availableBudget: "Available Budget",
@@ -626,6 +636,7 @@
                 squadBudget: "ميزانية التشكيلة (كوينز)",
                 syncCalc: "مزامنة الحاسبة",
                 formationLabel: "التشكيلة",
+                managerLabel: "المدرب (اختياري، +1 كيمياء عند التطابق)",
                 optimizeBtn: "تحسين أفضل تشكيلة",
                 squadSummary: "ملخص التشكيلة",
                 availableBudget: "الميزانية المتاحة",
@@ -714,6 +725,10 @@
             alternatives: {},
             totalCost: 0,
             avgRating: 0,
+            // Manager gives +1 chemistry to any in-position starter sharing
+            // their exact Nation or League. null = no manager selected.
+            // { nationId, leagueId } — either can be null if only one is set.
+            manager: null,
             explanationLog: []
         };
 
@@ -982,6 +997,222 @@
             return base;
         }
 
+        // ===================================================================
+        // CHEMISTRY ENGINE
+        // ===================================================================
+        // Implements the exact thresholds given:
+        //   Club:   2->+1, 4->+2, 7->+3
+        //   Nation: 2->+1, 5->+2, 8->+3
+        //   League: 3->+1, 5->+2, 8->+3
+        // Per-player chemistry = min(3, club + nation + league increments),
+        // 0 for anyone not in a valid position (position lock — out-of-
+        // position players earn nothing AND don't count toward anyone
+        // else's thresholds either).
+        // Icons/Heroes auto-lock at 3 (when in position) and contribute
+        // increments per the spec instead of the normal club/nation/league
+        // count. NOTE: EasySBC's live feed has no Icon/Hero flag, so this
+        // only activates for manually-flagged/imported players — see the
+        // isIcon/isHero comment in mapEasySbcPlayer().
+        // Manager: +1 flat to any in-position starter sharing the manager's
+        // exact nationId or leagueId (capped at 3 same as everyone else).
+        function clubChemTier(count) { return count >= 7 ? 3 : count >= 4 ? 2 : count >= 2 ? 1 : 0; }
+        function nationChemTier(count) { return count >= 8 ? 3 : count >= 5 ? 2 : count >= 2 ? 1 : 0; }
+        function leagueChemTier(count) { return count >= 8 ? 3 : count >= 5 ? 2 : count >= 3 ? 1 : 0; }
+
+        // Returns { perSlot: {slotIdx: {points, inPosition, clubCount, nationCount, leagueCount}}, total }
+        function calculateSquadChemistry(hypotheticalXI) {
+            const slots = formationSlots[squadState.formation];
+            const xi = hypotheticalXI || squadState.selectedXI;
+
+            const entries = slots.map((slot, idx) => {
+                const p = xi[idx];
+                if (!p) return { idx, player: null, inPosition: false };
+                const inPosition = p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos));
+                return { idx, player: p, inPosition };
+            });
+            const active = entries.filter(e => e.player && e.inPosition);
+
+            // Leagues actually present (from normal players + heroes, who
+            // each have a real leagueId) — this is what Icons add +1 to.
+            const leaguesPresent = new Set();
+            active.forEach(e => {
+                if (!e.player.isIcon && e.player.leagueId != null) leaguesPresent.add(e.player.leagueId);
+            });
+
+            const clubCount = {}, nationCount = {}, leagueCount = {};
+            active.forEach(e => {
+                const p = e.player;
+                if (p.isIcon) {
+                    if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 2;
+                } else if (p.isHero) {
+                    if (p.leagueId != null) leagueCount[p.leagueId] = (leagueCount[p.leagueId] || 0) + 2;
+                    if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 1;
+                } else {
+                    if (p.clubId != null) clubCount[p.clubId] = (clubCount[p.clubId] || 0) + 1;
+                    if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 1;
+                    if (p.leagueId != null) leagueCount[p.leagueId] = (leagueCount[p.leagueId] || 0) + 1;
+                }
+            });
+            // Icons add +1 to every league already present in the XI.
+            active.forEach(e => {
+                if (e.player.isIcon) {
+                    leaguesPresent.forEach(lg => { leagueCount[lg] = (leagueCount[lg] || 0) + 1; });
+                }
+            });
+
+            const manager = squadState.manager;
+            const perSlot = {};
+            let total = 0;
+            entries.forEach(e => {
+                if (!e.player || !e.inPosition) {
+                    perSlot[e.idx] = { points: 0, inPosition: false };
+                    return;
+                }
+                const p = e.player;
+                let points;
+                let breakdown = null;
+                if (p.isIcon || p.isHero) {
+                    points = 3;
+                } else {
+                    const cc = p.clubId != null ? (clubCount[p.clubId] || 0) : 0;
+                    const nc = p.nationId != null ? (nationCount[p.nationId] || 0) : 0;
+                    const lc = p.leagueId != null ? (leagueCount[p.leagueId] || 0) : 0;
+                    const cPts = clubChemTier(cc), nPts = nationChemTier(nc), lPts = leagueChemTier(lc);
+                    breakdown = { clubCount: cc, nationCount: nc, leagueCount: lc, cPts, nPts, lPts };
+                    points = cPts + nPts + lPts;
+                    if (manager && ((manager.nationId != null && manager.nationId === p.nationId) || (manager.leagueId != null && manager.leagueId === p.leagueId))) {
+                        points += 1;
+                    }
+                    points = Math.min(3, points);
+                }
+                perSlot[e.idx] = { points, inPosition: true, breakdown, isIcon: p.isIcon, isHero: p.isHero };
+                total += points;
+            });
+            return { perSlot, total };
+        }
+
+        // Best-effort post-process pass: tries to raise any player under 2
+        // chemistry (0 or 1) up to at least 2 by swapping to an affordable,
+        // eligible teammate who shares more club/nation/league links with
+        // the rest of the squad — without ever lowering their own resulting
+        // chemistry. Meta rating is the tiebreaker among candidates that tie
+        // on the resulting chemistry gain, so quality isn't sacrificed
+        // needlessly. Runs only during the automatic build — manual swaps
+        // via the modal are left alone since those are deliberate choices.
+        function improveSquadChemistry() {
+            const slots = formationSlots[squadState.formation];
+            const MAX_PASSES = 4;
+            for (let pass = 0; pass < MAX_PASSES; pass++) {
+                const chem = calculateSquadChemistry();
+                let changed = false;
+
+                slots.forEach((slot, idx) => {
+                    const currentPlayer = squadState.selectedXI[idx];
+                    if (!currentPlayer) return;
+                    const currentChem = (chem.perSlot[idx] && chem.perSlot[idx].points) || 0;
+                    if (currentChem >= 2) return; // 2 is acceptable per spec — only fix 0/1
+
+                    const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+                    const restOfSquadCost = squadState.totalCost - currentPlayer.price;
+                    const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
+
+                    const candidates = fc27Database.filter(p =>
+                        (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
+                        !usedIds.has(p.id) &&
+                        p.price <= priceCeiling
+                    );
+
+                    let best = null, bestChem = currentChem, bestScore = -Infinity;
+                    const originalPlayer = squadState.selectedXI[idx];
+                    candidates.forEach(cand => {
+                        squadState.selectedXI[idx] = cand;
+                        const hypo = calculateSquadChemistry();
+                        const candChem = (hypo.perSlot[idx] && hypo.perSlot[idx].points) || 0;
+                        const candScore = calculatePlayerScore(cand, slot.pos);
+                        if (candChem > bestChem || (candChem === bestChem && candScore > bestScore)) {
+                            best = cand;
+                            bestChem = candChem;
+                            bestScore = candScore;
+                        }
+                    });
+                    squadState.selectedXI[idx] = originalPlayer;
+
+                    if (best && bestChem > currentChem) {
+                        squadState.selectedXI[idx] = best;
+                        squadState.totalCost = squadState.totalCost - originalPlayer.price + best.price;
+                        const logText = currentLanguage === 'ar'
+                            ? `تحسين الكيمياء في مركز <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${originalPlayer.name}</span> ← <span class="text-white font-bold">${best.name}</span> (كيمياء ${currentChem} ← ${bestChem}).`
+                            : `Chemistry fix at <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${originalPlayer.name}</span> → <span class="text-white font-bold">${best.name}</span> (chemistry ${currentChem} → ${bestChem}).`;
+                        squadState.explanationLog.push(logText);
+                        changed = true;
+                    }
+                });
+
+                if (!changed) break;
+            }
+        }
+
+        // Builds Nation/League manager dropdown options from whatever IDs
+        // are actually present in the loaded database. EasySBC has no name
+        // lookup for these, so options are labeled by example player names
+        // sharing that ID rather than a real nation/league name.
+        function buildManagerDropdownOptions() {
+            const nationExamples = {}, leagueExamples = {};
+            fc27Database.forEach(p => {
+                if (p.nationId != null) {
+                    if (!nationExamples[p.nationId]) nationExamples[p.nationId] = [];
+                    if (nationExamples[p.nationId].length < 2 && !nationExamples[p.nationId].includes(p.name)) nationExamples[p.nationId].push(p.name);
+                }
+                if (p.leagueId != null) {
+                    if (!leagueExamples[p.leagueId]) leagueExamples[p.leagueId] = [];
+                    if (leagueExamples[p.leagueId].length < 2 && !leagueExamples[p.leagueId].includes(p.name)) leagueExamples[p.leagueId].push(p.name);
+                }
+            });
+            const toOptions = (map) => Object.keys(map)
+                .map(id => ({ id: parseInt(id), label: map[id].join(', ') }))
+                .sort((a, b) => a.label.localeCompare(b.label));
+            return { nations: toOptions(nationExamples), leagues: toOptions(leagueExamples) };
+        }
+
+        // Populates the Manager <select> with real Nation/League groupings
+        // from the loaded database. EasySBC has no name lookup for these IDs,
+        // so each option is labeled by example player names sharing that ID
+        // (e.g. "Nation: Mbappé, Dembélé") rather than a real country name —
+        // honest given the data we actually have, if a little less pretty.
+        function populateManagerDropdown() {
+            const select = document.getElementById('manager-select');
+            if (!select) return;
+            const opts = buildManagerDropdownOptions();
+            const nationLabel = currentLanguage === 'ar' ? 'دولة' : 'Nation';
+            const leagueLabel = currentLanguage === 'ar' ? 'دوري' : 'League';
+            const noManagerLabel = currentLanguage === 'ar' ? '— بدون مدرب —' : '— No Manager —';
+            select.innerHTML = `
+                <option value="">${noManagerLabel}</option>
+                <optgroup label="${nationLabel}">
+                    ${opts.nations.map(n => `<option value="nation:${n.id}">${nationLabel}: ${n.label}</option>`).join('')}
+                </optgroup>
+                <optgroup label="${leagueLabel}">
+                    ${opts.leagues.map(l => `<option value="league:${l.id}">${leagueLabel}: ${l.label}</option>`).join('')}
+                </optgroup>
+            `;
+        }
+
+        window.setSquadManager = function(value) {
+            if (!value) {
+                squadState.manager = null;
+            } else {
+                const [type, idStr] = value.split(':');
+                const id = parseInt(idStr);
+                squadState.manager = type === 'nation' ? { nationId: id, leagueId: null } : { nationId: null, leagueId: id };
+            }
+            // Manager changes chemistry math immediately — recompute and
+            // re-render without a full re-optimize (budget/meta picks don't
+            // need to change, just the chemistry read-out).
+            squadState.chemistry = calculateSquadChemistry();
+            renderFootballPitch();
+            renderSquadSummary();
+        };
+
         window.runSquadOptimizer = function() {
             const slots = formationSlots[squadState.formation];
             const budget = squadState.budget;
@@ -1114,11 +1345,16 @@
             squadState.selectedXI = selectedXI;
             squadState.totalCost = currentSpent;
 
+            // Chemistry-aware improvement pass: try to raise anyone under 2
+            // chemistry (0/1) toward 2-3 via affordable, better-linked
+            // teammates, before computing final totals/alternatives.
+            improveSquadChemistry();
+
             let totalRating = 0;
             let totalMeta = 0;
             let metaCount = 0;
             let count = 0;
-            Object.values(selectedXI).forEach(p => {
+            Object.values(squadState.selectedXI).forEach(p => {
                 if (p) {
                     totalRating += p.rating;
                     count++;
@@ -1130,6 +1366,7 @@
             });
             squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
             squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
 
             computeSlotAlternatives();
 
@@ -1194,6 +1431,11 @@
             squadState.totalCost = currentSpent;
             squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
             squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            // Recomputed for display only — the chemistry IMPROVEMENT pass
+            // deliberately does not run on manual swaps (that's the user's
+            // own deliberate choice, same principle as budget tolerance
+            // being build-only elsewhere in this app).
+            squadState.chemistry = calculateSquadChemistry();
 
             if (outgoing) {
                 const swapLogText = currentLanguage === 'ar' ?
@@ -1241,11 +1483,24 @@
                     const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
 
                     if (player) {
+                        const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[item.idx];
+                        const chemPoints = chemInfo ? chemInfo.points : 0;
+                        const chemInPos = chemInfo ? chemInfo.inPosition : true;
+                        // 3 small diamonds: filled green up to chemPoints, gray
+                        // otherwise. Red outline if out of position (locked at 0
+                        // per the position-lock rule) so it reads differently
+                        // from "just low chemistry".
+                        const diamonds = [0, 1, 2].map(i => {
+                            const filled = i < chemPoints;
+                            const color = !chemInPos ? 'border-red-500/70' : (filled ? 'bg-green-400 border-green-400' : 'border-gray-500');
+                            return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
+                        }).join('');
                         card.innerHTML = `
                             <div class="absolute top-1.5 left-2 rtl:left-auto rtl:right-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
                             <div class="absolute top-1.5 right-2 rtl:right-auto rtl:left-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
                             <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                             <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
+                            <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
                             <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
                         `;
                         card.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
@@ -1266,6 +1521,7 @@
         function renderSquadSummary() {
             const badge = document.getElementById('squad-overall-badge');
             const metaBadge = document.getElementById('squad-meta-badge');
+            const chemBadge = document.getElementById('squad-chem-badge');
             const sumBudget = document.getElementById('summary-budget');
             const sumCost = document.getElementById('summary-cost');
             const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'Coins';
@@ -1278,6 +1534,17 @@
                 } else {
                     metaBadge.classList.add('hidden');
                 }
+            }
+            if (chemBadge && squadState.chemistry) {
+                const total = squadState.chemistry.total;
+                chemBadge.innerText = `CHEM ${total}/33`;
+                // Green if every starter hit the "2 is okay" bar, amber if
+                // some are still below 2, matching the spec's tolerance.
+                const perSlot = squadState.chemistry.perSlot;
+                const anyBelowTwo = Object.values(perSlot).some(s => s.inPosition && s.points < 2) || Object.values(perSlot).some(s => !s.inPosition);
+                chemBadge.className = anyBelowTwo
+                    ? 'px-3 py-1 rounded-lg bg-fc-gold/10 border border-fc-gold/30 text-fc-gold font-black text-sm'
+                    : 'px-3 py-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 font-black text-sm';
             }
             if (sumBudget) sumBudget.innerText = squadState.budget.toLocaleString() + ' ' + coinLabel;
             if (sumCost) sumCost.innerText = squadState.totalCost.toLocaleString() + ' ' + coinLabel;
@@ -1727,6 +1994,62 @@
                 </div>
             ` : '';
 
+            // Chemistry breakdown for this exact slot (uses the live
+            // squadState.chemistry computed after the last build/swap).
+            const chemInfo = (typeof slotIdx === 'number' && squadState.chemistry) ? squadState.chemistry.perSlot[slotIdx] : null;
+            const chemTitle = currentLanguage === 'ar' ? 'الكيمياء' : 'Chemistry';
+            let chemistrySection = '';
+            if (chemInfo) {
+                const dot = (filled, danger) => `<span class="inline-block w-2.5 h-2.5 rotate-45 border" style="${filled ? 'background-color:#4ade80;border-color:#4ade80;' : danger ? 'border-color:#ef4444;' : 'border-color:#6b7280;'}"></span>`;
+                const diamondsBig = [0, 1, 2].map(i => dot(chemInfo.inPosition && i < chemInfo.points, !chemInfo.inPosition)).join(' ');
+                if (!chemInfo.inPosition) {
+                    chemistrySection = `
+                        <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-3 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-red-400 uppercase tracking-wider">${chemTitle}: 0/3</span>
+                                <div class="flex gap-1">${diamondsBig}</div>
+                            </div>
+                            <p class="text-[11px] text-red-300">${currentLanguage === 'ar' ? 'اللاعب خارج مركزه المفضل — لا كيمياء ولا مساهمة في الأندية/الدول/الدوريات لبقية التشكيلة.' : "Player is outside their preferred position — locked at 0 chemistry, and doesn't contribute to club/nation/league counts for the rest of the squad either."}</p>
+                        </div>
+                    `;
+                } else if (chemInfo.isIcon || chemInfo.isHero) {
+                    chemistrySection = `
+                        <div class="bg-fc-dark/80 border border-fc-border rounded-xl p-3 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-green-400 uppercase tracking-wider">${chemTitle}: 3/3</span>
+                                <div class="flex gap-1">${diamondsBig}</div>
+                            </div>
+                            <p class="text-[11px] text-gray-400">${chemInfo.isIcon
+                                ? (currentLanguage === 'ar' ? 'بطاقة أيقونة — كيمياء ثابتة 3، وتساهم +2 لدولتها و+1 لكل دوري موجود في التشكيلة.' : 'Icon card — auto-locked at 3, and contributes +2 to their Nation and +1 to every league present in the XI.')
+                                : (currentLanguage === 'ar' ? 'بطاقة بطل — كيمياء ثابتة 3، وتساهم +2 لدوريها و+1 لدولتها.' : "Hero card — auto-locked at 3, and contributes +2 to their League and +1 to their Nation.")}</p>
+                        </div>
+                    `;
+                } else {
+                    const b = chemInfo.breakdown;
+                    const rowLbl = currentLanguage === 'ar'
+                        ? { club: 'النادي', nation: 'الدولة/المنطقة', league: 'الدوري' }
+                        : { club: 'Club', nation: 'Nation/Region', league: 'League' };
+                    const chemColor = chemInfo.points >= 3 ? 'text-green-400' : chemInfo.points === 2 ? 'text-fc-gold' : 'text-red-400';
+                    const managerNote = squadState.manager && ((squadState.manager.nationId != null && squadState.manager.nationId === player.nationId) || (squadState.manager.leagueId != null && squadState.manager.leagueId === player.leagueId))
+                        ? `<p class="text-[11px] text-fc-accent">${currentLanguage === 'ar' ? '+1 إضافية من المدرب (مطابقة الدولة/الدوري).' : '+1 extra from the Manager (matching Nation/League).'}</p>`
+                        : '';
+                    chemistrySection = `
+                        <div class="bg-fc-dark/80 border border-fc-border rounded-xl p-3 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold ${chemColor} uppercase tracking-wider">${chemTitle}: ${chemInfo.points}/3</span>
+                                <div class="flex gap-1">${diamondsBig}</div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
+                                <div class="bg-fc-card/60 rounded-lg p-1.5"><span class="text-gray-400 block">${rowLbl.club}</span><span class="font-bold text-white">${b.clubCount} → +${b.cPts}</span></div>
+                                <div class="bg-fc-card/60 rounded-lg p-1.5"><span class="text-gray-400 block">${rowLbl.nation}</span><span class="font-bold text-white">${b.nationCount} → +${b.nPts}</span></div>
+                                <div class="bg-fc-card/60 rounded-lg p-1.5"><span class="text-gray-400 block">${rowLbl.league}</span><span class="font-bold text-white">${b.leagueCount} → +${b.lPts}</span></div>
+                            </div>
+                            ${managerNote}
+                        </div>
+                    `;
+                }
+            }
+
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
                     <img src="${player.photo}" class="w-16 h-16 rounded-2xl border-2 border-fc-accent object-cover bg-fc-dark" alt="${player.name}">
@@ -1748,6 +2071,8 @@
                         `).join('')}
                     </div>
                 </div>
+
+                ${chemistrySection}
 
                 ${playstylesSection}
 
@@ -1901,6 +2226,7 @@
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     fc27Database = parsed;
                     window.updateDatabaseStats();
+                    populateManagerDropdown();
                     window.runSquadOptimizer();
                 }
             } catch(e) {
@@ -2012,6 +2338,22 @@
                 foot: p.preferredFoot || null,
                 playstyles,
                 playstylesPlus,
+                // Chemistry-relevant identifiers, straight from the live API.
+                // These are numeric IDs only — EasySBC's players endpoint has
+                // no name lookup for clubs/nations/leagues, so the UI labels
+                // them by example player names instead of real names (see
+                // buildChemistryDropdownOptions()).
+                nationId: typeof p.countryId === 'number' ? p.countryId : null,
+                leagueId: typeof p.leagueId === 'number' ? p.leagueId : null,
+                clubId: typeof p.clubId === 'number' ? p.clubId : null,
+                // Icon/Hero cards get special chemistry treatment in real FC,
+                // but EasySBC's feed has no flag identifying them (no
+                // isIcon/isHero/cardType field in the confirmed schema) —
+                // these default false so nothing is guessed. If EasySBC adds
+                // that data later, or a player is manually imported with
+                // these flags set, the chemistry engine already honors them.
+                isIcon: p.isIcon === true,
+                isHero: p.isHero === true,
                 photo: p.playerUrl || `https://placehold.co/120x120/1b4d3e/ffffff?text=${encodeURIComponent(p.name || 'Player')}`
             };
         }
@@ -2085,6 +2427,7 @@
                 const normalized = collected.map(mapEasySbcPlayer);
                 fc27Database = normalized;
                 window.updateDatabaseStats();
+                populateManagerDropdown();
                 window.runSquadOptimizer();
                 scrapeLog(`Database synced with ${normalized.length} players from EasySBC` + (failures > 0 ? ` (${failures} page(s) failed and were skipped).` : '.'), 'ok');
             } else {
