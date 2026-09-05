@@ -2103,37 +2103,30 @@
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
 
-            // Compact "Focus Profile" — the same three axes the Meta Analyst
-            // panel below uses (Pace / Agility / Physical), shown for THIS
-            // exact player, using their real attributes directly (pace,
-            // dribbling as the agility proxy, physical). This is what
-            // explains why the Analyst's Pace/Agility/Physical picks can
-            // differ from this player — their own profile leans one way or
-            // another, visible at a glance.
-            const focusProfileTitle = currentLanguage === 'ar' ? 'ملف التركيز (السرعة / الرشاقة / البدنية)' : 'Focus Profile (Pace / Agility / Physical)';
-            const focusProfileHtml = player.pos === 'GK' ? `
-                <p class="text-[11px] text-gray-500 italic mt-2">${currentLanguage === 'ar' ? 'ملف التركيز غير مطبق على حراس المرمى.' : 'Focus Profile not applicable to goalkeepers.'}</p>
-            ` : (() => {
-                const bars = [
-                    { label: currentLanguage === 'ar' ? 'السرعة' : 'Pace', value: player.att.pac, color: '#38bdf8' },
-                    { label: currentLanguage === 'ar' ? 'الرشاقة' : 'Agility', value: player.att.dri, color: '#c084fc' },
-                    { label: currentLanguage === 'ar' ? 'البدنية' : 'Physical', value: player.att.phy, color: '#fb923c' }
-                ];
-                return `
-                    <div class="mt-2 space-y-1.5">
-                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">${focusProfileTitle}</span>
-                        ${bars.map(b => `
-                            <div class="flex items-center gap-2">
-                                <span class="text-[10px] text-gray-400 w-14 shrink-0">${b.label}</span>
-                                <div class="flex-1 h-1.5 bg-fc-card rounded-full overflow-hidden">
-                                    <div class="h-full rounded-full" style="width:${Math.min(100, b.value)}%;background-color:${b.color};"></div>
-                                </div>
-                                <span class="text-[10px] font-bold text-white w-6 text-right rtl:text-left shrink-0">${b.value}</span>
-                            </div>
-                        `).join('')}
+            // Movement Feel + Optimal Role & Tactic — same two write-ups the
+            // Meta Analyst panel below shows for its picks, but here for
+            // THIS exact player, using the same estimateMovementFeel() /
+            // getRoleSuggestion() functions so the two sections never
+            // disagree with each other.
+            const movementInfo = estimateMovementFeel(player);
+            const roleInfoWhy = getRoleSuggestion(player);
+            const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (تقديري من الإحصائيات):' : 'Movement Feel (stat-based estimate):';
+            const roleLabel = currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:';
+            const focusProfileHtml = `
+                <div class="mt-2 pt-2 border-t border-fc-border/60 space-y-2">
+                    ${movementInfo ? `
+                        <div class="text-[11px] text-gray-300">
+                            <span class="font-bold text-gray-400">${movementLabel}</span>
+                            ${currentLanguage === 'ar' ? movementInfo.ar : movementInfo.en}
+                        </div>
+                    ` : `<p class="text-[11px] text-gray-500 italic">${currentLanguage === 'ar' ? 'لا ينطبق تقدير الإحساس الحركي على حراس المرمى.' : 'Movement-feel estimate not applicable to goalkeepers.'}</p>`}
+                    <div class="text-[11px] text-gray-300">
+                        <span class="font-bold text-fc-gold">${roleLabel}</span>
+                        <span class="font-bold text-white"> ${roleInfoWhy.role} / ${roleInfoWhy.focus}</span>
+                        <p class="text-gray-400 mt-0.5">${currentLanguage === 'ar' ? roleInfoWhy.ar : roleInfoWhy.en}</p>
                     </div>
-                `;
-            })();
+                </div>
+            `;
 
             const playstylesSection = hasPlaystyles ? `
                 <div class="space-y-2">
