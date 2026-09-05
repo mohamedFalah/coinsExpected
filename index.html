@@ -305,7 +305,11 @@
                     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-white/10 rounded-full pointer-events-none"></div>
 
                     <!-- Dynamic Pitch Row Container -->
-                    <div id="pitch-container" class="relative z-10 min-h-[620px] flex flex-col justify-between py-6 px-4">
+                    <!-- dir="ltr" forced: a football pitch is a spatial
+                         diagram, not text — RB/LB etc. must stay on their
+                         real side regardless of UI language, so this
+                         subtree opts out of RTL mirroring entirely. -->
+                    <div id="pitch-container" dir="ltr" class="relative z-10 min-h-[620px] flex flex-col justify-between py-6 px-4">
                         <!-- Populated by renderFootballPitch() -->
                     </div>
                 </div>
@@ -1156,45 +1160,88 @@
         // are actually present in the loaded database. EasySBC has no name
         // lookup for these, so options are labeled by example player names
         // sharing that ID rather than a real nation/league name.
-        function buildManagerDropdownOptions() {
-            const nationExamples = {}, leagueExamples = {};
-            fc27Database.forEach(p => {
+        // Dynamic manager suggestions: instead of listing every nation/league
+        // ID in the whole 300-player database (mostly irrelevant, and only
+        // labeled by example names since EasySBC has no real name lookup),
+        // this only surfaces nation/league groupings that ACTUALLY help the
+        // CURRENT squad — i.e. shared by starters who are in position and
+        // still below the 3-chemistry cap (a manager's +1 does nothing for
+        // someone already at 3). Ranked by how many players it would help.
+        function buildDynamicManagerSuggestions() {
+            const slots = formationSlots[squadState.formation];
+            const chem = squadState.chemistry || calculateSquadChemistry();
+            const nationImpact = {}, leagueImpact = {};
+            const nationExample = {}, leagueExample = {};
+
+            slots.forEach((slot, idx) => {
+                const p = squadState.selectedXI[idx];
+                if (!p) return;
+                const info = chem.perSlot[idx];
+                if (!info || !info.inPosition) return;
+                if (info.points >= 3) return; // manager can't help — already capped
                 if (p.nationId != null) {
-                    if (!nationExamples[p.nationId]) nationExamples[p.nationId] = [];
-                    if (nationExamples[p.nationId].length < 2 && !nationExamples[p.nationId].includes(p.name)) nationExamples[p.nationId].push(p.name);
+                    nationImpact[p.nationId] = (nationImpact[p.nationId] || 0) + 1;
+                    if (!nationExample[p.nationId]) nationExample[p.nationId] = p.name;
                 }
                 if (p.leagueId != null) {
-                    if (!leagueExamples[p.leagueId]) leagueExamples[p.leagueId] = [];
-                    if (leagueExamples[p.leagueId].length < 2 && !leagueExamples[p.leagueId].includes(p.name)) leagueExamples[p.leagueId].push(p.name);
+                    leagueImpact[p.leagueId] = (leagueImpact[p.leagueId] || 0) + 1;
+                    if (!leagueExample[p.leagueId]) leagueExample[p.leagueId] = p.name;
                 }
             });
-            const toOptions = (map) => Object.keys(map)
-                .map(id => ({ id: parseInt(id), label: map[id].join(', ') }))
-                .sort((a, b) => a.label.localeCompare(b.label));
-            return { nations: toOptions(nationExamples), leagues: toOptions(leagueExamples) };
+
+            const toSorted = (impactMap, exampleMap) => Object.keys(impactMap)
+                .map(id => ({ id: parseInt(id), count: impactMap[id], example: exampleMap[id] }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 6);
+
+            const nations = toSorted(nationImpact, nationExample);
+            const leagues = toSorted(leagueImpact, leagueExample);
+
+            // Keep the currently-selected manager visible even if it's no
+            // longer top-impact after a squad change, so the dropdown never
+            // silently disagrees with squadState.manager.
+            const mgr = squadState.manager;
+            if (mgr && mgr.nationId != null && !nations.some(n => n.id === mgr.nationId)) {
+                nations.push({ id: mgr.nationId, count: nationImpact[mgr.nationId] || 0, example: nationExample[mgr.nationId] || '?' });
+            }
+            if (mgr && mgr.leagueId != null && !leagues.some(l => l.id === mgr.leagueId)) {
+                leagues.push({ id: mgr.leagueId, count: leagueImpact[mgr.leagueId] || 0, example: leagueExample[mgr.leagueId] || '?' });
+            }
+
+            return { nations, leagues };
         }
 
-        // Populates the Manager <select> with real Nation/League groupings
-        // from the loaded database. EasySBC has no name lookup for these IDs,
-        // so each option is labeled by example player names sharing that ID
-        // (e.g. "Nation: Mbappé, Dembélé") rather than a real country name —
-        // honest given the data we actually have, if a little less pretty.
         function populateManagerDropdown() {
             const select = document.getElementById('manager-select');
             if (!select) return;
-            const opts = buildManagerDropdownOptions();
-            const nationLabel = currentLanguage === 'ar' ? 'دولة' : 'Nation';
-            const leagueLabel = currentLanguage === 'ar' ? 'دوري' : 'League';
-            const noManagerLabel = currentLanguage === 'ar' ? '— بدون مدرب —' : '— No Manager —';
+            const isAr = currentLanguage === 'ar';
+            const opts = buildDynamicManagerSuggestions();
+            const nationLabel = isAr ? 'دولة' : 'Nation';
+            const leagueLabel = isAr ? 'دوري' : 'League';
+            const noManagerLabel = isAr ? '— بدون مدرب —' : '— No Manager —';
+            const playersWord = isAr ? 'لاعبين' : 'players';
+            const playerWord = isAr ? 'لاعب' : 'player';
+            const impactText = (n) => `+1 ${isAr ? `لـ ${n} ${n === 1 ? playerWord : playersWord}` : `to ${n} ${n === 1 ? playerWord : playersWord}`}`;
+
+            const currentValue = squadState.manager
+                ? (squadState.manager.nationId != null ? `nation:${squadState.manager.nationId}` : `league:${squadState.manager.leagueId}`)
+                : '';
+
+            if (opts.nations.length === 0 && opts.leagues.length === 0) {
+                select.innerHTML = `<option value="">${noManagerLabel}</option><option value="" disabled>${isAr ? 'لا يوجد ما يحسّنه المدرب — كل اللاعبين إما بأقصى كيمياء أو خارج مركزهم' : 'Nothing for a manager to improve — everyone is already maxed or out of position'}</option>`;
+                return;
+            }
+
             select.innerHTML = `
                 <option value="">${noManagerLabel}</option>
-                <optgroup label="${nationLabel}">
-                    ${opts.nations.map(n => `<option value="nation:${n.id}">${nationLabel}: ${n.label}</option>`).join('')}
-                </optgroup>
-                <optgroup label="${leagueLabel}">
-                    ${opts.leagues.map(l => `<option value="league:${l.id}">${leagueLabel}: ${l.label}</option>`).join('')}
-                </optgroup>
+                ${opts.nations.length > 0 ? `<optgroup label="${nationLabel} (${isAr ? 'حسب التأثير' : 'by impact'})">
+                    ${opts.nations.map(n => `<option value="nation:${n.id}">${nationLabel} (${n.example}) — ${impactText(n.count)}</option>`).join('')}
+                </optgroup>` : ''}
+                ${opts.leagues.length > 0 ? `<optgroup label="${leagueLabel} (${isAr ? 'حسب التأثير' : 'by impact'})">
+                    ${opts.leagues.map(l => `<option value="league:${l.id}">${leagueLabel} (${l.example}) — ${impactText(l.count)}</option>`).join('')}
+                </optgroup>` : ''}
             `;
+            select.value = currentValue;
         }
 
         window.setSquadManager = function(value) {
@@ -1369,6 +1416,7 @@
             squadState.chemistry = calculateSquadChemistry();
 
             computeSlotAlternatives();
+            populateManagerDropdown();
 
             renderFootballPitch();
             renderSquadSummary();
@@ -1472,6 +1520,7 @@
             }
 
             computeSlotAlternatives();
+            populateManagerDropdown();
             renderFootballPitch();
             renderSquadSummary();
             calculateNextBestUpgrade();
@@ -1523,8 +1572,8 @@
                             return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
                         }).join('');
                         card.innerHTML = `
-                            <div class="absolute top-1.5 left-2 rtl:left-auto rtl:right-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
-                            <div class="absolute top-1.5 right-2 rtl:right-auto rtl:left-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
+                            <div class="absolute top-1.5 left-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
+                            <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
                             <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                             <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
                             <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
@@ -1998,6 +2047,38 @@
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
 
+            // Compact "Focus Profile" — the same three axes the Meta Analyst
+            // panel below uses (Pace / Agility / Physical), shown for THIS
+            // exact player, using their real attributes directly (pace,
+            // dribbling as the agility proxy, physical). This is what
+            // explains why the Analyst's Pace/Agility/Physical picks can
+            // differ from this player — their own profile leans one way or
+            // another, visible at a glance.
+            const focusProfileTitle = currentLanguage === 'ar' ? 'ملف التركيز (السرعة / الرشاقة / البدنية)' : 'Focus Profile (Pace / Agility / Physical)';
+            const focusProfileHtml = player.pos === 'GK' ? `
+                <p class="text-[11px] text-gray-500 italic mt-2">${currentLanguage === 'ar' ? 'ملف التركيز غير مطبق على حراس المرمى.' : 'Focus Profile not applicable to goalkeepers.'}</p>
+            ` : (() => {
+                const bars = [
+                    { label: currentLanguage === 'ar' ? 'السرعة' : 'Pace', value: player.att.pac, color: '#38bdf8' },
+                    { label: currentLanguage === 'ar' ? 'الرشاقة' : 'Agility', value: player.att.dri, color: '#c084fc' },
+                    { label: currentLanguage === 'ar' ? 'البدنية' : 'Physical', value: player.att.phy, color: '#fb923c' }
+                ];
+                return `
+                    <div class="mt-2 space-y-1.5">
+                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">${focusProfileTitle}</span>
+                        ${bars.map(b => `
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-gray-400 w-14 shrink-0">${b.label}</span>
+                                <div class="flex-1 h-1.5 bg-fc-card rounded-full overflow-hidden">
+                                    <div class="h-full rounded-full" style="width:${Math.min(100, b.value)}%;background-color:${b.color};"></div>
+                                </div>
+                                <span class="text-[10px] font-bold text-white w-6 text-right rtl:text-left shrink-0">${b.value}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            })();
+
             const playstylesSection = hasPlaystyles ? `
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles</span>
@@ -2128,6 +2209,7 @@
                 <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
                     <span class="text-xs font-bold text-fc-accent">${whyText}</span>
                     <p class="text-xs text-gray-300">${whyDesc}</p>
+                    ${focusProfileHtml}
                 </div>
 
                 <div id="analyst-panel"></div>
