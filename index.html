@@ -1849,6 +1849,51 @@
         // Honest, stats-based approximation of in-game "feel" — explicitly
         // NOT a claim about real AcceleRATE type or body type, since that
         // data isn't available from the live feed.
+        // Real AcceleRATE classifier, using EA's actual confirmed FC26
+        // thresholds (Explosive/Controlled/Lengthy — EA simplified back to
+        // 3 types from the earlier 7-variant system):
+        //   Explosive: Agility - Strength >= 10, Acceleration >= 80, Agility >= 65, height < 182cm (men)/162cm (women)
+        //   Lengthy:   Strength - Agility >= 4, Strength >= 65, Acceleration >= 40, height >= 183cm (men)/164cm (women)
+        //   Controlled: fallback for everyone else
+        // IMPORTANT HONESTY NOTE: EasySBC's feed has no height, and no
+        // separate Agility/Strength/Acceleration substats — only the 6
+        // broad composites (pac/sho/pas/dri/def/phy). So this uses the
+        // closest available proxies: PAC for Acceleration, DRI for Agility,
+        // PHY for Strength — and the height gate is dropped entirely since
+        // we have no height data at all. This is a genuine best-effort
+        // estimate against the real formula, not a guess at a fake formula,
+        // but it CAN misclassify a case the height gate would have caught
+        // (e.g. a tall-but-agile player). Not applicable to goalkeepers.
+        function estimateAccelerateType(player) {
+            if (player.pos === 'GK') return null;
+            const pac = player.att.pac;   // proxy for Acceleration
+            const agi = player.att.dri;   // proxy for Agility
+            const str = player.att.phy;   // proxy for Strength
+
+            if (agi - str >= 10 && pac >= 80 && agi >= 65) {
+                return {
+                    type: 'Explosive',
+                    color: '#38bdf8',
+                    en: 'Quick off the mark, fades over distance — explosive first few steps, easier to catch late in a sprint.',
+                    ar: 'انطلاقة سريعة جداً في البداية لكنها تتراجع مع المسافة — قوي جداً في الخطوات الأولى، ويسهل اللحاق به في نهاية السباق الطويل.'
+                };
+            }
+            if (str - agi >= 4 && str >= 65 && pac >= 40) {
+                return {
+                    type: 'Lengthy',
+                    color: '#fb923c',
+                    en: 'Slow to build up but dominant at top speed and in physical duels — hard to catch once at full stride.',
+                    ar: 'بطيء في بداية الانطلاق لكنه مهيمن عند السرعة القصوى وفي المواجهات البدنية — يصعب اللحاق به بمجرد وصوله لسرعته الكاملة.'
+                };
+            }
+            return {
+                type: 'Controlled',
+                color: '#a3a3a3',
+                en: 'Balanced, no dramatic burst or fade — steady acceleration throughout, the most common profile.',
+                ar: 'متوازن بدون انفجار سرعة أو تراجع ملحوظ — تسارع ثابت طوال الوقت، وهو الملف الأكثر شيوعاً.'
+            };
+        }
+
         function estimateMovementFeel(player) {
             if (player.pos === 'GK') return null;
             const { pac, dri, phy } = player.att;
@@ -1988,7 +2033,7 @@
             `).join('');
 
             const roleInfo = getRoleSuggestion(topPick);
-            const movement = estimateMovementFeel(topPick);
+            const accelInfoTop = estimateAccelerateType(topPick);
             const psPlusTop = Array.isArray(topPick.playstylesPlus) ? topPick.playstylesPlus : [];
             const psBaseTop = Array.isArray(topPick.playstyles) ? topPick.playstyles : [];
             const hasPsTop = psPlusTop.length > 0 || psBaseTop.length > 0;
@@ -2012,12 +2057,12 @@
                 </button>
             ` : `<p class="mt-2 text-[11px] text-green-400 font-bold text-center">${isAr ? '✓ هذا هو اللاعب الحالي في التشكيلة' : '✓ Already your current starting player'}</p>`;
 
-            const movementBlock = movement ? `
-                <div class="text-xs text-gray-300">
-                    <span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (تقديري من الإحصائيات):' : 'Movement Feel (stat-based estimate):'}</span>
-                    ${isAr ? movement.ar : movement.en}
+            const movementBlock = accelInfoTop ? `
+                <div class="text-xs text-gray-300 flex items-center gap-2">
+                    <span class="shrink-0 px-2 py-0.5 rounded text-[10px] font-black border" style="background-color:${accelInfoTop.color}22;color:${accelInfoTop.color};border-color:${accelInfoTop.color}55;">⚡ ${accelInfoTop.type}</span>
+                    <span>${isAr ? accelInfoTop.ar : accelInfoTop.en}</span>
                 </div>
-            ` : `<div class="text-xs text-gray-500 italic">${isAr ? 'لا ينطبق تقدير الإحساس الحركي على حراس المرمى.' : 'Movement-feel estimate not applicable to goalkeepers.'}</div>`;
+            ` : `<div class="text-xs text-gray-500 italic">${isAr ? 'لا ينطبق تقدير AcceleRATE على حراس المرمى.' : 'AcceleRATE estimate not applicable to goalkeepers.'}</div>`;
 
             const playstyleBlock = hasPsTop ? `
                 <div class="flex flex-wrap gap-1.5">
@@ -2103,23 +2148,25 @@
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
 
-            // Movement Feel + Optimal Role & Tactic — same two write-ups the
-            // Meta Analyst panel below shows for its picks, but here for
-            // THIS exact player, using the same estimateMovementFeel() /
-            // getRoleSuggestion() functions so the two sections never
-            // disagree with each other.
-            const movementInfo = estimateMovementFeel(player);
+            // Movement Feel + Optimal Role & Tactic — Movement Feel now uses
+            // the real AcceleRATE classifier (estimateAccelerateType) so it
+            // names an actual archetype (Explosive/Controlled/Lengthy)
+            // instead of a vaguer heuristic description. Role suggestion
+            // reuses the same getRoleSuggestion() the Meta Analyst panel
+            // uses below, so the two sections never disagree.
+            const accelInfoWhy = estimateAccelerateType(player);
             const roleInfoWhy = getRoleSuggestion(player);
-            const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (تقديري من الإحصائيات):' : 'Movement Feel (stat-based estimate):';
+            const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (AcceleRATE مقدّر):' : 'Movement Feel (estimated AcceleRATE):';
             const roleLabel = currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:';
             const focusProfileHtml = `
                 <div class="mt-2 pt-2 border-t border-fc-border/60 space-y-2">
-                    ${movementInfo ? `
+                    ${accelInfoWhy ? `
                         <div class="text-[11px] text-gray-300">
                             <span class="font-bold text-gray-400">${movementLabel}</span>
-                            ${currentLanguage === 'ar' ? movementInfo.ar : movementInfo.en}
+                            <span class="font-bold" style="color:${accelInfoWhy.color}">${accelInfoWhy.type}</span> —
+                            ${currentLanguage === 'ar' ? accelInfoWhy.ar : accelInfoWhy.en}
                         </div>
-                    ` : `<p class="text-[11px] text-gray-500 italic">${currentLanguage === 'ar' ? 'لا ينطبق تقدير الإحساس الحركي على حراس المرمى.' : 'Movement-feel estimate not applicable to goalkeepers.'}</p>`}
+                    ` : `<p class="text-[11px] text-gray-500 italic">${currentLanguage === 'ar' ? 'لا ينطبق تقدير AcceleRATE على حراس المرمى.' : 'AcceleRATE estimate not applicable to goalkeepers.'}</p>`}
                     <div class="text-[11px] text-gray-300">
                         <span class="font-bold text-fc-gold">${roleLabel}</span>
                         <span class="font-bold text-white"> ${roleInfoWhy.role} / ${roleInfoWhy.focus}</span>
@@ -2152,13 +2199,15 @@
                             const altChem = typeof slotIdx === 'number' ? getResultingChemPoints(slotIdx, alt) : null;
                             const altChemColor = altChem >= 3 ? '#4ade80' : altChem === 2 ? '#fbbf24' : altChem === 1 ? '#f97316' : '#6b7280';
                             const altChemDots = altChem === null ? '' : `<div class="flex gap-0.5 shrink-0" title="${currentLanguage === 'ar' ? 'الكيمياء المتوقعة' : 'Expected chemistry'}: ${altChem}/3">${[0,1,2].map(i => `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${i < altChem ? `background-color:${altChemColor};border-color:${altChemColor};` : 'border-color:#6b7280;'}"></span>`).join(' ')}</div>`;
+                            const altAccel = estimateAccelerateType(alt);
+                            const altAccelBadge = altAccel ? `<span class="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black border" style="background-color:${altAccel.color}22;color:${altAccel.color};border-color:${altAccel.color}55;" title="${currentLanguage === 'ar' ? altAccel.ar : altAccel.en}">${altAccel.type}</span>` : '';
                             return `
                             <button onclick="window.swapAlternativeIntoSlot(${slotIdx}, '${alt.id}')" title="${altsHint}"
                                 class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent rounded-xl p-2.5 text-left rtl:text-right transition-all">
                                 <div class="flex items-center gap-2 min-w-0">
                                     <img src="${alt.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                                     <div class="min-w-0">
-                                        <div class="text-xs font-bold text-white truncate">${alt.name}</div>
+                                        <div class="text-xs font-bold text-white truncate flex items-center gap-1">${alt.name} ${altAccelBadge}</div>
                                         <div class="text-[10px] text-gray-400">${alt.rating} OVR${altMetaTag} · ${alt.price.toLocaleString()}${currentLanguage === 'ar' ? 'ك' : 'c'}</div>
                                     </div>
                                 </div>
@@ -2229,11 +2278,14 @@
                 }
             }
 
+            const accelInfo = estimateAccelerateType(player);
+            const accelBadge = accelInfo ? `<span class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${accelInfo.color}22;color:${accelInfo.color};border-color:${accelInfo.color}55;" title="${currentLanguage === 'ar' ? accelInfo.ar : accelInfo.en}">⚡ ${accelInfo.type}</span>` : '';
+
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
                     <img src="${player.photo}" class="w-16 h-16 rounded-2xl border-2 border-fc-accent object-cover bg-fc-dark" alt="${player.name}">
                     <div>
-                        <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30">${player.pos}</span>
+                        <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30">${player.pos}</span>${accelBadge}
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
                     </div>
