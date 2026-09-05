@@ -1156,6 +1156,57 @@
             }
         }
 
+        // Quick fix for underspend: the main greedy build reserves a
+        // conservative minimum cost for every slot still to come, so it can
+        // pick cheaper-than-necessary players early on formations whose
+        // candidate pool skews cheap at certain positions (a real risk with
+        // only ~300 players loaded) — leaving real leftover budget unspent
+        // with no pass to reinvest it. This finds the single best affordable
+        // upgrade (chemistry-aware, so it won't sacrifice a good link for a
+        // marginal meta bump) using whatever budget remains, and repeats
+        // until no upgrade is left or the budget is used up.
+        function spendLeftoverBudget() {
+            const slots = formationSlots[squadState.formation];
+            const MAX_PASSES = 8;
+            for (let pass = 0; pass < MAX_PASSES; pass++) {
+                const leftover = squadState.budget - squadState.totalCost;
+                if (leftover <= 0) break;
+
+                const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+                let bestSlotIdx = null, bestCandidate = null, bestGain = 0;
+
+                slots.forEach((slot, idx) => {
+                    const currentPlayer = squadState.selectedXI[idx];
+                    if (!currentPlayer) return;
+                    const priceCeiling = currentPlayer.price + leftover;
+                    const currentAdjScore = calculatePlayerScore(currentPlayer, slot.pos) * chemistryMultiplier(idx, currentPlayer);
+
+                    fc27Database.forEach(cand => {
+                        if (cand.id === currentPlayer.id) return;
+                        if (usedIds.has(cand.id)) return;
+                        if (!(cand.pos === slot.pos || (cand.alt && cand.alt.includes(slot.pos)))) return;
+                        if (cand.price > priceCeiling) return;
+                        const candAdjScore = calculatePlayerScore(cand, slot.pos) * chemistryMultiplier(idx, cand);
+                        const gain = candAdjScore - currentAdjScore;
+                        if (gain > bestGain) { bestGain = gain; bestSlotIdx = idx; bestCandidate = cand; }
+                    });
+                });
+
+                if (bestCandidate && bestSlotIdx !== null) {
+                    const outgoing = squadState.selectedXI[bestSlotIdx];
+                    squadState.selectedXI[bestSlotIdx] = bestCandidate;
+                    squadState.totalCost += (bestCandidate.price - outgoing.price);
+                    const slot = slots[bestSlotIdx];
+                    const logText = currentLanguage === 'ar'
+                        ? `استغلال الميزانية المتبقية في مركز <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${outgoing.name}</span> ← <span class="text-white font-bold">${bestCandidate.name}</span> (+${(bestCandidate.price - outgoing.price).toLocaleString()} كوينز).`
+                        : `Spending leftover budget at <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${outgoing.name}</span> → <span class="text-white font-bold">${bestCandidate.name}</span> (+${(bestCandidate.price - outgoing.price).toLocaleString()} coins).`;
+                    squadState.explanationLog.push(logText);
+                } else {
+                    break;
+                }
+            }
+        }
+
         // Builds Nation/League manager dropdown options from whatever IDs
         // are actually present in the loaded database. EasySBC has no name
         // lookup for these, so options are labeled by example player names
@@ -1396,6 +1447,11 @@
             // chemistry (0/1) toward 2-3 via affordable, better-linked
             // teammates, before computing final totals/alternatives.
             improveSquadChemistry();
+
+            // Reinvest any leftover budget into upgrades (chemistry-aware)
+            // now that we know the squad's true final cost — fixes formations
+            // that were quietly underspending the available budget.
+            spendLeftoverBudget();
 
             let totalRating = 0;
             let totalMeta = 0;
