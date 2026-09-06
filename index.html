@@ -1894,29 +1894,109 @@
             };
         }
 
-        function estimateMovementFeel(player) {
-            if (player.pos === 'GK') return null;
-            const { pac, dri, phy } = player.att;
-            if (pac >= 88 && phy <= 72) return {
-                en: 'Fast, lighter physical profile — likely feels quick off the mark rather than a top-end grinder.',
-                ar: 'ملف سريع وخفيف بدنياً — يمنح إحساساً بالانطلاقة السريعة أكثر من الاعتماد على القوة القصوى.'
-            };
-            if (pac >= 85 && phy >= 80) return {
-                en: 'High pace AND high physical — likely holds top speed even under contact, a rangier feel.',
-                ar: 'سرعة عالية مع قوة بدنية عالية — يحافظ على سرعته القصوى حتى مع الاحتكاك، بإحساس أكثر قوة.'
-            };
-            if (dri >= 88 && pac < 85) return {
-                en: 'Dribbling-led rather than pace-led — best felt on the left stick in tight spaces, not open sprints.',
-                ar: 'يعتمد على المراوغة أكثر من السرعة — إحساس أفضل في المساحات الضيقة وليس السباقات المفتوحة.'
-            };
-            if (phy >= 85) return {
-                en: 'Power-first profile — feels heavy and dominant in physical duels.',
-                ar: 'ملف يعتمد على القوة أولاً — إحساس ثقيل ومهيمن في المواجهات البدنية.'
-            };
+        // ===================================================================
+        // PLAYER DEEP-DIVE — on-demand per-player detail fetch
+        // ===================================================================
+        // https://api-fc27.easysbc.io/players/{resourceId} returns MUCH more
+        // than the bulk list endpoint: real height (cm), weight, gender,
+        // bodyTypeId, and all 34 granular in-game sub-attributes — including
+        // the actual Acceleration/Agility/Strength substats the real
+        // AcceleRATE formula needs (the bulk list only has 6 broad
+        // composites, forcing the proxy-based estimate used elsewhere).
+        // This is deliberately NOT fetched for all ~300 loaded players (that
+        // would mean 300 extra requests just to open the squad view) — only
+        // lazily, for whichever single player's modal is currently open, and
+        // cached afterward so reopening the same player is instant.
+        const playerDetailCache = {};
+        let currentModalResourceId = null;
+
+        async function fetchPlayerDetailOnce(url) {
+            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+        }
+
+        async function fetchPlayerDetail(resourceId) {
+            if (playerDetailCache[resourceId]) return playerDetailCache[resourceId];
+            const directUrl = `https://api-fc27.easysbc.io/players/${resourceId}`;
+            let data = null;
+            try {
+                data = await fetchPlayerDetailOnce(directUrl);
+            } catch (e) {
+                try {
+                    data = await fetchPlayerDetailOnce(CORS_PROXY + encodeURIComponent(directUrl));
+                } catch (e2) {
+                    data = null;
+                }
+            }
+            if (data) playerDetailCache[resourceId] = data;
+            return data;
+        }
+
+        // Real AcceleRATE using genuine height/gender/substats from the
+        // detail endpoint — the exact FC26 thresholds, no proxies needed.
+        function computeVerifiedAccelerateType(detail) {
+            const a = detail.inGameAttributes;
+            if (!a || typeof detail.height !== 'number') return null;
+            const isFemale = detail.gender === 'FEMALE';
+            const explosiveHeightMax = isFemale ? 162 : 182;
+            const lengthyHeightMin = isFemale ? 164 : 183;
+            const agi = a.agility, str = a.strength, accel = a.acceleration;
+
+            if ((agi - str) >= 10 && accel >= 80 && agi >= 65 && detail.height < explosiveHeightMax) {
+                return {
+                    type: 'Explosive', color: '#38bdf8',
+                    en: 'Quick off the mark, fades over distance — explosive first few steps, easier to catch late in a sprint.',
+                    ar: 'انطلاقة سريعة جداً في البداية لكنها تتراجع مع المسافة — قوي جداً في الخطوات الأولى، ويسهل اللحاق به في نهاية السباق الطويل.'
+                };
+            }
+            if ((str - agi) >= 4 && str >= 65 && accel >= 40 && detail.height >= lengthyHeightMin) {
+                return {
+                    type: 'Lengthy', color: '#fb923c',
+                    en: 'Slow to build up but dominant at top speed and in physical duels — hard to catch once at full stride.',
+                    ar: 'بطيء في بداية الانطلاق لكنه مهيمن عند السرعة القصوى وفي المواجهات البدنية — يصعب اللحاق به بمجرد وصوله لسرعته الكاملة.'
+                };
+            }
             return {
-                en: 'Balanced physical profile — no single extreme stat dominates the in-game feel.',
-                ar: 'ملف بدني متوازن — لا توجد صفة متطرفة واحدة تطغى على إحساسه داخل المباراة.'
+                type: 'Controlled', color: '#a3a3a3',
+                en: 'Balanced, no dramatic burst or fade — steady acceleration throughout, the most common profile.',
+                ar: 'متوازن بدون انفجار سرعة أو تراجع ملحوظ — تسارع ثابت طوال الوقت، وهو الملف الأكثر شيوعاً.'
             };
+        }
+
+        // Kicks off the deep-dive fetch for the currently-open modal and
+        // upgrades the badge/movement-feel text in place once it resolves.
+        // Guards against the user having switched to a different player's
+        // modal before the fetch completes.
+        function loadPlayerDeepDive(player) {
+            if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
+            const resourceId = player.id.replace('easysbc_', '');
+            currentModalResourceId = resourceId;
+
+            fetchPlayerDetail(resourceId).then(detail => {
+                if (currentModalResourceId !== resourceId || !detail) return;
+                const badgeEl = document.getElementById('accel-badge-live');
+                const feelEl = document.getElementById('movement-feel-live');
+                const verified = computeVerifiedAccelerateType(detail);
+                const isAr = currentLanguage === 'ar';
+
+                if (verified) {
+                    if (badgeEl) {
+                        badgeEl.outerHTML = `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${verified.color}22;color:${verified.color};border-color:${verified.color}55;" title="${isAr ? verified.ar : verified.en}">⚡ ${verified.type} ✓</span>`;
+                    }
+                    if (feelEl) {
+                        const heightLine = isAr
+                            ? `الطول: ${detail.height} سم، الوزن: ${detail.weight} كجم${detail.gender ? `، ${detail.gender === 'FEMALE' ? 'أنثى' : 'ذكر'}` : ''} — بيانات حقيقية من EasySBC.`
+                            : `Height: ${detail.height}cm, Weight: ${detail.weight}kg${detail.gender ? `, ${detail.gender === 'FEMALE' ? 'Female' : 'Male'}` : ''} — real data from EasySBC.`;
+                        feelEl.innerHTML = `
+                            <span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE مُتحقق منه ✓):' : 'Movement Feel (verified AcceleRATE ✓):'}</span>
+                            <span class="font-bold" style="color:${verified.color}">${verified.type}</span> —
+                            ${isAr ? verified.ar : verified.en}
+                            <div class="text-gray-500 mt-1">${heightLine}</div>
+                        `;
+                    }
+                }
+            }).catch(() => { /* silent — proxy-based estimate stays as shown */ });
         }
 
         // Rule-based tactical role suggestion from real attribute thresholds.
@@ -2161,7 +2241,7 @@
             const focusProfileHtml = `
                 <div class="mt-2 pt-2 border-t border-fc-border/60 space-y-2">
                     ${accelInfoWhy ? `
-                        <div class="text-[11px] text-gray-300">
+                        <div id="movement-feel-live" class="text-[11px] text-gray-300">
                             <span class="font-bold text-gray-400">${movementLabel}</span>
                             <span class="font-bold" style="color:${accelInfoWhy.color}">${accelInfoWhy.type}</span> —
                             ${currentLanguage === 'ar' ? accelInfoWhy.ar : accelInfoWhy.en}
@@ -2279,7 +2359,7 @@
             }
 
             const accelInfo = estimateAccelerateType(player);
-            const accelBadge = accelInfo ? `<span class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${accelInfo.color}22;color:${accelInfo.color};border-color:${accelInfo.color}55;" title="${currentLanguage === 'ar' ? accelInfo.ar : accelInfo.en}">⚡ ${accelInfo.type}</span>` : '';
+            const accelBadge = accelInfo ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${accelInfo.color}22;color:${accelInfo.color};border-color:${accelInfo.color}55;" title="${currentLanguage === 'ar' ? accelInfo.ar : accelInfo.en}">⚡ ${accelInfo.type}</span>` : '';
 
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
@@ -2323,6 +2403,12 @@
                 analystContext = { player, slotIdx, slot: { pos: player.pos, label: slotLabel } };
                 renderAnalystPanel();
             }
+
+            // Lazily fetch this one player's full detail (real height/
+            // gender/substats) in the background and upgrade the
+            // AcceleRATE badge + Movement Feel text once it resolves —
+            // see loadPlayerDeepDive() for why this isn't done in bulk.
+            loadPlayerDeepDive(player);
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
