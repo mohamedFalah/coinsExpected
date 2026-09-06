@@ -1938,6 +1938,7 @@
         function computeVerifiedAccelerateType(detail) {
             const a = detail.inGameAttributes;
             if (!a || typeof detail.height !== 'number') return null;
+            if (detail.preferredPosition === 'GK') return null;
             const isFemale = detail.gender === 'FEMALE';
             const explosiveHeightMax = isFemale ? 162 : 182;
             const lengthyHeightMin = isFemale ? 164 : 183;
@@ -2043,11 +2044,30 @@
             currentModalResourceId = resourceId;
 
             fetchPlayerDetail(resourceId).then(detail => {
-                if (currentModalResourceId !== resourceId || !detail) return;
+                if (currentModalResourceId !== resourceId) return;
                 const badgeEl = document.getElementById('accel-badge-live');
                 const feelEl = document.getElementById('movement-feel-live');
-                const verified = computeVerifiedAccelerateType(detail);
                 const isAr = currentLanguage === 'ar';
+
+                if (!detail) {
+                    // Fetch failed — say so plainly rather than leaving a
+                    // perpetual "checking…" spinner. No badge, no guess.
+                    if (badgeEl) badgeEl.remove();
+                    if (feelEl) {
+                        feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
+                    }
+                    return;
+                }
+
+                const verified = computeVerifiedAccelerateType(detail);
+
+                if (!verified) {
+                    if (badgeEl) badgeEl.remove();
+                    if (feelEl) {
+                        feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'غير متاح لهذه البطاقة.' : 'Not available for this card.'}</span>`;
+                    }
+                    return;
+                }
 
                 if (verified) {
                     if (badgeEl) {
@@ -2111,7 +2131,16 @@
                         `;
                     }
                 }
-            }).catch(() => { /* silent — proxy-based estimate stays as shown */ });
+            }).catch(() => {
+                if (currentModalResourceId !== resourceId) return;
+                const badgeEl = document.getElementById('accel-badge-live');
+                const feelEl = document.getElementById('movement-feel-live');
+                const isAr = currentLanguage === 'ar';
+                if (badgeEl) badgeEl.remove();
+                if (feelEl) {
+                    feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
+                }
+            });
         }
 
         // Rule-based tactical role suggestion from real attribute thresholds.
@@ -2228,7 +2257,6 @@
             `).join('');
 
             const roleInfo = getRoleSuggestion(topPick);
-            const accelInfoTop = estimateAccelerateType(topPick);
             const psPlusTop = Array.isArray(topPick.playstylesPlus) ? topPick.playstylesPlus : [];
             const psBaseTop = Array.isArray(topPick.playstyles) ? topPick.playstyles : [];
             const hasPsTop = psPlusTop.length > 0 || psBaseTop.length > 0;
@@ -2252,12 +2280,11 @@
                 </button>
             ` : `<p class="mt-2 text-[11px] text-green-400 font-bold text-center">${isAr ? '✓ هذا هو اللاعب الحالي في التشكيلة' : '✓ Already your current starting player'}</p>`;
 
-            const movementBlock = accelInfoTop ? `
-                <div class="text-xs text-gray-300 flex items-center gap-2">
-                    <span class="shrink-0 px-2 py-0.5 rounded text-[10px] font-black border" style="background-color:${accelInfoTop.color}22;color:${accelInfoTop.color};border-color:${accelInfoTop.color}55;">⚡ ${accelInfoTop.type}</span>
-                    <span>${isAr ? accelInfoTop.ar : accelInfoTop.en}</span>
-                </div>
-            ` : `<div class="text-xs text-gray-500 italic">${isAr ? 'لا ينطبق تقدير AcceleRATE على حراس المرمى.' : 'AcceleRATE estimate not applicable to goalkeepers.'}</div>`;
+            // AcceleRATE isn't shown here — it needs the verified per-player
+            // detail fetch (real height/agility/strength/acceleration), which
+            // only runs for whichever single player's own modal is open, not
+            // for every candidate the Analyst considers. Open this pick's own
+            // card to see its verified type.
 
             const playstyleBlock = hasPsTop ? `
                 <div class="flex flex-wrap gap-1.5">
@@ -2286,8 +2313,6 @@
                             </div>
                         </div>
                         <p class="text-[10px] text-gray-500 italic">${chemNote}</p>
-
-                        ${movementBlock}
 
                         <div class="space-y-1">
                             <span class="text-[11px] font-bold text-gray-400">PlayStyles</span>
@@ -2343,25 +2368,25 @@
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
 
-            // Movement Feel + Optimal Role & Tactic — Movement Feel now uses
-            // the real AcceleRATE classifier (estimateAccelerateType) so it
-            // names an actual archetype (Explosive/Controlled/Lengthy)
-            // instead of a vaguer heuristic description. Role suggestion
-            // reuses the same getRoleSuggestion() the Meta Analyst panel
-            // uses below, so the two sections never disagree.
-            const accelInfoWhy = estimateAccelerateType(player);
+            // Movement Feel shows NOTHING until the real per-player detail
+            // fetch verifies it (loadPlayerDeepDive, called right after this
+            // modal renders) — AcceleRATE must be accurate, not a proxy
+            // guess, so this starts as a loading state and gets filled in
+            // once verified data arrives (or stays as "couldn't verify" if
+            // the fetch fails). Role suggestion reuses the same
+            // getRoleSuggestion() the Meta Analyst panel uses below, so the
+            // two sections never disagree.
             const roleInfoWhy = getRoleSuggestion(player);
-            const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (AcceleRATE مقدّر):' : 'Movement Feel (estimated AcceleRATE):';
+            const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):';
             const roleLabel = currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:';
             const focusProfileHtml = `
                 <div class="mt-2 pt-2 border-t border-fc-border/60 space-y-2">
-                    ${accelInfoWhy ? `
+                    ${player.pos !== 'GK' ? `
                         <div id="movement-feel-live" class="text-[11px] text-gray-300">
                             <span class="font-bold text-gray-400">${movementLabel}</span>
-                            <span class="font-bold" style="color:${accelInfoWhy.color}">${accelInfoWhy.type}</span> —
-                            ${currentLanguage === 'ar' ? accelInfoWhy.ar : accelInfoWhy.en}
+                            <span class="text-gray-500 italic">${currentLanguage === 'ar' ? 'جارٍ التحقق من البيانات الفعلية…' : 'Verifying against real player data…'}</span>
                         </div>
-                    ` : `<p class="text-[11px] text-gray-500 italic">${currentLanguage === 'ar' ? 'لا ينطبق تقدير AcceleRATE على حراس المرمى.' : 'AcceleRATE estimate not applicable to goalkeepers.'}</p>`}
+                    ` : `<p class="text-[11px] text-gray-500 italic">${currentLanguage === 'ar' ? 'لا ينطبق AcceleRATE على حراس المرمى.' : 'AcceleRATE not applicable to goalkeepers.'}</p>`}
                     <div class="text-[11px] text-gray-300">
                         <span class="font-bold text-fc-gold">${roleLabel}</span>
                         <span class="font-bold text-white"> ${roleInfoWhy.role} / ${roleInfoWhy.focus}</span>
@@ -2394,15 +2419,17 @@
                             const altChem = typeof slotIdx === 'number' ? getResultingChemPoints(slotIdx, alt) : null;
                             const altChemColor = altChem >= 3 ? '#4ade80' : altChem === 2 ? '#fbbf24' : altChem === 1 ? '#f97316' : '#6b7280';
                             const altChemDots = altChem === null ? '' : `<div class="flex gap-0.5 shrink-0" title="${currentLanguage === 'ar' ? 'الكيمياء المتوقعة' : 'Expected chemistry'}: ${altChem}/3">${[0,1,2].map(i => `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${i < altChem ? `background-color:${altChemColor};border-color:${altChemColor};` : 'border-color:#6b7280;'}"></span>`).join(' ')}</div>`;
-                            const altAccel = estimateAccelerateType(alt);
-                            const altAccelBadge = altAccel ? `<span class="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black border" style="background-color:${altAccel.color}22;color:${altAccel.color};border-color:${altAccel.color}55;" title="${currentLanguage === 'ar' ? altAccel.ar : altAccel.en}">${altAccel.type}</span>` : '';
+                            // No AcceleRATE badge here — it needs the
+                            // verified per-player fetch, which only runs for
+                            // whichever player's own modal is open, not for
+                            // every bench alternative shown in this list.
                             return `
                             <button onclick="window.swapAlternativeIntoSlot(${slotIdx}, '${alt.id}')" title="${altsHint}"
                                 class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent rounded-xl p-2.5 text-left rtl:text-right transition-all">
                                 <div class="flex items-center gap-2 min-w-0">
                                     <img src="${alt.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                                     <div class="min-w-0">
-                                        <div class="text-xs font-bold text-white truncate flex items-center gap-1">${alt.name} ${altAccelBadge}</div>
+                                        <div class="text-xs font-bold text-white truncate">${alt.name}</div>
                                         <div class="text-[10px] text-gray-400">${alt.rating} OVR${altMetaTag} · ${alt.price.toLocaleString()}${currentLanguage === 'ar' ? 'ك' : 'c'}</div>
                                     </div>
                                 </div>
@@ -2473,8 +2500,12 @@
                 }
             }
 
-            const accelInfo = estimateAccelerateType(player);
-            const accelBadge = accelInfo ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${accelInfo.color}22;color:${accelInfo.color};border-color:${accelInfo.color}55;" title="${currentLanguage === 'ar' ? accelInfo.ar : accelInfo.en} (${currentLanguage === 'ar' ? 'تقدير أولي، جارٍ التحقق...' : 'provisional estimate, verifying...'})">⚡ ${accelInfo.type} ?</span>` : '';
+            // No AcceleRATE badge shown until the real per-player fetch
+            // verifies it — a small pulsing placeholder shows instead
+            // (skipped entirely for GKs, where AcceleRATE isn't meaningful).
+            const accelBadge = player.pos !== 'GK'
+                ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5 bg-fc-dark text-gray-500 border-fc-border animate-pulse">⚡ ${currentLanguage === 'ar' ? 'جارٍ التحقق' : 'checking'}…</span>`
+                : '';
 
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
