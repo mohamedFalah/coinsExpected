@@ -1964,6 +1964,75 @@
             };
         }
 
+        // ===================================================================
+        // LENGTHY CONVERSION — can a Controlled/Explosive player be pushed
+        // into Lengthy with the right Chemistry Style?
+        // ===================================================================
+        // DATA HONESTY NOTE: chemistry style stat boosts are NOT provided by
+        // any API here — they were researched from community sources, which
+        // genuinely disagree with each other on exact numbers (e.g. Sniper's
+        // Strength boost is cited as both +9 and +12 across sources). Rather
+        // than assert a single number as fact, this uses the LOWER (more
+        // conservative) figure where sources conflict, so the tool never
+        // falsely promises a conversion a smaller real-world boost wouldn't
+        // achieve. None of the researched styles below boost Agility at all
+        // — consistent across every source checked — which is why only
+        // Strength (and Acceleration for Anchor/Hawk) are modeled here.
+        // Values are the FULL boost at 3/3 chemistry (the "+9" tier); at
+        // lower chemistry the real game scales this down, which this does
+        // NOT model — treat this as a "best case at max chemistry" check.
+        const LENGTHY_CONVERSION_STYLES = {
+            Architect: { str: 9, agi: 0, acc: 0 },
+            Sniper:    { str: 9, agi: 0, acc: 0 },
+            Marksman:  { str: 6, agi: 0, acc: 0 },
+            Anchor:    { str: 6, agi: 0, acc: 3 },
+            Hawk:      { str: 3, agi: 0, acc: 3 },
+            Sentinel:  { str: 3, agi: 0, acc: 0 }
+        };
+
+        // Position-aware recommendation grouping, per the requested
+        // selection matrix.
+        function recommendedLengthyStyleFor(pos) {
+            if (['CB', 'LB', 'RB', 'CDM'].includes(pos)) return ['Anchor', 'Sentinel'];
+            if (['ST', 'LW', 'RW', 'CAM', 'CF'].includes(pos)) return ['Hawk', 'Marksman', 'Sniper'];
+            return ['Architect']; // deep midfielders / fallback
+        }
+
+        // Implements the exact 4-step Execution Protocol requested:
+        //   1. Height + base Acceleration/Strength minimums (prerequisite gates)
+        //   2. Boosted attribute = base + chemistry style boost
+        //   3. Validate boosted Strength - boosted Agility >= 4
+        //   4. Return per-style True/False + the best-fit style
+        // NOTE: the height gate here (185cm men / 172cm women) is the
+        // "conversion candidate" threshold as specified — it's deliberately
+        // stricter than the base AcceleRATE Lengthy gate (183cm/164cm)
+        // confirmed elsewhere in this file, since this checks eligibility
+        // for a chemistry-assisted conversion specifically, not the base
+        // (zero-chem) classification.
+        function checkLengthyConversion(detail) {
+            if (!detail || !detail.inGameAttributes || typeof detail.height !== 'number') return null;
+            const a = detail.inGameAttributes;
+            const isFemale = detail.gender === 'FEMALE';
+            const heightMin = isFemale ? 172 : 185;
+
+            // Step 1: prerequisite gates on BASE stats.
+            if (detail.height < heightMin) return { eligible: false, gateFailed: 'height', heightMin };
+            if (a.acceleration < 40) return { eligible: false, gateFailed: 'acceleration' };
+            if (a.strength < 65) return { eligible: false, gateFailed: 'strength' };
+
+            // Steps 2-3: per-style boosted differential check.
+            const results = Object.entries(LENGTHY_CONVERSION_STYLES).map(([style, boost]) => {
+                const boostedStr = a.strength + boost.str;
+                const boostedAgi = a.agility + boost.agi;
+                const diff = boostedStr - boostedAgi;
+                return { style, boostedStr, boostedAgi, diff, passes: diff >= 4 };
+            });
+
+            const working = results.filter(r => r.passes).sort((x, y) => y.diff - x.diff);
+            // Step 4.
+            return { eligible: working.length > 0, results, bestStyle: working[0] || null };
+        }
+
         // Kicks off the deep-dive fetch for the currently-open modal and
         // upgrades the badge/movement-feel text in place once it resolves.
         // Guards against the user having switched to a different player's
@@ -1988,11 +2057,57 @@
                         const heightLine = isAr
                             ? `الطول: ${detail.height} سم، الوزن: ${detail.weight} كجم${detail.gender ? `، ${detail.gender === 'FEMALE' ? 'أنثى' : 'ذكر'}` : ''} — بيانات حقيقية من EasySBC.`
                             : `Height: ${detail.height}cm, Weight: ${detail.weight}kg${detail.gender ? `, ${detail.gender === 'FEMALE' ? 'Female' : 'Male'}` : ''} — real data from EasySBC.`;
+
+                        // Only relevant for players who AREN'T already Lengthy —
+                        // no point suggesting a "conversion" to what they
+                        // already are.
+                        let conversionHtml = '';
+                        if (verified.type !== 'Lengthy') {
+                            const conv = checkLengthyConversion(detail);
+                            if (conv && conv.eligible && conv.bestStyle) {
+                                const recommended = recommendedLengthyStyleFor(player.pos);
+                                const bestIsRecommended = recommended.includes(conv.bestStyle.style);
+                                const styleNote = isAr
+                                    ? (recommended.includes('Anchor') || recommended.includes('Sentinel')
+                                        ? 'مناسب للمدافعين — يجمع بين تعزيز الدفاع والبدنية لتجاوز عتبة القوة.'
+                                        : recommended.includes('Architect')
+                                        ? 'الخيار الأساسي لصناع الألعاب العمقاء — أقصى تعزيز للتمرير والبدنية.'
+                                        : 'مثالي للمهاجمين — يرفع القوة إلى جانب التسديد/المراوغة.')
+                                    : (recommended.includes('Anchor') || recommended.includes('Sentinel')
+                                        ? 'Suited to defenders — combines Defending + Physical boosts to clear the Strength threshold.'
+                                        : recommended.includes('Architect')
+                                        ? 'The primary pick for deep midfielders — max boost to Passing and Physical.'
+                                        : 'Ideal for attackers — raises Strength alongside Shooting/Dribbling.');
+                                conversionHtml = `
+                                    <div class="mt-2 pt-2 border-t border-fc-border/60">
+                                        <span class="font-bold text-orange-400">⚡ ${isAr ? 'يمكن تحويله إلى Lengthy' : 'Can convert to Lengthy'}</span>
+                                        <span class="text-gray-300"> — ${isAr ? 'باستخدام نمط كيمياء' : 'with'} <span class="font-bold text-white">${conv.bestStyle.style}</span> (${isAr ? 'قوة' : 'STR'} ${detail.inGameAttributes.strength}→${conv.bestStyle.boostedStr}, ${isAr ? 'رشاقة' : 'AGI'} ${detail.inGameAttributes.agility}, ${isAr ? 'الفارق' : 'diff'} ${conv.bestStyle.diff})</span>
+                                        <p class="text-gray-500 mt-1">${styleNote}</p>
+                                        <p class="text-gray-600 text-[10px] mt-1">${isAr ? 'ملاحظة: القيم الدقيقة لأنماط الكيمياء تختلف بين المصادر — هذا يستخدم الحد الأدنى المتحفظ. تحقق داخل اللعبة قبل قرارات مهمة.' : 'Note: exact chemistry style values vary between sources — this uses a conservative lower-bound estimate. Verify in-game before relying on this for important decisions.'}</p>
+                                    </div>
+                                `;
+                            } else if (conv && !conv.eligible) {
+                                const reasonText = conv.gateFailed === 'height'
+                                    ? (isAr ? `الطول أقل من الحد الأدنى للتحويل (${conv.heightMin} سم).` : `Height is below the conversion minimum (${conv.heightMin}cm).`)
+                                    : conv.gateFailed === 'acceleration'
+                                    ? (isAr ? 'التسارع الأساسي أقل من 40.' : 'Base Acceleration is below 40.')
+                                    : conv.gateFailed === 'strength'
+                                    ? (isAr ? 'القوة الأساسية أقل من 65.' : 'Base Strength is below 65.')
+                                    : (isAr ? 'لا يوجد نمط كيمياء من القائمة يرفع الفارق (القوة-الرشاقة) إلى 4 أو أكثر.' : 'No style in the checked list pushes the Strength-Agility gap to 4+.');
+                                conversionHtml = `
+                                    <div class="mt-2 pt-2 border-t border-fc-border/60">
+                                        <span class="text-gray-500 italic text-[11px]">${isAr ? 'لا يمكن تحويله إلى Lengthy عبر أنماط الكيمياء المتاحة: ' : 'Cannot convert to Lengthy with available chemistry styles: '}${reasonText}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+
                         feelEl.innerHTML = `
                             <span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE مُتحقق منه ✓):' : 'Movement Feel (verified AcceleRATE ✓):'}</span>
                             <span class="font-bold" style="color:${verified.color}">${verified.type}</span> —
                             ${isAr ? verified.ar : verified.en}
                             <div class="text-gray-500 mt-1">${heightLine}</div>
+                            ${conversionHtml}
                         `;
                     }
                 }
@@ -2359,7 +2474,7 @@
             }
 
             const accelInfo = estimateAccelerateType(player);
-            const accelBadge = accelInfo ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${accelInfo.color}22;color:${accelInfo.color};border-color:${accelInfo.color}55;" title="${currentLanguage === 'ar' ? accelInfo.ar : accelInfo.en}">⚡ ${accelInfo.type}</span>` : '';
+            const accelBadge = accelInfo ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border ml-1.5 rtl:ml-0 rtl:mr-1.5" style="background-color:${accelInfo.color}22;color:${accelInfo.color};border-color:${accelInfo.color}55;" title="${currentLanguage === 'ar' ? accelInfo.ar : accelInfo.en} (${currentLanguage === 'ar' ? 'تقدير أولي، جارٍ التحقق...' : 'provisional estimate, verifying...'})">⚡ ${accelInfo.type} ?</span>` : '';
 
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
