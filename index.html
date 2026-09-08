@@ -994,6 +994,43 @@
             return (typeof player.meta === 'number' && !isNaN(player.meta)) ? player.meta : player.rating;
         }
 
+        // Human-readable names for the 6 broad attribute composites, used to
+        // label the "Key Attributes" grid in the player modal instead of
+        // raw 3-letter codes.
+        const ATTRIBUTE_LABELS = {
+            pac: { en: 'Pace', ar: 'السرعة' },
+            sho: { en: 'Shooting', ar: 'التسديد' },
+            pas: { en: 'Passing', ar: 'التمرير' },
+            dri: { en: 'Dribbling', ar: 'المراوغة' },
+            def: { en: 'Defending', ar: 'الدفاع' },
+            phy: { en: 'Physical', ar: 'البدنية' },
+            div: { en: 'Diving', ar: 'الغطس' },
+            han: { en: 'Handling', ar: 'الإمساك بالكرة' },
+            kic: { en: 'Kicking', ar: 'الإرسال' },
+            ref: { en: 'Reflexes', ar: 'ردود الفعل' },
+            spe: { en: 'Speed', ar: 'السرعة' },
+            pos: { en: 'Positioning', ar: 'التمركز' }
+        };
+
+        // Which of the 6 attributes actually matter most for a given
+        // position — deliberately mirrors the exact weighting
+        // calculatePlayerScore() uses below (same attributes, same
+        // priority order), so the "key attribute" star shown in the player
+        // modal always matches what's really driving that player's score
+        // for the slot, instead of being a separate/inconsistent opinion.
+        function getKeyAttributesForPosition(pos) {
+            switch (pos) {
+                case 'GK': return ['ref', 'div', 'han'];
+                case 'CB': return ['def', 'pac', 'phy'];
+                case 'LB': case 'RB': case 'LWB': case 'RWB': return ['pac', 'def', 'pas'];
+                case 'CDM': case 'CM': return ['pas', 'def', 'dri'];
+                case 'CAM': case 'LM': case 'RM': return ['dri', 'pas', 'pac'];
+                case 'LW': case 'RW': return ['pac', 'dri', 'sho'];
+                case 'ST': case 'CF': return ['sho', 'pac', 'dri'];
+                default: return [];
+            }
+        }
+
         function calculatePlayerScore(player, targetPos) {
             const hasMeta = typeof player.meta === 'number' && !isNaN(player.meta);
             // Scale so meta rating (which runs higher than OVR, often 80-95+)
@@ -2579,6 +2616,21 @@
             const psBase = Array.isArray(player.playstyles) ? player.playstyles : [];
             const hasPlaystyles = psPlus.length > 0 || psBase.length > 0;
 
+            // Key Attributes grid: surface which of the 6 broad attributes
+            // actually matter for THIS player's position first, with a star
+            // + accent highlight, instead of listing all six with equal
+            // visual weight.
+            const keyAttrsForPos = getKeyAttributesForPosition(player.pos);
+            const attrEntries = Object.entries(player.att).sort((a, b) => {
+                const aIdx = keyAttrsForPos.indexOf(a[0]);
+                const bIdx = keyAttrsForPos.indexOf(b[0]);
+                return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
+            });
+            const keyAttrTitle = currentLanguage === 'ar' ? 'أساسي لهذا المركز' : 'Key for this position';
+            const keyAttrLegend = currentLanguage === 'ar'
+                ? '★ يشير إلى الخصائص التي يعتمد عليها تقييم هذا المركز بشكل أساسي.'
+                : "★ marks the attributes this position's scoring leans on most.";
+
             // "Why" text: lead with meta vs raw-rating reasoning as before,
             // then fold in a playstyle-specific clause only when the card
             // actually has playstyle data — most base gold cards don't, and
@@ -2764,13 +2816,19 @@
                 <div class="space-y-3 pt-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
                     <div class="grid grid-cols-3 gap-2 text-center text-xs">
-                        ${Object.entries(player.att).map(([k, v]) => `
-                            <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
-                                <span class="text-gray-400 uppercase text-[10px] block">${k}</span>
-                                <span class="font-black text-white text-sm">${v}</span>
-                            </div>
-                        `).join('')}
+                        ${attrEntries.map(([k, v]) => {
+                            const isKey = keyAttrsForPos.includes(k);
+                            const label = ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+                            return `
+                                <div class="relative p-2 rounded-xl border ${isKey ? 'bg-fc-accent/10 border-fc-accent/50' : 'bg-fc-dark border-fc-border'}" ${isKey ? `title="${keyAttrTitle}"` : ''}>
+                                    ${isKey ? `<span class="absolute -top-1.5 -right-1.5 rtl:right-auto rtl:-left-1.5 text-[9px] font-black bg-fc-accent text-fc-dark w-4 h-4 rounded-full flex items-center justify-center">★</span>` : ''}
+                                    <span class="${isKey ? 'text-fc-accent' : 'text-gray-400'} uppercase text-[10px] block truncate">${label}</span>
+                                    <span class="font-black text-white text-sm">${v}</span>
+                                </div>
+                            `;
+                        }).join('')}
                     </div>
+                    <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}</p>
                 </div>
 
                 ${chemistrySection}
