@@ -285,6 +285,10 @@
                         <i class="fa-solid fa-wand-magic-sparkles"></i>
                         <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
                     </button>
+                    <button onclick="regenerateSquad()" id="regenerate-btn" class="px-6 py-3 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-sm shadow-lg transition-all flex items-center space-x-2 rtl:space-x-reverse" title="Generate a different squad for the same formation & budget">
+                        <i class="fa-solid fa-shuffle"></i>
+                        <span data-i18n="regenBtn">REGENERATE SQUAD</span>
+                    </button>
                     <button onclick="openExplanationModal()" class="p-3 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all" title="How was this squad built?">
                         <i class="fa-solid fa-circle-info text-lg"></i>
                     </button>
@@ -569,6 +573,8 @@
                 formationLabel: "Formation",
                 managerLabel: "Manager (optional, +1 chem match)",
                 optimizeBtn: "OPTIMIZE BEST SQUAD",
+                regenBtn: "REGENERATE SQUAD",
+                regenExhausted: "NO MORE UNIQUE SQUADS",
                 squadSummary: "Squad Summary",
                 availableBudget: "Available Budget",
                 totalSquadCost: "Total Squad Cost",
@@ -642,6 +648,8 @@
                 formationLabel: "التشكيلة",
                 managerLabel: "المدرب (اختياري، +1 كيمياء عند التطابق)",
                 optimizeBtn: "تحسين أفضل تشكيلة",
+                regenBtn: "إعادة توليد التشكيلة",
+                regenExhausted: "لا مزيد من التشكيلات الفريدة",
                 squadSummary: "ملخص التشكيلة",
                 availableBudget: "الميزانية المتاحة",
                 totalSquadCost: "إجمالي تكلفة التشكيلة",
@@ -733,7 +741,14 @@
             // their exact Nation or League. null = no manager selected.
             // { nationId, leagueId } — either can be null if only one is set.
             manager: null,
-            explanationLog: []
+            explanationLog: [],
+            // Regeneration tracking: every unique squad (by player-id set)
+            // already generated for the current formation+budget, plus
+            // whether we've run out of realistic unique alternatives. Reset
+            // any time a fresh optimize runs (formation/budget/database
+            // change all funnel through runSquadOptimizer).
+            history: new Set(),
+            exhausted: false
         };
 
         // Player database now defaults to a LIVE pull from EasySBC's API on
@@ -1477,7 +1492,208 @@
             renderFootballPitch();
             renderSquadSummary();
             calculateNextBestUpgrade();
+
+            // Fresh optimize = fresh regeneration history: the squad just
+            // built counts as "seen" #1, and the Regenerate button is
+            // re-enabled for whatever new formation/budget/database this
+            // build used.
+            squadState.history = new Set([computeSquadSignature(squadState.selectedXI)]);
+            squadState.exhausted = false;
+            updateRegenerateButtonState();
         };
+
+        // ===================================================================
+        // SQUAD REGENERATION
+        // ===================================================================
+        // Produces a DIFFERENT squad for the SAME formation + budget without
+        // re-running the deterministic optimizer above (which always
+        // converges on the identical "best" squad, so calling it again would
+        // just return the same XI). Tracks every unique player-set already
+        // shown this session for the current formation+budget and stops
+        // offering new ones once no unique combination turns up within a
+        // reasonable number of tries.
+        // NOTE: this is a practical stopping point, not a mathematical proof
+        // that zero combinations remain — with ~300 loaded players across 11
+        // slots, exhaustively checking every possible combination isn't
+        // feasible. In practice, failing to find a new unique squad after 40
+        // randomized attempts means the affordable candidate pool for this
+        // budget/formation is genuinely thin, so treating it as "no more" is
+        // a reasonable real-world signal.
+        function computeSquadSignature(xi) {
+            return Object.values(xi).filter(Boolean).map(p => p.id).sort().join(',');
+        }
+
+        // One randomized build attempt: same tiered budget logic as the main
+        // optimizer (strict fit -> +50,000 tolerance -> cheapest-available
+        // fallback so no slot is left empty), but instead of always taking
+        // the single highest-scoring affordable candidate per slot, picks
+        // randomly among the top few affordable candidates — real variation
+        // while keeping quality and budget usage high.
+        function buildRandomizedXI() {
+            const slots = formationSlots[squadState.formation];
+            const budget = squadState.budget;
+            const BUDGET_TOLERANCE = 50000;
+            const hardCap = budget + BUDGET_TOLERANCE;
+            const RANDOM_POOL_SIZE = 3;
+
+            let candidateMap = {};
+            slots.forEach((slot, idx) => {
+                const eligible = fc27Database.filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
+                eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                candidateMap[idx] = eligible;
+            });
+
+            function cheapestAvailablePrice(slotIdx, usedIds) {
+                let min = Infinity;
+                for (const cand of candidateMap[slotIdx]) {
+                    if (!usedIds.has(cand.id) && cand.price < min) min = cand.price;
+                }
+                return isFinite(min) ? min : 0;
+            }
+
+            let sortedSlotIndices = slots.map((s, i) => i);
+            sortedSlotIndices.sort((a, b) => {
+                const pA = slots[a].pos, pB = slots[b].pos;
+                const weight = { 'ST': 1, 'CB': 2, 'CM': 3, 'GK': 4, 'LW': 5, 'RW': 5, 'CAM': 6, 'LB': 7, 'RB': 7, 'CDM': 3, 'LM': 5, 'RM': 5 };
+                return (weight[pA] || 9) - (weight[pB] || 9);
+            });
+
+            let selectedXI = {};
+            let usedPlayerIds = new Set();
+            let currentSpent = 0;
+
+            for (let i = 0; i < sortedSlotIndices.length; i++) {
+                const slotIdx = sortedSlotIndices[i];
+                const slot = slots[slotIdx];
+                const candidates = candidateMap[slotIdx];
+                const remainingSlotIndices = sortedSlotIndices.slice(i + 1);
+
+                const collectFitting = (cap) => {
+                    const fitting = [];
+                    for (const cand of candidates) {
+                        if (usedPlayerIds.has(cand.id)) continue;
+                        const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
+                        if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
+                    }
+                    return fitting;
+                };
+
+                let fitting = collectFitting(budget);
+                if (fitting.length === 0) fitting = collectFitting(hardCap);
+
+                let chosen = null;
+                if (fitting.length > 0) {
+                    // fitting[] preserves the descending-score order inherited
+                    // from candidateMap, so index 0 is the single best pick —
+                    // randomizing across the top few keeps quality high while
+                    // still varying the outcome run to run.
+                    const poolSize = Math.min(RANDOM_POOL_SIZE, fitting.length);
+                    chosen = fitting[Math.floor(Math.random() * poolSize)];
+                } else {
+                    let cheapest = null;
+                    for (const cand of candidates) {
+                        if (usedPlayerIds.has(cand.id)) continue;
+                        if (!cheapest || cand.price < cheapest.price) cheapest = cand;
+                    }
+                    chosen = cheapest;
+                }
+
+                if (chosen) {
+                    selectedXI[slotIdx] = chosen;
+                    usedPlayerIds.add(chosen.id);
+                    currentSpent += chosen.price;
+                }
+            }
+
+            return { selectedXI, totalCost: currentSpent };
+        }
+
+        window.regenerateSquad = function() {
+            if (squadState.exhausted) return;
+            if (!fc27Database || fc27Database.length === 0) return;
+
+            const backupXI = { ...squadState.selectedXI };
+            const backupCost = squadState.totalCost;
+
+            const MAX_ATTEMPTS = 40;
+            let found = null;
+
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                const built = buildRandomizedXI();
+                squadState.selectedXI = built.selectedXI;
+                squadState.totalCost = built.totalCost;
+
+                // Same chemistry-fix + leftover-budget-reinvestment passes the
+                // main optimizer runs, so regenerated squads stay just as
+                // chemistry-sound and budget-maximized as the original build.
+                improveSquadChemistry();
+                spendLeftoverBudget();
+
+                const signature = computeSquadSignature(squadState.selectedXI);
+                if (!squadState.history.has(signature)) {
+                    found = signature;
+                    break;
+                }
+            }
+
+            if (!found) {
+                // Restore whatever squad was showing before this attempt and
+                // stop offering further regenerations for this formation/budget.
+                squadState.selectedXI = backupXI;
+                squadState.totalCost = backupCost;
+                squadState.exhausted = true;
+
+                const msg = currentLanguage === 'ar'
+                    ? 'لا توجد تشكيلات جديدة فريدة متاحة لهذه التشكيلة والميزانية الحالية.'
+                    : 'No more unique squads found for this formation and budget.';
+                squadState.explanationLog.push(`<span class="text-fc-gold font-semibold">${msg}</span>`);
+
+                squadState.chemistry = calculateSquadChemistry();
+                renderFootballPitch();
+                renderSquadSummary();
+                updateRegenerateButtonState();
+                return;
+            }
+
+            squadState.history.add(found);
+
+            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) {
+                    totalRating += p.rating;
+                    count++;
+                    if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; }
+                }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
+
+            const regenMsg = currentLanguage === 'ar' ? 'تم توليد تشكيلة جديدة لنفس التشكيلة والميزانية.' : 'Generated a new squad variation for the same formation and budget.';
+            squadState.explanationLog.push(regenMsg);
+
+            computeSlotAlternatives();
+            populateManagerDropdown();
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+            updateRegenerateButtonState();
+        };
+
+        function updateRegenerateButtonState() {
+            const btn = document.getElementById('regenerate-btn');
+            if (!btn) return;
+            const label = btn.querySelector('span[data-i18n]');
+            if (squadState.exhausted) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                if (label) { label.setAttribute('data-i18n', 'regenExhausted'); label.innerText = i18n[currentLanguage].regenExhausted; }
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                if (label) { label.setAttribute('data-i18n', 'regenBtn'); label.innerText = i18n[currentLanguage].regenBtn; }
+            }
+        }
 
         // Finds up to 2 best-fit, BUDGET-AFFORDABLE bench alternatives per
         // slot — same scoring used for initial selection, but filtered so a
