@@ -2304,7 +2304,7 @@
 
                 if (verified) {
                     if (badgeEl) {
-                        badgeEl.outerHTML = `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border" style="background-color:${verified.color}22;color:${verified.color};border-color:${verified.color}55;" title="${isAr ? verified.ar : verified.en}">⚡ ${verified.type} ✓</span>`;
+                        badgeEl.outerHTML = `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border" style="direction:ltr;unicode-bidi:isolate;background-color:${verified.color}22;color:${verified.color};border-color:${verified.color}55;" title="${isAr ? verified.ar : verified.en}">⚡ ${verified.type} ✓</span>`;
                     }
                     if (feelEl) {
                         const heightLine = isAr
@@ -2737,24 +2737,24 @@
             // verifies it — a small pulsing placeholder shows instead
             // (skipped entirely for GKs, where AcceleRATE isn't meaningful).
             const accelBadge = player.pos !== 'GK'
-                ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border bg-fc-dark text-gray-500 border-fc-border animate-pulse">⚡ ${currentLanguage === 'ar' ? 'جارٍ التحقق' : 'checking'}…</span>`
+                ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border bg-fc-dark text-gray-500 border-fc-border animate-pulse" style="direction:ltr;unicode-bidi:isolate;">⚡ ${currentLanguage === 'ar' ? 'جارٍ التحقق' : 'checking'}…</span>`
                 : '';
 
             content.innerHTML = `
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
                     <img src="${player.photo}" class="w-16 h-16 rounded-2xl border-2 border-fc-accent object-cover bg-fc-dark" alt="${player.name}">
                     <div>
-                        <!-- dir="ltr" forced + flex/gap instead of inline
-                             margin: without this, Arabic's RTL paragraph
-                             direction can make the Unicode bidi algorithm
-                             reorder pieces of these two adjacent badges
-                             (position code + AcceleRATE type/checkmark)
-                             across their span boundaries, since plain inline
-                             siblings aren't bidi-isolated by default. Same
-                             class of bug as the pitch/input-adornment fixes
-                             noted in PROJECT.md. -->
-                        <div class="flex items-center gap-1.5" dir="ltr">
-                            <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30">${player.pos}</span>${accelBadge}
+                        <!-- The row itself follows the page's natural
+                             direction (so it hugs the photo correctly on
+                             either side in English vs Arabic) — only each
+                             badge's OWN text is forced to
+                             direction:ltr + unicode-bidi:isolate, so
+                             "Explosive ✓" can't get its symbols scrambled
+                             by the bidi algorithm without also yanking the
+                             whole row over to the wrong side (that was the
+                             bug with a blanket dir="ltr" on the row). -->
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30" style="direction:ltr;unicode-bidi:isolate;">${player.pos}</span>${accelBadge}
                         </div>
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
