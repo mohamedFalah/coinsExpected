@@ -2308,6 +2308,128 @@
         // upgrades the badge/movement-feel text in place once it resolves.
         // Guards against the user having switched to a different player's
         // modal before the fetch completes.
+        // ===================================================================
+        // GRANULAR IN-GAME ATTRIBUTES (real, per-player, position-filtered)
+        // ===================================================================
+        // The bulk feed's 6 broad composites can't distinguish e.g.
+        // Finishing from Shot Power, or Standing Tackle from Interceptions —
+        // only the per-player detail endpoint's ~34 granular
+        // inGameAttributes can. Only 'acceleration', 'agility' and
+        // 'strength' are independently confirmed field names (used above
+        // for AcceleRATE); the rest below are a best-effort mapping of the
+        // live API's schema, each with a couple of likely name variants.
+        // getGranularValue() checks every candidate and returns the first
+        // one that's actually present as a number — if NONE of a field's
+        // guessed names exist in the real response, that row is simply
+        // OMITTED rather than ever showing an invented number. This follows
+        // the same "verified or nothing" rule the AcceleRATE badge uses.
+        const GRANULAR_ATTR_DEFS = {
+            acceleration:       { en: 'Acceleration', ar: 'التسارع', candidates: ['acceleration'] },
+            sprintSpeed:        { en: 'Sprint Speed', ar: 'سرعة الركض', candidates: ['sprintSpeed', 'sprint_speed', 'speed'] },
+            positioning:        { en: 'Positioning', ar: 'التمركز الهجومي', candidates: ['positioning'] },
+            finishing:          { en: 'Finishing', ar: 'الإنهاء', candidates: ['finishing'] },
+            shotPower:          { en: 'Shot Power', ar: 'قوة التسديد', candidates: ['shotPower', 'shot_power'] },
+            longShots:          { en: 'Long Shots', ar: 'التسديد من بعيد', candidates: ['longShots', 'long_shots'] },
+            volleys:            { en: 'Volleys', ar: 'الطائرة', candidates: ['volleys'] },
+            penalties:          { en: 'Penalties', ar: 'ركلات الجزاء', candidates: ['penalties'] },
+            vision:             { en: 'Vision', ar: 'الرؤية', candidates: ['vision'] },
+            crossing:           { en: 'Crossing', ar: 'العرضيات', candidates: ['crossing'] },
+            freeKickAccuracy:   { en: 'Free Kick Accuracy', ar: 'دقة الركلات الحرة', candidates: ['freeKickAccuracy', 'fkAccuracy', 'free_kick_accuracy'] },
+            shortPassing:       { en: 'Short Passing', ar: 'التمرير القصير', candidates: ['shortPassing', 'short_passing'] },
+            longPassing:        { en: 'Long Passing', ar: 'التمرير الطويل', candidates: ['longPassing', 'long_passing'] },
+            curve:              { en: 'Curve', ar: 'الانحناء', candidates: ['curve'] },
+            agility:            { en: 'Agility', ar: 'الرشاقة', candidates: ['agility'] },
+            balance:            { en: 'Balance', ar: 'التوازن', candidates: ['balance'] },
+            reactions:          { en: 'Reactions', ar: 'ردود الفعل', candidates: ['reactions'] },
+            ballControl:        { en: 'Ball Control', ar: 'التحكم بالكرة', candidates: ['ballControl', 'ball_control'] },
+            dribblingSkill:     { en: 'Dribbling', ar: 'المراوغة', candidates: ['dribbling'] },
+            composure:          { en: 'Composure', ar: 'رباطة الجأش', candidates: ['composure'] },
+            interceptions:      { en: 'Interceptions', ar: 'الاعتراض', candidates: ['interceptions'] },
+            headingAccuracy:    { en: 'Heading Accuracy', ar: 'دقة الرأسيات', candidates: ['headingAccuracy', 'heading_accuracy'] },
+            defensiveAwareness: { en: 'Defensive Awareness', ar: 'الوعي الدفاعي', candidates: ['defensiveAwareness', 'marking', 'defensive_awareness'] },
+            standingTackle:     { en: 'Standing Tackle', ar: 'التدخل واقفاً', candidates: ['standingTackle', 'standing_tackle'] },
+            slidingTackle:      { en: 'Sliding Tackle', ar: 'التدخل بالانزلاق', candidates: ['slidingTackle', 'sliding_tackle'] },
+            jumping:            { en: 'Jumping', ar: 'القفز', candidates: ['jumping'] },
+            stamina:            { en: 'Stamina', ar: 'التحمل', candidates: ['stamina'] },
+            strength:           { en: 'Strength', ar: 'القوة', candidates: ['strength'] },
+            aggression:         { en: 'Aggression', ar: 'العدوانية', candidates: ['aggression'] },
+            gkDiving:           { en: 'GK Diving', ar: 'غطس الحارس', candidates: ['diving', 'gkDiving'] },
+            gkHandling:         { en: 'GK Handling', ar: 'إمساك الحارس', candidates: ['handling', 'gkHandling'] },
+            gkKicking:          { en: 'GK Kicking', ar: 'ركل الحارس', candidates: ['kicking', 'gkKicking'] },
+            gkReflexes:         { en: 'GK Reflexes', ar: 'ردود فعل الحارس', candidates: ['reflexes', 'gkReflexes'] },
+            gkPositioning:      { en: 'GK Positioning', ar: 'تمركز الحارس', candidates: ['gkPositioning'] }
+        };
+
+        // Curated per-position shortlist — the sub-stats a real coach/player
+        // would actually look at for that role. Deliberately excludes
+        // irrelevant categories entirely (e.g. no Defending sub-stats for a
+        // striker) rather than showing them at a meaningless low value.
+        const POSITION_GRANULAR_ATTRS = {
+            GK:  ['gkReflexes', 'gkDiving', 'gkHandling', 'gkKicking'],
+            CB:  ['standingTackle', 'slidingTackle', 'interceptions', 'headingAccuracy', 'strength', 'sprintSpeed'],
+            LB:  ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
+            RB:  ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
+            LWB: ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
+            RWB: ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
+            CDM: ['interceptions', 'standingTackle', 'shortPassing', 'stamina', 'strength', 'aggression'],
+            CM:  ['shortPassing', 'longPassing', 'vision', 'stamina', 'ballControl', 'dribblingSkill'],
+            CAM: ['vision', 'shortPassing', 'dribblingSkill', 'finishing', 'ballControl', 'curve'],
+            LM:  ['crossing', 'dribblingSkill', 'sprintSpeed', 'ballControl', 'stamina', 'shortPassing'],
+            RM:  ['crossing', 'dribblingSkill', 'sprintSpeed', 'ballControl', 'stamina', 'shortPassing'],
+            LW:  ['acceleration', 'sprintSpeed', 'dribblingSkill', 'finishing', 'agility', 'curve'],
+            RW:  ['acceleration', 'sprintSpeed', 'dribblingSkill', 'finishing', 'agility', 'curve'],
+            ST:  ['finishing', 'shotPower', 'acceleration', 'sprintSpeed', 'positioning', 'volleys'],
+            CF:  ['finishing', 'shotPower', 'acceleration', 'sprintSpeed', 'positioning', 'volleys']
+        };
+
+        function getGranularValue(detail, candidates) {
+            if (!detail || !detail.inGameAttributes) return null;
+            for (const key of candidates) {
+                const v = detail.inGameAttributes[key];
+                if (typeof v === 'number') return v;
+            }
+            return null;
+        }
+
+        // Fills in the #granular-attrs-live placeholder once the detail
+        // fetch settles (success, partial, or failure) — mirrors the
+        // honest loading -> verified/failed pattern used for AcceleRATE.
+        function renderGranularAttrs(player, detail) {
+            const el = document.getElementById('granular-attrs-live');
+            if (!el) return;
+            const isAr = currentLanguage === 'ar';
+
+            if (!detail || !detail.inGameAttributes) {
+                el.innerHTML = `<span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من الإحصائيات الدقيقة لهذا اللاعب.' : "Couldn't verify granular stats for this player."}</span>`;
+                return;
+            }
+
+            const relevantKeys = POSITION_GRANULAR_ATTRS[player.pos] || [];
+            const rows = relevantKeys.map(key => {
+                const def = GRANULAR_ATTR_DEFS[key];
+                if (!def) return null;
+                const val = getGranularValue(detail, def.candidates);
+                if (val === null) return null;
+                return { label: isAr ? def.ar : def.en, val };
+            }).filter(Boolean);
+
+            if (rows.length === 0) {
+                el.innerHTML = `<span class="text-gray-500 italic">${isAr ? 'لا تتوفر بيانات دقيقة إضافية لهذه البطاقة.' : 'No additional granular attribute data available for this card.'}</span>`;
+                return;
+            }
+
+            el.innerHTML = `
+                <div class="grid grid-cols-2 gap-2">
+                    ${rows.map(r => `
+                        <div class="flex items-center justify-between bg-fc-dark p-2 rounded-lg border border-fc-border">
+                            <span class="text-gray-400">${r.label}</span>
+                            <span class="font-black text-white">${r.val}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         function loadPlayerDeepDive(player) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
@@ -2318,6 +2440,11 @@
                 const badgeEl = document.getElementById('accel-badge-live');
                 const feelEl = document.getElementById('movement-feel-live');
                 const isAr = currentLanguage === 'ar';
+
+                // Independent of AcceleRATE verification below (which can
+                // legitimately be null for GKs) — the granular attribute
+                // breakdown should still render whenever we have detail.
+                renderGranularAttrs(player, detail);
 
                 if (!detail) {
                     // Fetch failed — say so plainly rather than leaving a
@@ -2406,6 +2533,7 @@
                 const badgeEl = document.getElementById('accel-badge-live');
                 const feelEl = document.getElementById('movement-feel-live');
                 const isAr = currentLanguage === 'ar';
+                renderGranularAttrs(player, null);
                 if (badgeEl) badgeEl.remove();
                 if (feelEl) {
                     feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
@@ -2621,15 +2749,16 @@
             // + accent highlight, instead of listing all six with equal
             // visual weight.
             const keyAttrsForPos = getKeyAttributesForPosition(player.pos);
-            const attrEntries = Object.entries(player.att).sort((a, b) => {
-                const aIdx = keyAttrsForPos.indexOf(a[0]);
-                const bIdx = keyAttrsForPos.indexOf(b[0]);
-                return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
-            });
-            const keyAttrTitle = currentLanguage === 'ar' ? 'أساسي لهذا المركز' : 'Key for this position';
+            // Only show the broad composites this position actually cares
+            // about (e.g. no Defending on a striker) rather than all 6 with
+            // some just de-emphasized — the irrelevant ones are dropped
+            // entirely per the user's request.
+            const attrEntries = Object.entries(player.att)
+                .filter(([k]) => keyAttrsForPos.includes(k))
+                .sort((a, b) => keyAttrsForPos.indexOf(a[0]) - keyAttrsForPos.indexOf(b[0]));
             const keyAttrLegend = currentLanguage === 'ar'
-                ? '★ يشير إلى الخصائص التي يعتمد عليها تقييم هذا المركز بشكل أساسي.'
-                : "★ marks the attributes this position's scoring leans on most.";
+                ? `يتم عرض الخصائص المرتبطة فعلياً بمركز ${player.pos} فقط.`
+                : `Only showing the attributes that actually matter for the ${player.pos} position.`;
 
             // "Why" text: lead with meta vs raw-rating reasoning as before,
             // then fold in a playstyle-specific clause only when the card
@@ -2817,18 +2946,23 @@
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
                     <div class="grid grid-cols-3 gap-2 text-center text-xs">
                         ${attrEntries.map(([k, v]) => {
-                            const isKey = keyAttrsForPos.includes(k);
                             const label = ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
                             return `
-                                <div class="relative p-2 rounded-xl border ${isKey ? 'bg-fc-accent/10 border-fc-accent/50' : 'bg-fc-dark border-fc-border'}" ${isKey ? `title="${keyAttrTitle}"` : ''}>
-                                    ${isKey ? `<span class="absolute -top-1.5 -right-1.5 rtl:right-auto rtl:-left-1.5 text-[9px] font-black bg-fc-accent text-fc-dark w-4 h-4 rounded-full flex items-center justify-center">★</span>` : ''}
-                                    <span class="${isKey ? 'text-fc-accent' : 'text-gray-400'} uppercase text-[10px] block truncate">${label}</span>
+                                <div class="p-2 rounded-xl border bg-fc-accent/10 border-fc-accent/50">
+                                    <span class="text-fc-accent uppercase text-[10px] block truncate">${label}</span>
                                     <span class="font-black text-white text-sm">${v}</span>
                                 </div>
                             `;
                         }).join('')}
                     </div>
                     <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}</p>
+                </div>
+
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الإحصائيات الدقيقة داخل اللعبة' : 'Granular In-Game Attributes'}</span>
+                    <div id="granular-attrs-live" class="text-[11px] text-gray-500 italic">
+                        ${currentLanguage === 'ar' ? 'جارٍ التحقق من الإحصائيات الدقيقة الحقيقية…' : 'Verifying real granular stats for this player…'}
+                    </div>
                 </div>
 
                 ${chemistrySection}
