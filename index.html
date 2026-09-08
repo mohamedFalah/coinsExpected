@@ -982,9 +982,201 @@
         };
 
         window.changeFormation = function(formKey) {
+            const previousFormation = squadState.formation;
+            if (previousFormation === formKey) return;
+
+            const hasExistingSquad = squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0 && fc27Database.length > 0;
+            if (!hasExistingSquad) {
+                // Nothing to preserve yet (first load / empty database) —
+                // fall back to a normal full build.
+                squadState.formation = formKey;
+                window.runSquadOptimizer();
+                return;
+            }
+
+            const oldXI = squadState.selectedXI;
             squadState.formation = formKey;
-            window.runSquadOptimizer();
+            adjustSquadForFormationChange(oldXI, previousFormation, formKey);
         };
+
+        // ===================================================================
+        // FORMATION CHANGE — ADJUST, DON'T REBUILD
+        // ===================================================================
+        // Switching formation used to throw the whole XI away and run the
+        // full optimizer again, which could swap out perfectly good players
+        // just because the greedy build order landed differently the second
+        // time. Instead: keep every current player who still fits a slot in
+        // the new formation (exact position match first, then alt-position
+        // match), and only pick NEW players for whichever slots the new
+        // formation needs that nobody currently in the squad can fill — e.g.
+        // 4-3-3 -> 4-4-2 only really needs to turn one winger-ish player
+        // into a second striker, not touch the back four at all.
+        function adjustSquadForFormationChange(oldXI, previousFormationKey, newFormationKey) {
+            const newSlots = formationSlots[newFormationKey];
+            let availablePlayers = Object.values(oldXI).filter(Boolean);
+            let newXI = {};
+            let retainedCount = 0;
+
+            // Pass 1: exact position matches only, across every slot first,
+            // so a player isn't consumed by an alt-position slot when a real
+            // home for them exists elsewhere in the new formation.
+            let stillNeeded = [];
+            newSlots.forEach((slot, idx) => {
+                const exact = availablePlayers.filter(p => p.pos === slot.pos);
+                if (exact.length > 0) {
+                    exact.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                    const chosen = exact[0];
+                    newXI[idx] = chosen;
+                    availablePlayers = availablePlayers.filter(p => p.id !== chosen.id);
+                    retainedCount++;
+                } else {
+                    stillNeeded.push(idx);
+                }
+            });
+
+            // Pass 2: alt-position matches for whatever's left unfilled.
+            const stillNeeded2 = [];
+            stillNeeded.forEach(idx => {
+                const slot = newSlots[idx];
+                const altMatch = availablePlayers.filter(p => p.alt && p.alt.includes(slot.pos));
+                if (altMatch.length > 0) {
+                    altMatch.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                    const chosen = altMatch[0];
+                    newXI[idx] = chosen;
+                    availablePlayers = availablePlayers.filter(p => p.id !== chosen.id);
+                    retainedCount++;
+                } else {
+                    stillNeeded2.push(idx);
+                }
+            });
+
+            const releasedPlayers = availablePlayers; // no longer used anywhere in the new XI
+            const neededSlotIndices = stillNeeded2;
+
+            // Fill whatever's left with a fresh, budget-aware pick — same
+            // tiered strict-fit -> tolerance -> cheapest-fallback logic the
+            // main optimizer uses, scoped to only the slots that actually
+            // need a new player.
+            const usedIds = new Set(Object.values(newXI).filter(Boolean).map(p => p.id));
+            const budget = squadState.budget;
+            const BUDGET_TOLERANCE = 50000;
+            const hardCap = budget + BUDGET_TOLERANCE;
+
+            let candidateMap = {};
+            neededSlotIndices.forEach(idx => {
+                const slot = newSlots[idx];
+                const eligible = fc27Database.filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(p.id));
+                eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                candidateMap[idx] = eligible;
+            });
+
+            function cheapestAvailablePrice(slotIdx) {
+                let min = Infinity;
+                for (const cand of candidateMap[slotIdx]) {
+                    if (!usedIds.has(cand.id) && cand.price < min) min = cand.price;
+                }
+                return isFinite(min) ? min : 0;
+            }
+
+            let order = neededSlotIndices.slice();
+            const weight = { 'ST': 1, 'CB': 2, 'CM': 3, 'GK': 4, 'LW': 5, 'RW': 5, 'CAM': 6, 'LB': 7, 'RB': 7, 'CDM': 3, 'LM': 5, 'RM': 5 };
+            order.sort((a, b) => (weight[newSlots[a].pos] || 9) - (weight[newSlots[b].pos] || 9));
+
+            let currentSpent = Object.values(newXI).filter(Boolean).reduce((sum, p) => sum + p.price, 0);
+            const newlyPicked = [];
+
+            order.forEach((slotIdx, i) => {
+                const slot = newSlots[slotIdx];
+                const candidates = candidateMap[slotIdx];
+                const remaining = order.slice(i + 1);
+
+                const collectFitting = (cap) => {
+                    const fitting = [];
+                    for (const cand of candidates) {
+                        if (usedIds.has(cand.id)) continue;
+                        const remainingMinCost = remaining.reduce((sum, ri) => sum + cheapestAvailablePrice(ri), 0);
+                        if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
+                    }
+                    return fitting;
+                };
+
+                let fitting = collectFitting(budget);
+                if (fitting.length === 0) fitting = collectFitting(hardCap);
+
+                let chosen = null;
+                if (fitting.length > 0) {
+                    chosen = fitting[0];
+                } else {
+                    let cheapest = null;
+                    for (const cand of candidates) {
+                        if (usedIds.has(cand.id)) continue;
+                        if (!cheapest || cand.price < cheapest.price) cheapest = cand;
+                    }
+                    chosen = cheapest;
+                }
+
+                if (chosen) {
+                    newXI[slotIdx] = chosen;
+                    usedIds.add(chosen.id);
+                    currentSpent += chosen.price;
+                    newlyPicked.push({ slot, player: chosen });
+                }
+            });
+
+            squadState.selectedXI = newXI;
+            squadState.totalCost = currentSpent;
+
+            // Same chemistry-fix + leftover-budget-reinvestment passes the
+            // main build runs, so an adjusted squad ends up just as sound.
+            improveSquadChemistry();
+            spendLeftoverBudget();
+
+            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) {
+                    totalRating += p.rating;
+                    count++;
+                    if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; }
+                }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
+
+            squadState.explanationLog = [];
+            const isAr = currentLanguage === 'ar';
+            const headerText = isAr
+                ? `تغيير التشكيلة من <span class="text-white font-bold">${previousFormationKey}</span> إلى <span class="text-white font-bold">${newFormationKey}</span>: تم الاحتفاظ بـ <span class="text-fc-accent font-bold">${retainedCount}</span> لاعب في مراكز مطابقة، وتعديل <span class="text-fc-gold font-bold">${newlyPicked.length}</span> مركز فقط.`
+                : `Formation changed from <span class="text-white font-bold">${previousFormationKey}</span> to <span class="text-white font-bold">${newFormationKey}</span>: kept <span class="text-fc-accent font-bold">${retainedCount}</span> player(s) in matching positions, adjusted only <span class="text-fc-gold font-bold">${newlyPicked.length}</span> slot(s).`;
+            squadState.explanationLog.push(headerText);
+
+            newlyPicked.forEach(({ slot, player }) => {
+                const line = isAr
+                    ? `تم اختيار <span class="text-white font-bold">${player.name}</span> لمركز <span class="text-fc-accent">${slot.label}</span> الجديد.`
+                    : `Selected <span class="text-white font-bold">${player.name}</span> for the new <span class="text-fc-accent">${slot.label}</span> slot.`;
+                squadState.explanationLog.push(line);
+            });
+
+            if (releasedPlayers.length > 0) {
+                const names = releasedPlayers.map(p => p.name).join(', ');
+                const releaseLine = isAr
+                    ? `لا يوجد مكان لهم في <span class="text-white font-bold">${newFormationKey}</span> فغادروا التشكيلة: ${names}.`
+                    : `No slot for them in <span class="text-white font-bold">${newFormationKey}</span>, so they left the squad: ${names}.`;
+                squadState.explanationLog.push(releaseLine);
+            }
+
+            computeSlotAlternatives();
+            populateManagerDropdown();
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+
+            // Composition changed — fresh regeneration history for this new
+            // formation/budget combination.
+            squadState.history = new Set([computeSquadSignature(squadState.selectedXI)]);
+            squadState.exhausted = false;
+            updateRegenerateButtonState();
+        }
 
         // Returns the best available "meta quality" signal for a player:
         // EasySBC's own metaRating when we have it (position/playstyle-aware,
