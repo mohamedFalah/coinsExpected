@@ -313,7 +313,7 @@
                          diagram, not text — RB/LB etc. must stay on their
                          real side regardless of UI language, so this
                          subtree opts out of RTL mirroring entirely. -->
-                    <div id="pitch-container" dir="ltr" class="relative z-10 min-h-[620px] flex flex-col justify-between py-6 px-4">
+                    <div id="pitch-container" dir="ltr" class="relative z-10 min-h-[620px] py-6 px-4">
                         <!-- Populated by renderFootballPitch() -->
                     </div>
                 </div>
@@ -484,7 +484,7 @@
 
     <!-- Player Details Modal -->
     <div id="player-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
-        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-4xl w-full p-6 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
             <button onclick="closePlayerModal()" class="absolute top-5 right-5 rtl:right-auto rtl:left-5 text-gray-400 hover:text-white text-lg">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -2195,12 +2195,25 @@
                 rows[slot.row].push({ slot, idx, player: squadState.selectedXI[idx] });
             });
 
+            // Anchor each row to its actual depth on the pitch (row 1 =
+            // furthest forward, row 4 = GK) on a FIXED 1..4 scale, not
+            // "however many distinct rows this formation happens to use."
+            // The old flex justify-between layout only spaced out whichever
+            // rows were actually populated, so a formation using fewer
+            // distinct row values bunched everyone toward the middle and
+            // left the goalkeeper floating well away from the goal graphic
+            // instead of anchored to the bottom edge.
+            const MIN_ROW = 1, MAX_ROW = 4;
+            const TOP_PCT = 8, BOTTOM_PCT = 88; // leaves room for card height at both edges
             [1, 1.5, 2, 2.5, 3, 4].forEach(rowNum => {
                 const rowItems = rows[rowNum];
                 if (!rowItems || rowItems.length === 0) return;
 
+                const topPct = TOP_PCT + ((rowNum - MIN_ROW) / (MAX_ROW - MIN_ROW)) * (BOTTOM_PCT - TOP_PCT);
                 const rowDiv = document.createElement('div');
-                rowDiv.className = "flex justify-around items-center w-full my-2";
+                rowDiv.className = "absolute left-0 right-0 flex justify-around items-center w-full px-2";
+                rowDiv.style.top = topPct + '%';
+                rowDiv.style.transform = 'translateY(-50%)';
 
                 rowItems.forEach(item => {
                     const player = item.player;
@@ -2359,10 +2372,10 @@
             // card, not a patchwork of different styles.
             container.innerHTML = `
                 <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'أسلوب اللعب' : 'Playstyle'}</span>
-                <div class="flex items-center justify-between bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60 mt-2">
+                <div class="flex items-center bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60 mt-2">
                     <div class="flex items-center gap-2 min-w-0">
                         <i class="fa-solid ${identity.icon} text-fc-accent text-xs shrink-0"></i>
-                        <span class="text-gray-200 font-semibold text-sm truncate">${identity.headline}</span>
+                        <span class="text-gray-200 font-semibold text-sm leading-snug">${identity.headline}</span>
                     </div>
                 </div>
                 <div class="text-[11px] text-gray-500 mt-1.5 leading-snug">${identity.description}</div>
@@ -3458,6 +3471,7 @@
                 : '';
 
             content.innerHTML = `
+                <div class="space-y-5">
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
                     <img src="${player.photo}" class="w-16 h-16 rounded-2xl border-2 border-fc-accent object-cover bg-fc-dark" alt="${player.name}">
                     <div>
@@ -3478,83 +3492,96 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-2 text-center">
-                    <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
-                        <span class="text-gray-400 uppercase text-[10px] tracking-wide">${weakFootLabel}</span>
-                        <span class="font-black text-fc-gold text-sm leading-none"><bdi>${weakFootValue}</bdi></span>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6 items-start">
+                    <!-- LEFT: the player's own card facts — profile, key
+                         attributes, granular in-game stats. -->
+                    <div class="space-y-5">
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                <span class="text-gray-400 uppercase text-[10px] tracking-wide">${weakFootLabel}</span>
+                                <span class="font-black text-fc-gold text-sm leading-none"><bdi>${weakFootValue}</bdi></span>
+                            </div>
+                            <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                <span class="text-gray-400 uppercase text-[10px] tracking-wide">${skillMovesLabel}</span>
+                                <span class="font-black text-fc-gold text-sm leading-none"><bdi>${skillMovesValue}</bdi></span>
+                            </div>
+                            <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                <span class="text-gray-400 uppercase text-[10px] tracking-wide">${preferredFootLabel}</span>
+                                <span class="font-black text-white text-sm leading-none"><bdi>${footValue}</bdi></span>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
+                            <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                                ${attrEntries.map(([k, v]) => {
+                                    const label = ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+                                    return `
+                                        <div class="p-2 rounded-xl border bg-fc-accent/10 border-fc-accent/50">
+                                            <span class="text-fc-accent uppercase text-[10px] block truncate">${label}</span>
+                                            <span class="font-black text-white text-sm">${v}</span>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}</p>
+                        </div>
+
+                        <div class="space-y-2">
+                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الإحصائيات الدقيقة داخل اللعبة' : 'Granular In-Game Attributes'}</span>
+                            ${(() => {
+                                const total = granularKeysForPos.length;
+                                const cards = granularKeysForPos.map((key, idx) => {
+                                    const def = GRANULAR_ATTR_DEFS[key];
+                                    if (!def) return '';
+                                    const label = currentLanguage === 'ar' ? def.ar : def.en;
+                                    const cardHtml = `
+                                        <div class="bg-fc-dark/70 border border-fc-border rounded-2xl p-3 flex flex-col gap-1.5">
+                                            <div class="flex items-center gap-1.5 text-gray-400">
+                                                <i class="fa-solid ${def.icon || 'fa-chart-simple'} text-xs w-4 text-center shrink-0"></i>
+                                                <span class="font-bold text-[11px] truncate" title="${label}">${label}</span>
+                                            </div>
+                                            <div id="granular-val-${key}" class="text-2xl font-black text-gray-600 leading-none"><bdi>--</bdi></div>
+                                            <div class="h-1.5 rounded-full bg-black/40 overflow-hidden">
+                                                <div id="granular-bar-${key}" class="h-full rounded-full transition-all duration-700 ease-out" style="width:3%;background:#2a3b5c;"></div>
+                                            </div>
+                                        </div>
+                                    `;
+                                    // Center a lone trailing card when the group has
+                                    // an odd count (e.g. GK's 5, Defender's 7) so it
+                                    // doesn't sit awkwardly flush-left on its own row.
+                                    const isLastOdd = (total % 2 === 1) && (idx === total - 1);
+                                    return isLastOdd
+                                        ? `<div class="col-span-2 flex justify-center"><div class="w-1/2 min-w-[140px]">${cardHtml}</div></div>`
+                                        : cardHtml;
+                                });
+                                return `<div class="grid grid-cols-2 gap-2.5">${cards.join('')}</div>`;
+                            })()}
+                            <p id="granular-status" class="hidden text-[10px] text-gray-500 italic"></p>
+                        </div>
                     </div>
-                    <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
-                        <span class="text-gray-400 uppercase text-[10px] tracking-wide">${skillMovesLabel}</span>
-                        <span class="font-black text-fc-gold text-sm leading-none"><bdi>${skillMovesValue}</bdi></span>
-                    </div>
-                    <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
-                        <span class="text-gray-400 uppercase text-[10px] tracking-wide">${preferredFootLabel}</span>
-                        <span class="font-black text-white text-sm leading-none"><bdi>${footValue}</bdi></span>
+
+                    <!-- RIGHT: squad-context info — chemistry, playstyles,
+                         why-this-player reasoning, Meta Analyst, alternatives.
+                         Rendered next to the left column instead of stacked
+                         underneath it, so the modal scrolls far less. -->
+                    <div class="space-y-5">
+                        ${chemistrySection}
+
+                        ${playstylesSection}
+
+                        <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
+                            <span class="text-xs font-bold text-fc-accent">${whyText}</span>
+                            <p class="text-xs text-gray-300">${whyDesc}</p>
+                            ${focusProfileHtml}
+                        </div>
+
+                        <div id="analyst-panel"></div>
+
+                        ${alternativesSection}
                     </div>
                 </div>
-
-                <div class="space-y-3 pt-2">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
-                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
-                        ${attrEntries.map(([k, v]) => {
-                            const label = ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
-                            return `
-                                <div class="p-2 rounded-xl border bg-fc-accent/10 border-fc-accent/50">
-                                    <span class="text-fc-accent uppercase text-[10px] block truncate">${label}</span>
-                                    <span class="font-black text-white text-sm">${v}</span>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                    <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}</p>
                 </div>
-
-                <div class="space-y-2">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الإحصائيات الدقيقة داخل اللعبة' : 'Granular In-Game Attributes'}</span>
-                    ${(() => {
-                        const total = granularKeysForPos.length;
-                        const cards = granularKeysForPos.map((key, idx) => {
-                            const def = GRANULAR_ATTR_DEFS[key];
-                            if (!def) return '';
-                            const label = currentLanguage === 'ar' ? def.ar : def.en;
-                            const cardHtml = `
-                                <div class="bg-fc-dark/70 border border-fc-border rounded-2xl p-3 flex flex-col gap-1.5">
-                                    <div class="flex items-center gap-1.5 text-gray-400">
-                                        <i class="fa-solid ${def.icon || 'fa-chart-simple'} text-xs w-4 text-center shrink-0"></i>
-                                        <span class="font-bold text-[11px] truncate" title="${label}">${label}</span>
-                                    </div>
-                                    <div id="granular-val-${key}" class="text-2xl font-black text-gray-600 leading-none"><bdi>--</bdi></div>
-                                    <div class="h-1.5 rounded-full bg-black/40 overflow-hidden">
-                                        <div id="granular-bar-${key}" class="h-full rounded-full transition-all duration-700 ease-out" style="width:3%;background:#2a3b5c;"></div>
-                                    </div>
-                                </div>
-                            `;
-                            // Center a lone trailing card when the group has
-                            // an odd count (e.g. GK's 5, Defender's 7) so it
-                            // doesn't sit awkwardly flush-left on its own row.
-                            const isLastOdd = (total % 2 === 1) && (idx === total - 1);
-                            return isLastOdd
-                                ? `<div class="col-span-2 flex justify-center"><div class="w-1/2 min-w-[140px]">${cardHtml}</div></div>`
-                                : cardHtml;
-                        });
-                        return `<div class="grid grid-cols-2 gap-2.5">${cards.join('')}</div>`;
-                    })()}
-                    <p id="granular-status" class="hidden text-[10px] text-gray-500 italic"></p>
-                </div>
-
-                ${chemistrySection}
-
-                ${playstylesSection}
-
-                <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
-                    <span class="text-xs font-bold text-fc-accent">${whyText}</span>
-                    <p class="text-xs text-gray-300">${whyDesc}</p>
-                    ${focusProfileHtml}
-                </div>
-
-                <div id="analyst-panel"></div>
-
-                ${alternativesSection}
             `;
 
             if (typeof slotIdx === 'number') {
