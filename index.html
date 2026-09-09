@@ -250,54 +250,47 @@
 
         <!-- ================= VIEW 2: SQUAD BUILDER ================= -->
         <div id="view-squad" class="hidden space-y-8">
-            <!-- Controls Bar: Budget Input & Formation Switcher -->
-            <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl flex flex-wrap items-center justify-between gap-6">
-                <div class="flex flex-wrap items-center gap-4">
-                    <div>
-                        <label data-i18n="squadBudget" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Squad Budget (Coins)</label>
-                        <div class="flex items-center gap-2">
-                            <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
-                                class="bg-fc-dark border border-fc-border rounded-xl px-4 py-2.5 text-lg font-black text-fc-gold w-40 sm:w-48 min-w-0 focus:outline-none focus:border-fc-accent text-left"
-                                onchange="updateBudgetFromInput(this.value)">
-                            <button onclick="syncBudgetFromCalculator()" class="shrink-0 text-xs bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2.5 py-2 rounded-lg text-fc-accent font-bold whitespace-nowrap" title="Use Expected Calculator Coins" data-i18n="syncCalc">
-                                Sync Calc
-                            </button>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label data-i18n="formationLabel" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Formation</label>
-                        <select id="formation-select" onchange="changeFormation(this.value)"
-                            class="bg-fc-dark border border-fc-border rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                            <option value="4-3-3">4-3-3 (Attack / Standard)</option>
-                            <option value="4-4-2">4-4-2 (Flat)</option>
-                            <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
-                            <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
-                            <option value="3-5-2">3-5-2 (Balanced)</option>
-                            <option value="4-5-1">4-5-1 (Defensive Wide)</option>
-                            <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label data-i18n="managerLabel" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Manager (optional, +1 chem match)</label>
-                        <select id="manager-select" onchange="setSquadManager(this.value)"
-                            class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[220px]">
-                            <option value="">— No Manager —</option>
-                        </select>
-                    </div>
+            <!-- Controls Bar: Budget Input & Formation Switcher — a single
+                 compact toolbar row instead of stacked labels-above-inputs,
+                 so it doesn't eat vertical space or wrap onto its own row
+                 of buttons on typical desktop widths. -->
+            <div class="bg-fc-card border border-fc-border rounded-2xl px-4 py-3 shadow-xl flex flex-wrap items-center gap-2.5">
+                <div class="flex items-center gap-1.5 bg-fc-dark border border-fc-border rounded-xl pl-3 pr-1.5 py-1.5" title="Squad Budget (Coins)">
+                    <i class="fa-solid fa-coins text-fc-gold text-xs shrink-0"></i>
+                    <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
+                        class="bg-transparent w-24 sm:w-28 text-sm font-black text-fc-gold focus:outline-none text-left"
+                        onchange="updateBudgetFromInput(this.value)">
+                    <button onclick="syncBudgetFromCalculator()" class="shrink-0 text-[11px] bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2 py-1.5 rounded-lg text-fc-accent font-bold whitespace-nowrap" title="Use Expected Calculator Coins" data-i18n="syncCalc">
+                        Sync Calc
+                    </button>
                 </div>
 
-                <div class="flex items-center space-x-3 rtl:space-x-reverse">
-                    <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-sm shadow-lg shadow-fc-accent/25 transition-all flex items-center space-x-2 rtl:space-x-reverse">
+                <select id="formation-select" onchange="changeFormation(this.value)" title="Formation"
+                    class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
+                    <option value="4-3-3">4-3-3 (Attack / Standard)</option>
+                    <option value="4-4-2">4-4-2 (Flat)</option>
+                    <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
+                    <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
+                    <option value="3-5-2">3-5-2 (Balanced)</option>
+                    <option value="4-5-1">4-5-1 (Defensive Wide)</option>
+                    <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
+                </select>
+
+                <select id="manager-select" onchange="setSquadManager(this.value)" title="Manager (optional, +1 chem match)"
+                    class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[170px]">
+                    <option value="">— No Manager —</option>
+                </select>
+
+                <div class="flex items-center gap-2.5 ml-auto">
+                    <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-xs shadow-lg shadow-fc-accent/25 transition-all flex items-center gap-1.5 whitespace-nowrap">
                         <i class="fa-solid fa-wand-magic-sparkles"></i>
                         <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
                     </button>
-                    <button onclick="regenerateSquad()" id="regenerate-btn" class="px-6 py-3 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-sm shadow-lg transition-all flex items-center space-x-2 rtl:space-x-reverse" title="Generate a different squad for the same formation & budget">
+                    <button onclick="regenerateSquad()" id="regenerate-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Generate a different squad for the same formation & budget">
                         <i class="fa-solid fa-shuffle"></i>
                         <span data-i18n="regenBtn">REGENERATE SQUAD</span>
                     </button>
-                    <button onclick="openExplanationModal()" class="p-3 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all" title="How was this squad built?">
+                    <button onclick="openExplanationModal()" class="p-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all shrink-0" title="How was this squad built?">
                         <i class="fa-solid fa-circle-info text-lg"></i>
                     </button>
                 </div>
@@ -3343,13 +3336,73 @@
                 ? ` This card also carries ${psPlus.length > 0 ? `<span class="text-purple-300 font-semibold">${psPlus.length} PlayStyle+</span>` : ''}${psPlus.length > 0 && psBase.length > 0 ? ' and ' : ''}${psBase.length > 0 ? `<span class="text-fc-accent font-semibold">${psBase.length} PlayStyle</span>` : ''} trait${(psPlus.length + psBase.length) > 1 ? 's' : ''} that specifically boost real in-game performance for this role.`
                 : ` No PlayStyle data is available for this card, so the pick was based on meta rating/attributes only.`;
 
-            const whyDesc = currentLanguage === 'ar'
-                ? (hasMeta
-                    ? `أفضل تقييم ميتا (Meta Rating) متاح لمركز <span class="text-white font-semibold">${slotLabel}</span> ضمن الميزانية — وهو تقييم EasySBC الفعلي لجودة الأداء في هذا المركز، وليس مجرد التقييم العام (OVR)، مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.${styleClauseAr}`
-                    : `أعلى مرشح متاح وبأسعار معقولة لمركز <span class="text-white font-semibold">${slotLabel}</span> (لا تتوفر بيانات ميتا لهذا اللاعب، فتم الاعتماد على التقييم العام) مع الحفاظ على التشكيلة ضمن ميزانيتك البالغة ${squadState.budget.toLocaleString()} كوينز.${styleClauseAr}`)
-                : (hasMeta
-                    ? `Best affordable Meta Rating for the <span class="text-white font-semibold">${slotLabel}</span> position — EasySBC's own role-specific performance score, not just raw OVR — while keeping the starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.${styleClauseEn}`
-                    : `Highest-rated affordable candidate available for the <span class="text-white font-semibold">${slotLabel}</span> position (no meta rating data available for this player, so overall rating was used) while keeping the total starting XI within your ${squadState.budget.toLocaleString()} coin budget limit.${styleClauseEn}`);
+            // "Why This Pick" — a real per-player evaluation instead of a
+            // fixed template. Built from three actual signals: how far
+            // ahead of the next-best alternative for this exact slot they
+            // are, which specific attribute stands out for the role they're
+            // currently filling, and how their price stacks up against the
+            // total budget — so two different players read completely
+            // differently instead of the same boilerplate sentence with
+            // just the name swapped.
+            function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries) {
+                const isAr = currentLanguage === 'ar';
+                const sentences = [];
+
+                const alts = (typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
+                if (alts.length > 0) {
+                    const nextBest = alts[0];
+                    const gap = getMetaValue(evalPlayer) - getMetaValue(nextBest);
+                    if (gap >= 3) {
+                        sentences.push(isAr
+                            ? `يتفوّق بوضوح على أقرب بديل متاح لهذا المركز (<span class="text-white font-semibold">${nextBest.name}</span>) بفارق ${gap.toFixed(1)} نقطة تقييم.`
+                            : `Clearly ahead of the closest available alternative for this slot (<span class="text-white font-semibold">${nextBest.name}</span>) by ${gap.toFixed(1)} rating points.`);
+                    } else if (gap > 0.3) {
+                        sentences.push(isAr
+                            ? `يتقدّم بفارق ضئيل عن أقرب بديل (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`
+                            : `Only a thin margin ahead of the closest alternative (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`);
+                    } else {
+                        sentences.push(isAr
+                            ? `الفارق مع البدائل المتاحة محدود جداً — <span class="text-white font-semibold">${nextBest.name}</span> كان سيؤدي بأداء مشابه تقريباً.`
+                            : `Barely separated from the alternatives on the table — <span class="text-white font-semibold">${nextBest.name}</span> would've performed almost as well here.`);
+                    }
+                } else {
+                    sentences.push(isAr
+                        ? `لا يوجد بديل آخر متاح لهذا المركز ضمن الميزانية الحالية — كان الخيار الواقعي الوحيد.`
+                        : `No other candidate for this position fits the current budget — this was the only realistic option.`);
+                }
+
+                if (evalAttrEntries && evalAttrEntries.length > 0) {
+                    const [key, val] = evalAttrEntries.reduce((a, b) => (b[1] > a[1] ? b : a));
+                    const label = ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
+                    const tier = val >= 88 ? (isAr ? 'استثنائية' : 'elite')
+                        : val >= 80 ? (isAr ? 'ممتازة' : 'excellent')
+                        : val >= 72 ? (isAr ? 'جيدة' : 'solid')
+                        : (isAr ? 'متواضعة' : 'modest');
+                    sentences.push(isAr
+                        ? `أبرز صفاته في هذا الدور: ${label} ${tier} (${val}).`
+                        : `Their standout trait for this role: ${tier} ${label.toLowerCase()} (${val}).`);
+                }
+
+                const budgetShare = squadState.budget > 0 ? (evalPlayer.price / squadState.budget) * 100 : 0;
+                if (budgetShare >= 15) {
+                    sentences.push(isAr
+                        ? `استثمار كبير في هذا المركز — يستهلك نحو ${budgetShare.toFixed(0)}% من إجمالي الميزانية.`
+                        : `A marquee spend for this slot — around ${budgetShare.toFixed(0)}% of the total budget.`);
+                } else if (budgetShare <= 1) {
+                    sentences.push(isAr
+                        ? `قيمة ممتازة — أقل من 1% فقط من الميزانية الإجمالية.`
+                        : `Excellent value — under 1% of the total budget for this slot.`);
+                }
+
+                return sentences.join(' ');
+            }
+
+            const noMetaNote = !hasMeta
+                ? (currentLanguage === 'ar'
+                    ? ' لا تتوفر بيانات ميتا لهذه البطاقة، فاعتمد هذا التقييم على الإحصائيات والتقييم العام بدلاً منها.'
+                    : ' No meta rating data for this card, so this read is based on raw attributes/OVR instead.')
+                : '';
+            const whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries) + noMetaNote + (currentLanguage === 'ar' ? styleClauseAr : styleClauseEn);
             const metaLine = hasMeta
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
