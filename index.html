@@ -249,68 +249,67 @@
         </div>
 
         <!-- ================= VIEW 2: SQUAD BUILDER ================= -->
-        <div id="view-squad" class="hidden space-y-8">
-            <!-- Controls Bar: Budget Input & Formation Switcher — a single
-                 compact toolbar row instead of stacked labels-above-inputs,
-                 so it doesn't eat vertical space or wrap onto its own row
-                 of buttons on typical desktop widths. -->
-            <div class="bg-fc-card border border-fc-border rounded-2xl px-4 py-3 shadow-xl flex flex-wrap items-center gap-2.5">
-                <div class="flex items-center gap-1.5 bg-fc-dark border border-fc-border rounded-xl pl-3 pr-1.5 py-1.5" title="Squad Budget (Coins)">
-                    <i class="fa-solid fa-coins text-fc-gold text-xs shrink-0"></i>
-                    <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
-                        class="bg-transparent w-24 sm:w-28 text-sm font-black text-fc-gold focus:outline-none text-left"
-                        onchange="updateBudgetFromInput(this.value)">
-                    <button onclick="syncBudgetFromCalculator()" class="shrink-0 text-[11px] bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2 py-1.5 rounded-lg text-fc-accent font-bold whitespace-nowrap" title="Use Expected Calculator Coins" data-i18n="syncCalc">
-                        Sync Calc
-                    </button>
+        <div id="view-squad" class="hidden space-y-6">
+            <!-- Header card: Controls + Suggested Tactics live in ONE card
+                 now (divided by a single internal rule) instead of two
+                 separately-styled floating boxes — same neutral chrome as
+                 every other card, color reserved for actual values. -->
+            <div class="bg-fc-card border border-fc-border rounded-2xl shadow-xl">
+                <div class="px-4 py-3 flex flex-wrap items-center gap-2.5">
+                    <div class="flex items-center gap-1.5 bg-fc-dark border border-fc-border rounded-xl pl-3 pr-1.5 py-1.5" title="Squad Budget (Coins)">
+                        <i class="fa-solid fa-coins text-fc-gold text-xs shrink-0"></i>
+                        <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
+                            class="bg-transparent w-24 sm:w-28 text-sm font-black text-fc-gold focus:outline-none text-left"
+                            onchange="updateBudgetFromInput(this.value)">
+                        <button onclick="syncBudgetFromCalculator()" class="shrink-0 text-[11px] bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2 py-1.5 rounded-lg text-fc-accent font-bold whitespace-nowrap" title="Use Expected Calculator Coins" data-i18n="syncCalc">
+                            Sync Calc
+                        </button>
+                    </div>
+
+                    <select id="formation-select" onchange="changeFormation(this.value)" title="Formation"
+                        class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
+                        <option value="4-3-3">4-3-3 (Attack / Standard)</option>
+                        <option value="4-4-2">4-4-2 (Flat)</option>
+                        <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
+                        <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
+                        <option value="3-5-2">3-5-2 (Balanced)</option>
+                        <option value="4-5-1">4-5-1 (Defensive Wide)</option>
+                        <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
+                    </select>
+
+                    <select id="manager-select" onchange="setSquadManager(this.value)" title="Manager (optional, +1 chem match)"
+                        class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[170px]">
+                        <option value="">— No Manager —</option>
+                    </select>
+
+                    <div class="flex items-center gap-2.5 ml-auto">
+                        <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-xs shadow-lg shadow-fc-accent/25 transition-all flex items-center gap-1.5 whitespace-nowrap">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
+                        </button>
+                        <button onclick="regenerateSquad()" id="regenerate-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Generate a different squad for the same formation & budget">
+                            <i class="fa-solid fa-shuffle"></i>
+                            <span data-i18n="regenBtn">REGENERATE SQUAD</span>
+                        </button>
+                        <button onclick="openExplanationModal()" class="p-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all shrink-0" title="How was this squad built?">
+                            <i class="fa-solid fa-circle-info text-lg"></i>
+                        </button>
+                    </div>
                 </div>
 
-                <select id="formation-select" onchange="changeFormation(this.value)" title="Formation"
-                    class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
-                    <option value="4-3-3">4-3-3 (Attack / Standard)</option>
-                    <option value="4-4-2">4-4-2 (Flat)</option>
-                    <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
-                    <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
-                    <option value="3-5-2">3-5-2 (Balanced)</option>
-                    <option value="4-5-1">4-5-1 (Defensive Wide)</option>
-                    <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
-                </select>
-
-                <select id="manager-select" onchange="setSquadManager(this.value)" title="Manager (optional, +1 chem match)"
-                    class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[170px]">
-                    <option value="">— No Manager —</option>
-                </select>
-
-                <div class="flex items-center gap-2.5 ml-auto">
-                    <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-xs shadow-lg shadow-fc-accent/25 transition-all flex items-center gap-1.5 whitespace-nowrap">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                        <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
-                    </button>
-                    <button onclick="regenerateSquad()" id="regenerate-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Generate a different squad for the same formation & budget">
-                        <i class="fa-solid fa-shuffle"></i>
-                        <span data-i18n="regenBtn">REGENERATE SQUAD</span>
-                    </button>
-                    <button onclick="openExplanationModal()" class="p-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all shrink-0" title="How was this squad built?">
-                        <i class="fa-solid fa-circle-info text-lg"></i>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Suggested Tactics — placed directly above the pitch instead
-                 of buried in the sidebar, since how the squad is meant to
-                 play is exactly as central as the squad itself. -->
-            <div class="bg-fc-card border-2 border-fc-accent/40 rounded-2xl p-4 shadow-xl shadow-fc-accent/5 flex flex-wrap items-center gap-x-6 gap-y-2">
-                <div class="flex items-center gap-2 text-fc-accent shrink-0">
-                    <i class="fa-solid fa-clipboard-list"></i>
-                    <span class="font-extrabold text-sm text-white uppercase tracking-wide" data-i18n="suggestedTactics">Suggested Tactics</span>
-                </div>
-                <div id="tactics-content" class="flex flex-wrap items-center gap-x-6 gap-y-1.5 flex-1 min-w-0">
-                    <!-- Populated by renderTacticsSummary() -->
+                <div class="px-4 py-3 border-t border-fc-border flex flex-wrap items-center gap-x-6 gap-y-1.5">
+                    <div class="flex items-center gap-2 text-gray-400 shrink-0">
+                        <i class="fa-solid fa-clipboard-list text-xs"></i>
+                        <span class="font-bold text-xs uppercase tracking-wide" data-i18n="suggestedTactics">Suggested Tactics</span>
+                    </div>
+                    <div id="tactics-content" class="flex flex-wrap items-center gap-x-6 gap-y-1.5 flex-1 min-w-0">
+                        <!-- Populated by renderTacticsSummary() -->
+                    </div>
                 </div>
             </div>
 
             <!-- Pitch & Visualization Area -->
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
                 <!-- Left 3 Cols: Football Pitch -->
                 <div class="lg:col-span-3 bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                     <!-- Pseudo-3D half-pitch background (trapezoid, not a
@@ -347,55 +346,50 @@
                     </div>
                 </div>
 
-                <!-- Right 1 Col: Squad Summary & Next Best Upgrade -->
-                <div class="space-y-6">
-                    <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-5">
-                        <div class="flex items-center justify-between flex-wrap gap-x-3 gap-y-2 border-b border-fc-border pb-4">
-                            <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white shrink-0">Squad Summary</h3>
-                            <div class="flex items-center flex-wrap gap-2 rtl:space-x-reverse">
-                                <span id="squad-chem-badge" class="px-3 py-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 font-black text-sm">CHEM --/33</span>
-                                <span id="squad-meta-badge" class="hidden px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 font-black text-sm">MR --</span>
-                                <span id="squad-overall-badge" class="px-3 py-1 rounded-lg bg-fc-accent/10 border border-fc-accent/30 text-fc-accent font-black text-sm">OVR --</span>
-                            </div>
-                        </div>
-
-                        <div id="squad-identity">
-                            <!-- Populated by renderSquadSummary(): a quick,
-                                 relative read on this squad's dominant trait
-                                 (pace/power/buildup/defense vs its own
-                                 average) — styled like the group-breakdown
-                                 rows below for visual consistency. -->
-                        </div>
-
-                        <div class="space-y-3">
-                            <div class="flex justify-between text-sm">
-                                <span data-i18n="availableBudget" class="text-gray-400">Available Budget</span>
-                                <span id="summary-budget" class="font-bold text-fc-gold">0 Coins</span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span data-i18n="totalSquadCost" class="text-gray-400">Total Squad Cost</span>
-                                <span id="summary-cost" class="font-bold text-white">0 Coins</span>
-                            </div>
-                            <div class="flex justify-between text-sm border-t border-fc-border pt-2">
-                                <span data-i18n="remainingCoins" class="text-gray-400">Remaining Coins</span>
-                                <span id="summary-remaining" class="font-bold text-emerald-400">0 Coins</span>
-                            </div>
-                        </div>
-
-                        <div class="border-t border-fc-border pt-4 space-y-2">
-                            <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Position Group Quality</span>
-                            <div id="group-breakdown" class="space-y-2 text-xs">
-                                <!-- Populated by renderSquadSummary() -->
-                            </div>
+                <!-- Right 1 Col: Squad Overview — ONE card (summary, identity,
+                     budget, position quality, next upgrade) instead of two
+                     separately-floating boxes, so the sidebar reads as a
+                     single continuous sheet with light internal dividers. -->
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
+                    <div class="space-y-3 border-b border-fc-border pb-4">
+                        <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
+                        <div class="flex items-center gap-4">
+                            <span id="squad-chem-badge" class="text-sm font-black text-green-400">CHEM --/33</span>
+                            <span id="squad-meta-badge" class="hidden text-sm font-black text-purple-300">MR --</span>
+                            <span id="squad-overall-badge" class="text-sm font-black text-fc-accent">OVR --</span>
                         </div>
                     </div>
 
-                    <!-- Next Best Upgrade Helper Card -->
-                    <div class="bg-gradient-to-br from-fc-card to-blue-950/30 border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
-                        <div class="flex items-center space-x-2 rtl:space-x-reverse text-fc-accent">
-                            <i class="fa-solid fa-arrow-trend-up"></i>
-                            <h3 data-i18n="nextBestUpgrade" class="font-extrabold text-sm text-white">NEXT BEST UPGRADE</h3>
+                    <div id="squad-identity" class="pb-1">
+                        <!-- Populated by renderSquadSummary(): a quick,
+                             relative read on this squad's dominant trait
+                             (pace/power/buildup/defense vs its own average). -->
+                    </div>
+
+                    <div class="space-y-2 border-t border-fc-border pt-4">
+                        <div class="flex justify-between text-sm">
+                            <span data-i18n="availableBudget" class="text-gray-400">Available Budget</span>
+                            <span id="summary-budget" class="font-bold text-fc-gold">0 Coins</span>
                         </div>
+                        <div class="flex justify-between text-sm">
+                            <span data-i18n="totalSquadCost" class="text-gray-400">Total Squad Cost</span>
+                            <span id="summary-cost" class="font-bold text-white">0 Coins</span>
+                        </div>
+                        <div class="flex justify-between text-sm pt-2 border-t border-fc-border/60">
+                            <span data-i18n="remainingCoins" class="text-gray-400">Remaining Coins</span>
+                            <span id="summary-remaining" class="font-bold text-emerald-400">0 Coins</span>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-fc-border pt-4 space-y-2">
+                        <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Position Group Quality</span>
+                        <div id="group-breakdown" class="space-y-1 text-xs">
+                            <!-- Populated by renderSquadSummary() -->
+                        </div>
+                    </div>
+
+                    <div class="border-t border-fc-border pt-4 space-y-2">
+                        <span data-i18n="nextBestUpgrade" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Next Best Upgrade</span>
                         <div id="next-upgrade-content" class="text-xs text-gray-300 space-y-2">
                             <p data-i18n="optimizeFirst" class="italic text-gray-400">Optimize a squad first to calculate the highest-impact player upgrade.</p>
                         </div>
@@ -2280,7 +2274,7 @@
                             <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
                             <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                             <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
-                            <div class="text-[9px] font-bold text-fc-accent/90 truncate w-full leading-tight" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</div>
+                            <div class="text-[9px] font-semibold text-gray-500 truncate w-full leading-tight" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</div>
                             <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
                             <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
                             <button onclick="event.stopPropagation(); window.toggleLockPlayer(${item.idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
@@ -2489,19 +2483,15 @@
                 ? `سرعة ${identity.stats.pace} · بدنية ${identity.stats.power} · تمرير ${identity.stats.buildup} · دفاع ${identity.stats.defense}`
                 : `PAC ${identity.stats.pace} · PHY ${identity.stats.power} · PAS ${identity.stats.buildup} · DEF ${identity.stats.defense}`;
 
-            // Same visual language as the Position Group Quality rows right
-            // below it (small-caps label + bg-fc-dark/60 row) instead of a
-            // separate boxed widget with progress bars — one consistent
-            // card, not a patchwork of different styles.
+            // Plain, unboxed — same text-first language as the budget rows
+            // around it, instead of a separate bordered widget.
             container.innerHTML = `
                 <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'أسلوب اللعب' : 'Playstyle'}</span>
-                <div class="flex items-center bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60 mt-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <i class="fa-solid ${identity.icon} text-fc-accent text-xs shrink-0"></i>
-                        <span class="text-gray-200 font-semibold text-sm leading-snug">${identity.headline}</span>
-                    </div>
+                <div class="flex items-center gap-2 mt-1.5">
+                    <i class="fa-solid ${identity.icon} text-fc-accent text-xs shrink-0"></i>
+                    <span class="text-gray-200 font-semibold text-sm leading-snug">${identity.headline}</span>
                 </div>
-                <div class="text-[11px] text-gray-500 mt-1.5 leading-snug">${identity.description}</div>
+                <div class="text-[11px] text-gray-500 mt-1 leading-snug">${identity.description}</div>
                 <div class="text-[10px] text-gray-600 font-mono mt-1">${statLine}</div>
             `;
         }
@@ -2533,8 +2523,8 @@
                 const perSlot = squadState.chemistry.perSlot;
                 const anyBelowTwo = Object.values(perSlot).some(s => s.inPosition && s.points < 2) || Object.values(perSlot).some(s => !s.inPosition);
                 chemBadge.className = anyBelowTwo
-                    ? 'px-3 py-1 rounded-lg bg-fc-gold/10 border border-fc-gold/30 text-fc-gold font-black text-sm'
-                    : 'px-3 py-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 font-black text-sm';
+                    ? 'text-sm font-black text-fc-gold'
+                    : 'text-sm font-black text-green-400';
             }
             if (sumBudget) sumBudget.innerText = squadState.budget.toLocaleString() + ' ' + coinLabel;
             if (sumCost) sumCost.innerText = squadState.totalCost.toLocaleString() + ' ' + coinLabel;
@@ -2575,11 +2565,11 @@
                     : '';
 
                 const row = document.createElement('div');
-                row.className = "flex justify-between items-center bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60";
+                row.className = "flex justify-between items-center py-1";
                 const avgText = (currentLanguage === 'ar' ? `معدل ${avgRtg} (${list.length} لاعبين)` : `Avg ${avgRtg} (${list.length} players)`) + avgMetaText;
                 row.innerHTML = `
-                    <span class="text-gray-300 font-semibold">${groupName}</span>
-                    <span class="font-bold text-fc-accent">${avgText}</span>
+                    <span class="text-gray-400">${groupName}</span>
+                    <span class="font-bold text-white">${avgText}</span>
                 `;
                 breakdownContainer.appendChild(row);
             });
