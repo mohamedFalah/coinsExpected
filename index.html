@@ -2496,60 +2496,59 @@
             return { eligible: working.length > 0, results, bestStyle: working[0] || null };
         }
 
-        // Kicks off the deep-dive fetch for the currently-open modal and
-        // upgrades the badge/movement-feel text in place once it resolves.
-        // Guards against the user having switched to a different player's
-        // modal before the fetch completes.
         // ===================================================================
-        // GRANULAR IN-GAME ATTRIBUTES (real, per-player, position-filtered)
+        // GRANULAR IN-GAME ATTRIBUTES (real, confirmed API field names)
         // ===================================================================
         // The bulk feed's 6 broad composites can't distinguish e.g.
         // Finishing from Shot Power, or Standing Tackle from Interceptions —
-        // only the per-player detail endpoint's ~34 granular
-        // inGameAttributes can. Only 'acceleration', 'agility' and
-        // 'strength' are independently confirmed field names (used above
-        // for AcceleRATE); the rest below are a best-effort mapping of the
-        // live API's schema, each with a couple of likely name variants.
-        // getGranularValue() checks every candidate and returns the first
-        // one that's actually present as a number — if NONE of a field's
-        // guessed names exist in the real response, that row is simply
-        // OMITTED rather than ever showing an invented number. This follows
-        // the same "verified or nothing" rule the AcceleRATE badge uses.
+        // only the per-player detail endpoint's inGameAttributes can. These
+        // 34 field names are confirmed against the real API response and
+        // are organized exactly as the API itself groups them, by broad
+        // position category (Goalkeeper / Defender / Midfielder /
+        // Forward-Winger) rather than per individual position — so, per the
+        // API's own schema, a CDM shows the same Midfielder set as a CAM.
+        // getGranularValue() still falls back to a normalized/fuzzy match
+        // as a safety net in case a specific card's response omits a field,
+        // but never invents a number: a missing field is simply omitted.
         const GRANULAR_ATTR_DEFS = {
-            acceleration:       { en: 'Acceleration', ar: 'التسارع', candidates: ['acceleration'] },
-            sprintSpeed:        { en: 'Sprint Speed', ar: 'سرعة الركض', candidates: ['sprintSpeed', 'sprint_speed', 'speed'] },
-            positioning:        { en: 'Positioning', ar: 'التمركز الهجومي', candidates: ['positioning'] },
-            finishing:          { en: 'Finishing', ar: 'الإنهاء', candidates: ['finishing'] },
-            shotPower:          { en: 'Shot Power', ar: 'قوة التسديد', candidates: ['shotPower', 'shot_power'] },
-            longShots:          { en: 'Long Shots', ar: 'التسديد من بعيد', candidates: ['longShots', 'long_shots'] },
-            volleys:            { en: 'Volleys', ar: 'الطائرة', candidates: ['volleys'] },
-            penalties:          { en: 'Penalties', ar: 'ركلات الجزاء', candidates: ['penalties'] },
-            vision:             { en: 'Vision', ar: 'الرؤية', candidates: ['vision'] },
+            // Goalkeeper (5)
+            gkDiving:           { en: 'GK Diving', ar: 'غطس الحارس', candidates: ['gkDiving'] },
+            gkHandling:         { en: 'GK Handling', ar: 'إمساك الحارس', candidates: ['gkHandling'] },
+            gkKicking:          { en: 'GK Kicking', ar: 'ركل الحارس', candidates: ['gkKicking'] },
+            gkPositioning:      { en: 'GK Positioning', ar: 'تمركز الحارس', candidates: ['gkPositioning'] },
+            gkReflexes:         { en: 'GK Reflexes', ar: 'ردود فعل الحارس', candidates: ['gkReflexes'] },
+            // Defender (7)
+            defensiveAwareness: { en: 'Defensive Awareness', ar: 'الوعي الدفاعي', candidates: ['defensiveAwareness'] },
+            headingAccuracy:    { en: 'Heading Accuracy', ar: 'دقة الرأسيات', candidates: ['headingAccuracy'] },
+            interceptions:      { en: 'Interceptions', ar: 'الاعتراض', candidates: ['interceptions'] },
+            jumping:            { en: 'Jumping', ar: 'القفز', candidates: ['jumping'] },
+            slidingTackles:     { en: 'Sliding Tackle', ar: 'التدخل بالانزلاق', candidates: ['slidingTackles'] },
+            standingTackles:    { en: 'Standing Tackle', ar: 'التدخل واقفاً', candidates: ['standingTackles'] },
+            strength:           { en: 'Strength', ar: 'القوة', candidates: ['strength'] },
+            // Midfielder (8)
+            aggression:         { en: 'Aggression', ar: 'العدوانية', candidates: ['aggression'] },
+            ballControl:        { en: 'Ball Control', ar: 'التحكم بالكرة', candidates: ['ballControl'] },
             crossing:           { en: 'Crossing', ar: 'العرضيات', candidates: ['crossing'] },
-            freeKickAccuracy:   { en: 'Free Kick Accuracy', ar: 'دقة الركلات الحرة', candidates: ['freeKickAccuracy', 'fkAccuracy', 'free_kick_accuracy'] },
-            shortPassing:       { en: 'Short Passing', ar: 'التمرير القصير', candidates: ['shortPassing', 'short_passing'] },
-            longPassing:        { en: 'Long Passing', ar: 'التمرير الطويل', candidates: ['longPassing', 'long_passing'] },
             curve:              { en: 'Curve', ar: 'الانحناء', candidates: ['curve'] },
+            longPassing:        { en: 'Long Passing', ar: 'التمرير الطويل', candidates: ['longPassing'] },
+            shortPassing:       { en: 'Short Passing', ar: 'التمرير القصير', candidates: ['shortPassing'] },
+            stamina:            { en: 'Stamina', ar: 'التحمل', candidates: ['stamina'] },
+            vision:             { en: 'Vision', ar: 'الرؤية', candidates: ['vision'] },
+            // Forward / Winger (14)
+            acceleration:       { en: 'Acceleration', ar: 'التسارع', candidates: ['acceleration'] },
             agility:            { en: 'Agility', ar: 'الرشاقة', candidates: ['agility'] },
             balance:            { en: 'Balance', ar: 'التوازن', candidates: ['balance'] },
-            reactions:          { en: 'Reactions', ar: 'ردود الفعل', candidates: ['reactions'] },
-            ballControl:        { en: 'Ball Control', ar: 'التحكم بالكرة', candidates: ['ballControl', 'ball_control'] },
-            dribblingSkill:     { en: 'Dribbling', ar: 'المراوغة', candidates: ['dribbling'] },
             composure:          { en: 'Composure', ar: 'رباطة الجأش', candidates: ['composure'] },
-            interceptions:      { en: 'Interceptions', ar: 'الاعتراض', candidates: ['interceptions'] },
-            headingAccuracy:    { en: 'Heading Accuracy', ar: 'دقة الرأسيات', candidates: ['headingAccuracy', 'heading_accuracy'] },
-            defensiveAwareness: { en: 'Defensive Awareness', ar: 'الوعي الدفاعي', candidates: ['defensiveAwareness', 'marking', 'defensive_awareness'] },
-            standingTackle:     { en: 'Standing Tackle', ar: 'التدخل واقفاً', candidates: ['standingTackle', 'standing_tackle'] },
-            slidingTackle:      { en: 'Sliding Tackle', ar: 'التدخل بالانزلاق', candidates: ['slidingTackle', 'sliding_tackle'] },
-            jumping:            { en: 'Jumping', ar: 'القفز', candidates: ['jumping'] },
-            stamina:            { en: 'Stamina', ar: 'التحمل', candidates: ['stamina'] },
-            strength:           { en: 'Strength', ar: 'القوة', candidates: ['strength'] },
-            aggression:         { en: 'Aggression', ar: 'العدوانية', candidates: ['aggression'] },
-            gkDiving:           { en: 'GK Diving', ar: 'غطس الحارس', candidates: ['diving', 'gkDiving'] },
-            gkHandling:         { en: 'GK Handling', ar: 'إمساك الحارس', candidates: ['handling', 'gkHandling'] },
-            gkKicking:          { en: 'GK Kicking', ar: 'ركل الحارس', candidates: ['kicking', 'gkKicking'] },
-            gkReflexes:         { en: 'GK Reflexes', ar: 'ردود فعل الحارس', candidates: ['reflexes', 'gkReflexes'] },
-            gkPositioning:      { en: 'GK Positioning', ar: 'تمركز الحارس', candidates: ['gkPositioning'] }
+            dribbling:          { en: 'Dribbling', ar: 'المراوغة', candidates: ['dribbling'] },
+            finishing:          { en: 'Finishing', ar: 'الإنهاء', candidates: ['finishing'] },
+            freeKickAccuracy:   { en: 'Free Kick Accuracy', ar: 'دقة الركلات الحرة', candidates: ['freeKickAccuracy'] },
+            longShots:          { en: 'Long Shots', ar: 'التسديد من بعيد', candidates: ['longShots'] },
+            penalties:          { en: 'Penalties', ar: 'ركلات الجزاء', candidates: ['penalties'] },
+            positioning:        { en: 'Positioning', ar: 'التمركز الهجومي', candidates: ['positioning'] },
+            reactions:          { en: 'Reactions', ar: 'ردود الفعل', candidates: ['reactions'] },
+            shotPower:          { en: 'Shot Power', ar: 'قوة التسديد', candidates: ['shotPower'] },
+            sprintSpeed:        { en: 'Sprint Speed', ar: 'سرعة الركض', candidates: ['sprintSpeed'] },
+            volleys:            { en: 'Volleys', ar: 'الطائرة', candidates: ['volleys'] }
         };
 
         // Curated per-position shortlist — the sub-stats a real coach/player
@@ -2557,21 +2556,21 @@
         // irrelevant categories entirely (e.g. no Defending sub-stats for a
         // striker) rather than showing them at a meaningless low value.
         const POSITION_GRANULAR_ATTRS = {
-            GK:  ['gkReflexes', 'gkDiving', 'gkPositioning', 'gkHandling', 'gkKicking'],
-            CB:  ['defensiveAwareness', 'standingTackle', 'slidingTackle', 'strength', 'jumping', 'headingAccuracy'],
-            LB:  ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
-            RB:  ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
-            LWB: ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
-            RWB: ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
-            CDM: ['interceptions', 'defensiveAwareness', 'standingTackle', 'strength', 'stamina', 'shortPassing'],
-            CM:  ['vision', 'shortPassing', 'longPassing', 'ballControl', 'reactions', 'stamina'],
-            CAM: ['vision', 'shortPassing', 'longPassing', 'ballControl', 'reactions', 'stamina'],
-            LM:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
-            RM:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
-            LW:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
-            RW:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
-            ST:  ['finishing', 'shotPower', 'positioning', 'acceleration', 'sprintSpeed', 'dribblingSkill'],
-            CF:  ['finishing', 'shotPower', 'positioning', 'acceleration', 'sprintSpeed', 'dribblingSkill']
+            GK:  ['gkDiving', 'gkHandling', 'gkKicking', 'gkPositioning', 'gkReflexes'],
+            CB:  ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            RB:  ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            LB:  ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            RWB: ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            LWB: ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            CM:  ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            CDM: ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            CAM: ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            RM:  ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            LM:  ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            ST:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys'],
+            CF:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys'],
+            RW:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys'],
+            LW:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys']
         };
 
         // Normalizes an attribute key so naming-convention differences
@@ -2654,6 +2653,10 @@
             `;
         }
 
+        // Kicks off the deep-dive fetch for the currently-open modal and
+        // upgrades the badge/movement-feel text in place once it resolves.
+        // Guards against the user having switched to a different player's
+        // modal before the fetch completes.
         function loadPlayerDeepDive(player, effectivePos) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
