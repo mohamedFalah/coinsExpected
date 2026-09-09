@@ -351,7 +351,7 @@
                          diagram, not text — RB/LB etc. must stay on their
                          real side regardless of UI language, so this
                          subtree opts out of RTL mirroring entirely. -->
-                    <div id="pitch-container" dir="ltr" class="relative z-10 min-h-[620px] py-6 px-4">
+                    <div id="pitch-container" dir="ltr" class="relative z-10 flex flex-col justify-between gap-3 py-6 px-4 min-h-[600px]">
                         <!-- Populated by renderFootballPitch() -->
                     </div>
                 </div>
@@ -2224,47 +2224,49 @@
             container.innerHTML = '';
 
             const slots = formationSlots[squadState.formation];
-            let rows = { 1: [], 1.5: [], 2: [], 2.5: [], 3: [], 4: [] };
+            let rows = {};
             slots.forEach((slot, idx) => {
                 if (!rows[slot.row]) rows[slot.row] = [];
                 rows[slot.row].push({ slot, idx, player: squadState.selectedXI[idx] });
             });
 
-            // Anchor each row to its actual depth on the pitch (row 1 =
-            // furthest forward, row 4 = GK) on a FIXED 1..4 scale, not
-            // "however many distinct rows this formation happens to use."
-            // The old flex justify-between layout only spaced out whichever
-            // rows were actually populated, so a formation using fewer
-            // distinct row values bunched everyone toward the middle and
-            // left the goalkeeper floating well away from the goal graphic
-            // instead of anchored to the bottom edge.
-            const MIN_ROW = 1, MAX_ROW = 4;
-            const TOP_PCT = 8, BOTTOM_PCT = 88; // leaves room for card height at both edges
-            [1, 1.5, 2, 2.5, 3, 4].forEach(rowNum => {
-                const rowItems = rows[rowNum];
-                if (!rowItems || rowItems.length === 0) return;
+            // Rows are laid out in NORMAL DOCUMENT FLOW (stacked top to
+            // bottom, sized by their actual content) instead of absolute
+            // percentages. Percentage anchoring assumed every formation
+            // spreads its rows evenly across the same fixed 1..4 scale —
+            // but formations with more distinct row levels (1, 1.5, 2, 2.5,
+            // 3, 4) pack those levels much closer together in percentage
+            // terms, while the cards themselves are the same height
+            // regardless of formation. That mismatch is what caused rows to
+            // overlap on anything other than a plain 4-row formation.
+            // Document flow makes overlap structurally impossible: the
+            // browser stacks each row after the last one actually ends.
+            const usedRowKeys = Object.keys(rows).map(Number).sort((a, b) => a - b);
+            const totalRows = usedRowKeys.length;
 
-                const topPct = TOP_PCT + ((rowNum - MIN_ROW) / (MAX_ROW - MIN_ROW)) * (BOTTOM_PCT - TOP_PCT);
-                const rowDiv = document.createElement('div');
-                // The pitch grass is a trapezoid that narrows toward the top
-                // (see .pitch-3d clip-path: 18% inset at y=0%, 0% inset at
-                // y=100%). Rows near the top need real left/right padding
-                // or their cards hang off the edge of the grass entirely —
-                // a flat "justify-around" across the full container width
-                // ignored that narrowing. Compute the actual grass inset at
-                // this row's height, plus a fixed buffer for the card's own
-                // half-width, so every row's cards stay safely on the grass.
-                const grassInset = 18 * (1 - topPct / 100); // % inset of the grass edge at this height
+            container.className = "relative z-10 flex flex-col justify-between gap-3 py-6 px-4 min-h-[600px]";
+
+            usedRowKeys.forEach((rowNum, i) => {
+                const rowItems = rows[rowNum];
+                // Relative depth (0 = furthest forward row present, 1 =
+                // last row present) drives how much left/right padding this
+                // row needs to stay on the grass — the pitch is a trapezoid
+                // (see .pitch-3d) that's narrowest at the top, so a row near
+                // the top needs real inset or its cards hang off the edge.
+                const depth = totalRows > 1 ? i / (totalRows - 1) : 0;
+                const grassInset = 18 * (1 - depth);
                 const rowInset = Math.min(24, Math.max(3, grassInset + 5));
-                const rowDivStyle = `top:${topPct}%; transform:translateY(-50%); padding-left:${rowInset}%; padding-right:${rowInset}%;`;
+
+                const rowDiv = document.createElement('div');
                 // justify-evenly (not a fixed pixel gap) so the whitespace
                 // between cards scales with however much room this row
                 // actually has inside its grass-safe padding — a static
                 // 12-16px gap reads as basically nothing on a wide desktop
                 // pitch, but evenly distributing the real leftover space
                 // gives clearly visible gaps at any screen size.
-                rowDiv.className = "absolute left-0 right-0 flex justify-evenly items-center w-full";
-                rowDiv.setAttribute('style', rowDivStyle);
+                rowDiv.className = "flex justify-evenly items-start w-full";
+                rowDiv.style.paddingLeft = rowInset + '%';
+                rowDiv.style.paddingRight = rowInset + '%';
 
                 rowItems.forEach(item => {
                     const player = item.player;
