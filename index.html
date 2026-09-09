@@ -304,7 +304,7 @@
             </div>
 
             <!-- Pitch & Visualization Area -->
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
                 <!-- Left 3 Cols: Football Pitch -->
                 <div class="lg:col-span-3 bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                     <!-- Pseudo-3D half-pitch background (trapezoid, not a
@@ -3278,7 +3278,7 @@
             
             const priceLbl = currentLanguage === 'ar' ? 'السعر' : 'Price';
             const coinLbl = currentLanguage === 'ar' ? 'كوينز' : 'coins';
-            const whyText = currentLanguage === 'ar' ? 'لماذا تم اختيار هذا اللاعب:' : 'Why this player was selected:';
+            const whyText = currentLanguage === 'ar' ? 'لماذا هذا الاختيار' : 'Why This Pick';
             const hasMeta = typeof player.meta === 'number';
 
             // The position this player is ACTUALLY playing in the current
@@ -3384,7 +3384,7 @@
             const playstylesSection = hasPlaystyles ? `
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles</span>
-                    <div class="flex flex-wrap gap-1.5">
+                    <div class="flex flex-wrap gap-1.5 bg-fc-dark/60 border border-fc-border/60 rounded-xl p-3">
                         ${psPlus.map(s => `<span class="px-2 py-1 rounded-lg text-[11px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">⚡ ${s}</span>`).join('')}
                         ${psBase.map(s => `<span class="px-2 py-1 rounded-lg text-[11px] font-bold bg-fc-accent/10 text-fc-accent border border-fc-accent/30">${s}</span>`).join('')}
                     </div>
@@ -3519,18 +3519,21 @@
                     <!-- LEFT: the player's own card facts — profile, key
                          attributes, granular in-game stats. -->
                     <div class="space-y-5">
-                        <div class="grid grid-cols-3 gap-2 text-center">
-                            <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
-                                <span class="text-gray-400 uppercase text-[10px] tracking-wide">${weakFootLabel}</span>
-                                <span class="font-black text-fc-gold text-sm leading-none"><bdi>${weakFootValue}</bdi></span>
-                            </div>
-                            <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
-                                <span class="text-gray-400 uppercase text-[10px] tracking-wide">${skillMovesLabel}</span>
-                                <span class="font-black text-fc-gold text-sm leading-none"><bdi>${skillMovesValue}</bdi></span>
-                            </div>
-                            <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
-                                <span class="text-gray-400 uppercase text-[10px] tracking-wide">${preferredFootLabel}</span>
-                                <span class="font-black text-white text-sm leading-none"><bdi>${footValue}</bdi></span>
+                        <div class="space-y-3">
+                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الملف البدني' : 'Physical Profile'}</span>
+                            <div class="grid grid-cols-3 gap-2 text-center">
+                                <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                    <span class="text-gray-400 uppercase text-[10px] tracking-wide">${weakFootLabel}</span>
+                                    <span class="font-black text-fc-gold text-sm leading-none"><bdi>${weakFootValue}</bdi></span>
+                                </div>
+                                <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                    <span class="text-gray-400 uppercase text-[10px] tracking-wide">${skillMovesLabel}</span>
+                                    <span class="font-black text-fc-gold text-sm leading-none"><bdi>${skillMovesValue}</bdi></span>
+                                </div>
+                                <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                    <span class="text-gray-400 uppercase text-[10px] tracking-wide">${preferredFootLabel}</span>
+                                    <span class="font-black text-white text-sm leading-none"><bdi>${footValue}</bdi></span>
+                                </div>
                             </div>
                         </div>
 
@@ -3594,7 +3597,7 @@
                         ${playstylesSection}
 
                         <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
-                            <span class="text-xs font-bold text-fc-accent">${whyText}</span>
+                            <span class="text-xs font-bold text-fc-accent uppercase tracking-wider">${whyText}</span>
                             <p class="text-xs text-gray-300">${whyDesc}</p>
                             ${focusProfileHtml}
                         </div>
