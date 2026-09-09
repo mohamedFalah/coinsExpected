@@ -330,7 +330,13 @@
                             </div>
                         </div>
 
-                        <div class="space-y-3">
+                        <div id="squad-identity">
+                            <!-- Populated by renderSquadSummary(): a quick read on
+                                 how this squad plays — tempo, physicality, defensive
+                                 solidity — so different builds feel visibly different. -->
+                        </div>
+
+                        <div class="space-y-3 border-t border-fc-border pt-4">
                             <div class="flex justify-between text-sm">
                                 <span data-i18n="availableBudget" class="text-gray-400">Available Budget</span>
                                 <span id="summary-budget" class="font-bold text-fc-gold">0 Coins</span>
@@ -765,7 +771,16 @@
             // any time a fresh optimize runs (formation/budget/database
             // change all funnel through runSquadOptimizer).
             history: new Set(),
-            exhausted: false
+            exhausted: false,
+            // Locked players: stay in the squad through formation changes,
+            // regenerations, and budget-driven rebuilds — position may
+            // change (best-fit slot in the new formation), chemistry may
+            // drop, but they are never dropped from the XI entirely.
+            // lockedIds = Set of player.id; lockedPlayers = {id: player}
+            // (kept separately so we still have the full player object
+            // even if fc27Database's live list ever changes shape).
+            lockedIds: new Set(),
+            lockedPlayers: {}
         };
 
         // Player database now defaults to a LIVE pull from EasySBC's API on
@@ -1013,15 +1028,23 @@
         // into a second striker, not touch the back four at all.
         function adjustSquadForFormationChange(oldXI, previousFormationKey, newFormationKey) {
             const newSlots = formationSlots[newFormationKey];
-            let availablePlayers = Object.values(oldXI).filter(Boolean);
-            let newXI = {};
-            let retainedCount = 0;
+
+            // Locked players get first claim on the new formation's slots —
+            // best-fit position (exact > alt > same zone > any leftover),
+            // never released. Everyone else is matched normally afterward,
+            // only over whatever slots locked players didn't take.
+            const lockedPlacement = placeLockedPlayers(newSlots);
+            let newXI = { ...lockedPlacement.assigned };
+            let retainedCount = Object.keys(lockedPlacement.assigned).length;
+
+            let availablePlayers = Object.values(oldXI).filter(p => p && !lockedPlacement.usedPlayerIds.has(p.id));
 
             // Pass 1: exact position matches only, across every slot first,
             // so a player isn't consumed by an alt-position slot when a real
             // home for them exists elsewhere in the new formation.
             let stillNeeded = [];
             newSlots.forEach((slot, idx) => {
+                if (lockedPlacement.usedSlot.has(idx)) return; // already filled by a locked player
                 const exact = availablePlayers.filter(p => p.pos === slot.pos);
                 if (exact.length > 0) {
                     exact.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
@@ -1050,7 +1073,7 @@
                 }
             });
 
-            const releasedPlayers = availablePlayers; // no longer used anywhere in the new XI
+            const releasedPlayers = availablePlayers; // no longer used anywhere in the new XI (never includes locked players)
             const neededSlotIndices = stillNeeded2;
 
             // Fill whatever's left with a fresh, budget-aware pick — same
@@ -1149,6 +1172,14 @@
                 ? `تغيير التشكيلة من <span class="text-white font-bold">${previousFormationKey}</span> إلى <span class="text-white font-bold">${newFormationKey}</span>: تم الاحتفاظ بـ <span class="text-fc-accent font-bold">${retainedCount}</span> لاعب في مراكز مطابقة، وتعديل <span class="text-fc-gold font-bold">${newlyPicked.length}</span> مركز فقط.`
                 : `Formation changed from <span class="text-white font-bold">${previousFormationKey}</span> to <span class="text-white font-bold">${newFormationKey}</span>: kept <span class="text-fc-accent font-bold">${retainedCount}</span> player(s) in matching positions, adjusted only <span class="text-fc-gold font-bold">${newlyPicked.length}</span> slot(s).`;
             squadState.explanationLog.push(headerText);
+
+            if (Object.keys(lockedPlacement.assigned).length > 0) {
+                const lockedNames = Object.values(lockedPlacement.assigned).map(p => p.name).join(', ');
+                const lockLogText = isAr
+                    ? `لاعبون مثبّتون تم الاحتفاظ بهم في ${newFormationKey} (قد يتغيّر مركزهم): <span class="text-fc-gold font-bold">${lockedNames}</span>.`
+                    : `Locked players kept through the switch to ${newFormationKey} (position may have changed): <span class="text-fc-gold font-bold">${lockedNames}</span>.`;
+                squadState.explanationLog.push(lockLogText);
+            }
 
             newlyPicked.forEach(({ slot, player }) => {
                 const line = isAr
@@ -1374,6 +1405,7 @@
                 slots.forEach((slot, idx) => {
                     const currentPlayer = squadState.selectedXI[idx];
                     if (!currentPlayer) return;
+                    if (squadState.lockedIds.has(currentPlayer.id)) return; // locked — never auto-swapped
                     const currentChem = (chem.perSlot[idx] && chem.perSlot[idx].points) || 0;
                     if (currentChem >= 2) return; // 2 is acceptable per spec — only fix 0/1
 
@@ -1439,6 +1471,7 @@
                 slots.forEach((slot, idx) => {
                     const currentPlayer = squadState.selectedXI[idx];
                     if (!currentPlayer) return;
+                    if (squadState.lockedIds.has(currentPlayer.id)) return; // locked — never auto-swapped
                     const priceCeiling = currentPlayer.price + leftover;
                     const currentAdjScore = calculatePlayerScore(currentPlayer, slot.pos) * chemistryMultiplier(idx, currentPlayer);
 
@@ -1572,6 +1605,76 @@
             renderSquadSummary();
         };
 
+        // ===================================================================
+        // PLAYER LOCKING
+        // ===================================================================
+        // A locked player is guaranteed a spot in the XI through formation
+        // changes, regenerations, and budget rebuilds. Their POSITION can
+        // change (best-fit slot in whatever formation is active), and their
+        // chemistry can drop if that slot isn't their real position — both
+        // explicitly acceptable per spec — but they are never released to
+        // the bench by any automatic process. Manually swapping a locked
+        // player out via the Alternatives/Analyst panel is still allowed
+        // (that's a deliberate user action) and auto-unlocks them.
+        window.toggleLockPlayer = function(slotIdx) {
+            const player = squadState.selectedXI[slotIdx];
+            if (!player) return;
+            if (squadState.lockedIds.has(player.id)) {
+                squadState.lockedIds.delete(player.id);
+                delete squadState.lockedPlayers[player.id];
+            } else {
+                squadState.lockedIds.add(player.id);
+                squadState.lockedPlayers[player.id] = player;
+            }
+            renderFootballPitch();
+        };
+
+        function zoneOfPosition(pos) {
+            if (['ST', 'CF', 'LW', 'RW'].includes(pos)) return 'ATT';
+            if (['CM', 'CDM', 'CAM', 'LM', 'RM'].includes(pos)) return 'MID';
+            if (['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(pos)) return 'DEF';
+            if (pos === 'GK') return 'GK';
+            return 'OTHER';
+        }
+
+        // Places every locked player into its best-fit slot among the given
+        // formation's slots: exact position > alt position > same zone
+        // (attack/mid/def/GK) > any leftover slot as a last resort — so a
+        // locked player is NEVER dropped, only possibly played out of
+        // position. Stronger locked players (by meta/rating) get first pick
+        // when two locked players would otherwise want the same slot.
+        // Returns { assigned: {slotIdx: player}, usedSlot: Set, usedPlayerIds: Set }.
+        function placeLockedPlayers(slots) {
+            const assigned = {};
+            const usedSlot = new Set();
+            const usedPlayerIds = new Set();
+            if (!squadState.lockedIds || squadState.lockedIds.size === 0) {
+                return { assigned, usedSlot, usedPlayerIds };
+            }
+            const lockedPlayers = Array.from(squadState.lockedIds)
+                .map(id => squadState.lockedPlayers[id])
+                .filter(Boolean)
+                .sort((a, b) => (getMetaValue(b) - getMetaValue(a)) || (b.rating - a.rating));
+
+            lockedPlayers.forEach(player => {
+                let bestIdx = -1, bestFit = 4;
+                slots.forEach((slot, idx) => {
+                    if (usedSlot.has(idx)) return;
+                    let fit = 3;
+                    if (slot.pos === player.pos) fit = 0;
+                    else if (player.alt && player.alt.includes(slot.pos)) fit = 1;
+                    else if (zoneOfPosition(slot.pos) === zoneOfPosition(player.pos)) fit = 2;
+                    if (fit < bestFit) { bestFit = fit; bestIdx = idx; }
+                });
+                if (bestIdx !== -1) {
+                    assigned[bestIdx] = player;
+                    usedSlot.add(bestIdx);
+                    usedPlayerIds.add(player.id);
+                }
+            });
+            return { assigned, usedSlot, usedPlayerIds };
+        }
+
         window.runSquadOptimizer = function() {
             const slots = formationSlots[squadState.formation];
             const budget = squadState.budget;
@@ -1591,8 +1694,21 @@
             const BUDGET_TOLERANCE = 50000;
             const hardCap = budget + BUDGET_TOLERANCE;
 
+            // Locked players are placed first and never touched by the
+            // optimizer below — only the remaining slots are actually built.
+            const lockedPlacement = placeLockedPlayers(slots);
+            const lockedSlotIndices = lockedPlacement.usedSlot;
+            if (Object.keys(lockedPlacement.assigned).length > 0) {
+                const lockedNames = Object.values(lockedPlacement.assigned).map(p => p.name).join(', ');
+                const lockLogText = currentLanguage === 'ar'
+                    ? `لاعبون مثبّتون تم الاحتفاظ بهم: <span class="text-fc-gold font-bold">${lockedNames}</span>.`
+                    : `Locked players kept in the squad: <span class="text-fc-gold font-bold">${lockedNames}</span>.`;
+                squadState.explanationLog.push(lockLogText);
+            }
+
             let candidateMap = {};
             slots.forEach((slot, idx) => {
+                if (lockedSlotIndices.has(idx)) return;
                 const eligible = fc27Database.filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
@@ -1610,7 +1726,7 @@
                 return isFinite(min) ? min : 0;
             }
 
-            let sortedSlotIndices = slots.map((s, i) => i);
+            let sortedSlotIndices = slots.map((s, i) => i).filter(idx => !lockedSlotIndices.has(idx));
             sortedSlotIndices.sort((a, b) => {
                 const pA = slots[a].pos;
                 const pB = slots[b].pos;
@@ -1618,7 +1734,8 @@
                 return (weight[pA] || 9) - (weight[pB] || 9);
             });
 
-            const totalMinCost = sortedSlotIndices.reduce((sum, idx) => sum + cheapestAvailablePrice(idx, new Set()), 0);
+            const lockedCost = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + p.price, 0);
+            const totalMinCost = lockedCost + sortedSlotIndices.reduce((sum, idx) => sum + cheapestAvailablePrice(idx, new Set()), 0);
 
             if (totalMinCost > hardCap) {
                 const overBy = (totalMinCost - budget).toLocaleString();
@@ -1633,9 +1750,9 @@
                 squadState.explanationLog.push(warnText);
             }
 
-            let selectedXI = {};
-            let usedPlayerIds = new Set();
-            let currentSpent = 0;
+            let selectedXI = { ...lockedPlacement.assigned };
+            let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
+            let currentSpent = lockedCost;
 
             for (let i = 0; i < sortedSlotIndices.length; i++) {
                 const slotIdx = sortedSlotIndices[i];
@@ -1782,8 +1899,14 @@
             const hardCap = budget + BUDGET_TOLERANCE;
             const RANDOM_POOL_SIZE = 3;
 
+            // Locked players are fixed before any randomization happens —
+            // regeneration only varies the unlocked slots.
+            const lockedPlacement = placeLockedPlayers(slots);
+            const lockedSlotIndices = lockedPlacement.usedSlot;
+
             let candidateMap = {};
             slots.forEach((slot, idx) => {
+                if (lockedSlotIndices.has(idx)) return;
                 const eligible = fc27Database.filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
@@ -1797,16 +1920,16 @@
                 return isFinite(min) ? min : 0;
             }
 
-            let sortedSlotIndices = slots.map((s, i) => i);
+            let sortedSlotIndices = slots.map((s, i) => i).filter(idx => !lockedSlotIndices.has(idx));
             sortedSlotIndices.sort((a, b) => {
                 const pA = slots[a].pos, pB = slots[b].pos;
                 const weight = { 'ST': 1, 'CB': 2, 'CM': 3, 'GK': 4, 'LW': 5, 'RW': 5, 'CAM': 6, 'LB': 7, 'RB': 7, 'CDM': 3, 'LM': 5, 'RM': 5 };
                 return (weight[pA] || 9) - (weight[pB] || 9);
             });
 
-            let selectedXI = {};
-            let usedPlayerIds = new Set();
-            let currentSpent = 0;
+            let selectedXI = { ...lockedPlacement.assigned };
+            let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
+            let currentSpent = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + p.price, 0);
 
             for (let i = 0; i < sortedSlotIndices.length; i++) {
                 const slotIdx = sortedSlotIndices[i];
@@ -2012,6 +2135,14 @@
             const outgoing = squadState.selectedXI[slotIdx];
             squadState.selectedXI[slotIdx] = altPlayer;
 
+            // A deliberate manual swap overrides a lock — the player being
+            // benched here is removed from the locked set so they don't
+            // reappear (out of position) on the next formation change.
+            if (outgoing && squadState.lockedIds.has(outgoing.id)) {
+                squadState.lockedIds.delete(outgoing.id);
+                delete squadState.lockedPlayers[outgoing.id];
+            }
+
             let currentSpent = 0, totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
             Object.values(squadState.selectedXI).forEach(p => {
                 if (p) {
@@ -2071,12 +2202,16 @@
 
                 rowItems.forEach(item => {
                     const player = item.player;
+                    const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
                     const card = document.createElement('div');
-                    card.className = "w-28 sm:w-32 bg-fc-card/95 hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent rounded-xl p-2.5 text-center cursor-pointer player-card-glow transition-all flex flex-col items-center relative group";
+                    card.className = `w-28 sm:w-32 bg-fc-card/95 hover:bg-fc-cardHover border rounded-xl p-2.5 text-center cursor-pointer player-card-glow transition-all flex flex-col items-center relative group ${isLocked ? 'border-fc-gold ring-2 ring-fc-gold/40' : 'border-fc-border hover:border-fc-accent'}`;
                     
                     const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
 
                     if (player) {
+                        const lockTitle = isLocked
+                            ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
+                            : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
                         const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[item.idx];
                         const chemPoints = chemInfo ? chemInfo.points : 0;
                         const chemInPos = chemInfo ? chemInfo.inPosition : true;
@@ -2096,6 +2231,9 @@
                             <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
                             <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
                             <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
+                            <button onclick="event.stopPropagation(); window.toggleLockPlayer(${item.idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
+                                <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[9px]"></i>
+                            </button>
                         `;
                         card.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
                     } else {
@@ -2112,7 +2250,124 @@
             });
         }
 
+        // ===================================================================
+        // SQUAD IDENTITY — quick "how does this squad play" read
+        // ===================================================================
+        // Purely derived from the real attribute composites already on each
+        // player (pac/dri/pas/def/phy) — no new data source needed. Built so
+        // two different budgets/formations genuinely read differently: a
+        // cheap counter-attacking 4-3-3 and an expensive possession 4-2-3-1
+        // should produce visibly different headlines, not the same
+        // "balanced" copy every time.
+        function computeSquadIdentity() {
+            const players = Object.values(squadState.selectedXI).filter(Boolean);
+            const outfield = players.filter(p => p.pos !== 'GK' && p.att);
+            if (outfield.length === 0) return null;
+
+            const avg = (key) => outfield.reduce((sum, p) => sum + (typeof p.att[key] === 'number' ? p.att[key] : 0), 0) / outfield.length;
+            const avgPac = avg('pac');
+            const avgPas = avg('pas');
+            const avgPhy = avg('phy');
+
+            // Defensive solidity is read from the back line + defensive
+            // mids specifically, not the whole XI — a pacey squad with a
+            // rock-solid back four is a different animal from a pacey squad
+            // that's just thin all over defensively.
+            const backSet = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'];
+            const backLine = players.filter(p => backSet.includes(p.pos) && p.att);
+            const avgBackDef = backLine.length
+                ? backLine.reduce((sum, p) => sum + p.att.def, 0) / backLine.length
+                : avg('def');
+
+            let tempo = 'balanced';
+            if (avgPac >= 78) tempo = 'counter';
+            else if (avgPac <= 68 && avgPas >= 74) tempo = 'possession';
+
+            let physique = 'balanced';
+            if (avgPhy >= 76) physique = 'physical';
+            else if (avgPhy <= 66) physique = 'agile';
+
+            let solidity = 'balanced';
+            if (avgBackDef >= 78) solidity = 'defensive';
+            else if (avgBackDef <= 66) solidity = 'risky';
+
+            const isAr = currentLanguage === 'ar';
+
+            const HEADLINES = {
+                counter_defensive:    { icon: 'fa-bolt-lightning', en: 'High-Energy Counter Press',            ar: 'ضغط عالٍ وهجمات مرتدة سريعة' },
+                counter_risky:        { icon: 'fa-bolt',           en: 'Fast Counter-Attack',                  ar: 'هجمات مرتدة سريعة جداً' },
+                counter_balanced:     { icon: 'fa-bolt',           en: 'Quick Transition Squad',                ar: 'تشكيلة سريعة الانتقال' },
+                possession_defensive: { icon: 'fa-chess',          en: 'Patient Possession, Compact Defense',   ar: 'استحواذ هادئ ودفاع متماسك' },
+                possession_risky:     { icon: 'fa-chess-knight',   en: 'Possession-Heavy, Open at the Back',    ar: 'استحواذ عالٍ مع خط دفاع مكشوف' },
+                possession_balanced:  { icon: 'fa-chess-board',    en: 'Controlled Possession',                 ar: 'استحواذ متحكم به' },
+                balanced_defensive:   { icon: 'fa-shield-halved',  en: 'Disciplined & Solid',                   ar: 'منضبطة ومتينة دفاعياً' },
+                balanced_risky:       { icon: 'fa-fire',           en: 'Attack-Minded, Loose at the Back',      ar: 'ميّالة للهجوم مع خط دفاع مكشوف' },
+                balanced_balanced:    { icon: 'fa-scale-balanced', en: 'Balanced All-Rounder',                  ar: 'متوازنة شاملة' }
+            };
+            const headline = HEADLINES[`${tempo}_${solidity}`] || HEADLINES.balanced_balanced;
+
+            const PHYSIQUE_LINE = {
+                physical: { en: 'Physically dominant — wins duels and aerial battles.',            ar: 'بدنية قوية — تتفوق في الالتحامات والكرات الهوائية.' },
+                agile:    { en: 'Built on technical, agile dribblers over raw power.',              ar: 'تعتمد على مراوغين تقنيين وخفيفي الحركة أكثر من القوة البدنية.' },
+                balanced: { en: 'An even mix of physical presence and technical skill.',            ar: 'مزيج متوازن بين القوة البدنية والمهارة الفنية.' }
+            }[physique];
+
+            return {
+                icon: headline.icon,
+                headline: isAr ? headline.ar : headline.en,
+                description: isAr ? PHYSIQUE_LINE.ar : PHYSIQUE_LINE.en,
+                stats: {
+                    pace: Math.round(avgPac),
+                    physical: Math.round(avgPhy),
+                    defense: Math.round(avgBackDef)
+                }
+            };
+        }
+
+        function renderSquadIdentityBlock() {
+            const container = document.getElementById('squad-identity');
+            if (!container) return;
+            const identity = computeSquadIdentity();
+            if (!identity) { container.innerHTML = ''; return; }
+
+            const isAr = currentLanguage === 'ar';
+            const labels = isAr
+                ? { pace: 'سرعة', physical: 'بدنية', defense: 'دفاع' }
+                : { pace: 'Pace', physical: 'Physical', defense: 'Defense' };
+
+            const statBar = (label, value) => `
+                <div class="flex-1 min-w-0">
+                    <div class="flex justify-between text-[10px] text-gray-400 mb-1">
+                        <span>${label}</span><span class="font-bold text-gray-300">${value}</span>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-fc-dark overflow-hidden">
+                        <div class="h-full bg-fc-accent rounded-full" style="width:${Math.min(100, value)}%"></div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = `
+                <div class="bg-fc-dark/60 border border-fc-border/60 rounded-lg p-3 space-y-3">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg bg-fc-accent/10 border border-fc-accent/30 flex items-center justify-center text-fc-accent shrink-0">
+                            <i class="fa-solid ${identity.icon} text-sm"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="font-extrabold text-sm text-white leading-tight">${identity.headline}</div>
+                            <div class="text-xs text-gray-400 leading-snug">${identity.description}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        ${statBar(labels.pace, identity.stats.pace)}
+                        ${statBar(labels.physical, identity.stats.physical)}
+                        ${statBar(labels.defense, identity.stats.defense)}
+                    </div>
+                </div>
+            `;
+        }
+
         function renderSquadSummary() {
+            renderSquadIdentityBlock();
             const badge = document.getElementById('squad-overall-badge');
             const metaBadge = document.getElementById('squad-meta-badge');
             const chemBadge = document.getElementById('squad-chem-badge');
