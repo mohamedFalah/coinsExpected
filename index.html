@@ -331,12 +331,14 @@
                         </div>
 
                         <div id="squad-identity">
-                            <!-- Populated by renderSquadSummary(): a quick read on
-                                 how this squad plays — tempo, physicality, defensive
-                                 solidity — so different builds feel visibly different. -->
+                            <!-- Populated by renderSquadSummary(): a quick,
+                                 relative read on this squad's dominant trait
+                                 (pace/power/buildup/defense vs its own
+                                 average) — styled like the group-breakdown
+                                 rows below for visual consistency. -->
                         </div>
 
-                        <div class="space-y-3 border-t border-fc-border pt-4">
+                        <div class="space-y-3">
                             <div class="flex justify-between text-sm">
                                 <span data-i18n="availableBudget" class="text-gray-400">Available Budget</span>
                                 <span id="summary-budget" class="font-bold text-fc-gold">0 Coins</span>
@@ -2253,73 +2255,89 @@
         // ===================================================================
         // SQUAD IDENTITY — quick "how does this squad play" read
         // ===================================================================
-        // Purely derived from the real attribute composites already on each
-        // player (pac/dri/pas/def/phy) — no new data source needed. Built so
-        // two different budgets/formations genuinely read differently: a
-        // cheap counter-attacking 4-3-3 and an expensive possession 4-2-3-1
-        // should produce visibly different headlines, not the same
-        // "balanced" copy every time.
+        // Deliberately RELATIVE, not absolute-threshold-based. Every squad
+        // this tool builds is already the best-affordable pick per slot, so
+        // on an absolute scale most squads cluster in the same high band
+        // (pace 78-88, defense 75-85, etc.) and a fixed cutoff like
+        // "pace >= 78 = fast" ends up true for almost every squad — which is
+        // exactly why a threshold-based version always says the same thing
+        // regardless of regenerate. Instead, this compares the squad's own
+        // axes AGAINST EACH OTHER: which attribute stands out relative to
+        // this squad's own average, and which one lags behind. That's what
+        // actually differs between two squads of similar overall quality,
+        // and it changes on regenerate/formation swap even when the average
+        // quality doesn't.
         function computeSquadIdentity() {
             const players = Object.values(squadState.selectedXI).filter(Boolean);
             const outfield = players.filter(p => p.pos !== 'GK' && p.att);
             if (outfield.length === 0) return null;
 
             const avg = (key) => outfield.reduce((sum, p) => sum + (typeof p.att[key] === 'number' ? p.att[key] : 0), 0) / outfield.length;
-            const avgPac = avg('pac');
-            const avgPas = avg('pas');
-            const avgPhy = avg('phy');
 
-            // Defensive solidity is read from the back line + defensive
-            // mids specifically, not the whole XI — a pacey squad with a
-            // rock-solid back four is a different animal from a pacey squad
-            // that's just thin all over defensively.
             const backSet = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'];
             const backLine = players.filter(p => backSet.includes(p.pos) && p.att);
             const avgBackDef = backLine.length
                 ? backLine.reduce((sum, p) => sum + p.att.def, 0) / backLine.length
                 : avg('def');
 
-            let tempo = 'balanced';
-            if (avgPac >= 78) tempo = 'counter';
-            else if (avgPac <= 68 && avgPas >= 74) tempo = 'possession';
+            const axes = { pace: avg('pac'), power: avg('phy'), buildup: avg('pas'), defense: avgBackDef };
+            const axisMean = (axes.pace + axes.power + axes.buildup + axes.defense) / 4;
+            const ranked = Object.keys(axes)
+                .map(axis => ({ axis, value: axes[axis], dev: axes[axis] - axisMean }))
+                .sort((a, b) => b.dev - a.dev);
 
-            let physique = 'balanced';
-            if (avgPhy >= 76) physique = 'physical';
-            else if (avgPhy <= 66) physique = 'agile';
-
-            let solidity = 'balanced';
-            if (avgBackDef >= 78) solidity = 'defensive';
-            else if (avgBackDef <= 66) solidity = 'risky';
+            const dominant = ranked[0];
+            const weakest = ranked[ranked.length - 1];
+            const NOTABLE = 3; // deviation (rating points) needed to call a trait out at all
 
             const isAr = currentLanguage === 'ar';
 
-            const HEADLINES = {
-                counter_defensive:    { icon: 'fa-bolt-lightning', en: 'High-Energy Counter Press',            ar: 'ضغط عالٍ وهجمات مرتدة سريعة' },
-                counter_risky:        { icon: 'fa-bolt',           en: 'Fast Counter-Attack',                  ar: 'هجمات مرتدة سريعة جداً' },
-                counter_balanced:     { icon: 'fa-bolt',           en: 'Quick Transition Squad',                ar: 'تشكيلة سريعة الانتقال' },
-                possession_defensive: { icon: 'fa-chess',          en: 'Patient Possession, Compact Defense',   ar: 'استحواذ هادئ ودفاع متماسك' },
-                possession_risky:     { icon: 'fa-chess-knight',   en: 'Possession-Heavy, Open at the Back',    ar: 'استحواذ عالٍ مع خط دفاع مكشوف' },
-                possession_balanced:  { icon: 'fa-chess-board',    en: 'Controlled Possession',                 ar: 'استحواذ متحكم به' },
-                balanced_defensive:   { icon: 'fa-shield-halved',  en: 'Disciplined & Solid',                   ar: 'منضبطة ومتينة دفاعياً' },
-                balanced_risky:       { icon: 'fa-fire',           en: 'Attack-Minded, Loose at the Back',      ar: 'ميّالة للهجوم مع خط دفاع مكشوف' },
-                balanced_balanced:    { icon: 'fa-scale-balanced', en: 'Balanced All-Rounder',                  ar: 'متوازنة شاملة' }
+            const TRAITS = {
+                pace:    { icon: 'fa-bolt',          en: 'Built for Speed & Transitions', ar: 'مبنية على السرعة والانتقال السريع' },
+                power:   { icon: 'fa-dumbbell',      en: 'Physical Powerhouse',           ar: 'قوة بدنية مهيمنة' },
+                buildup: { icon: 'fa-chess',         en: 'Patient Possession Build-Up',   ar: 'استحواذ هادئ وبناء هجمات' },
+                defense: { icon: 'fa-shield-halved', en: 'Defensively Rock-Solid',        ar: 'صلبة دفاعياً' }
             };
-            const headline = HEADLINES[`${tempo}_${solidity}`] || HEADLINES.balanced_balanced;
+            const WEAKNESS = {
+                pace:    { en: 'lacks the pace to burst forward',                    ar: 'تفتقر للسرعة في الاندفاع للأمام' },
+                power:   { en: 'can be muscled off the ball',                        ar: 'يمكن دفعها بدنياً بسهولة' },
+                buildup: { en: 'relies on long, direct passes over patient buildup', ar: 'تعتمد على تمريرات طويلة ومباشرة بدلاً من البناء الهادئ' },
+                defense: { en: 'leaves real gaps at the back',                       ar: 'تترك ثغرات حقيقية في الخلف' }
+            };
 
-            const PHYSIQUE_LINE = {
-                physical: { en: 'Physically dominant — wins duels and aerial battles.',            ar: 'بدنية قوية — تتفوق في الالتحامات والكرات الهوائية.' },
-                agile:    { en: 'Built on technical, agile dribblers over raw power.',              ar: 'تعتمد على مراوغين تقنيين وخفيفي الحركة أكثر من القوة البدنية.' },
-                balanced: { en: 'An even mix of physical presence and technical skill.',            ar: 'مزيج متوازن بين القوة البدنية والمهارة الفنية.' }
-            }[physique];
+            let icon, headline, description;
+
+            if (dominant.dev < NOTABLE) {
+                // Nothing meaningfully stands out either way — a genuinely
+                // even squad, not a fallback label.
+                icon = 'fa-scale-balanced';
+                headline = isAr ? 'متوازنة في كل الجوانب' : 'Balanced Across the Board';
+                description = isAr
+                    ? 'لا توجد سمة واحدة تطغى — جودة متقاربة وثابتة في كل الخطوط.'
+                    : 'No single trait dominates — even, solid quality across every line.';
+            } else {
+                icon = TRAITS[dominant.axis].icon;
+                headline = isAr ? TRAITS[dominant.axis].ar : TRAITS[dominant.axis].en;
+                if (weakest.axis !== dominant.axis && weakest.dev <= -NOTABLE) {
+                    description = isAr
+                        ? `الأقوى في ${TRAITS[dominant.axis].ar}، لكنها ${WEAKNESS[weakest.axis].ar}.`
+                        : `Strongest in ${TRAITS[dominant.axis].en.toLowerCase()}, but it ${WEAKNESS[weakest.axis].en}.`;
+                } else {
+                    description = isAr
+                        ? `متفوقة في ${TRAITS[dominant.axis].ar} بلا نقطة ضعف واضحة في الجوانب الأخرى.`
+                        : `Elite in ${TRAITS[dominant.axis].en.toLowerCase()}, with no real weakness elsewhere to exploit.`;
+                }
+            }
 
             return {
-                icon: headline.icon,
-                headline: isAr ? headline.ar : headline.en,
-                description: isAr ? PHYSIQUE_LINE.ar : PHYSIQUE_LINE.en,
+                icon,
+                headline,
+                description,
                 stats: {
-                    pace: Math.round(avgPac),
-                    physical: Math.round(avgPhy),
-                    defense: Math.round(avgBackDef)
+                    pace: Math.round(axes.pace),
+                    power: Math.round(axes.power),
+                    buildup: Math.round(axes.buildup),
+                    defense: Math.round(axes.defense)
                 }
             };
         }
@@ -2331,38 +2349,24 @@
             if (!identity) { container.innerHTML = ''; return; }
 
             const isAr = currentLanguage === 'ar';
-            const labels = isAr
-                ? { pace: 'سرعة', physical: 'بدنية', defense: 'دفاع' }
-                : { pace: 'Pace', physical: 'Physical', defense: 'Defense' };
+            const statLine = isAr
+                ? `سرعة ${identity.stats.pace} · بدنية ${identity.stats.power} · تمرير ${identity.stats.buildup} · دفاع ${identity.stats.defense}`
+                : `PAC ${identity.stats.pace} · PHY ${identity.stats.power} · PAS ${identity.stats.buildup} · DEF ${identity.stats.defense}`;
 
-            const statBar = (label, value) => `
-                <div class="flex-1 min-w-0">
-                    <div class="flex justify-between text-[10px] text-gray-400 mb-1">
-                        <span>${label}</span><span class="font-bold text-gray-300">${value}</span>
-                    </div>
-                    <div class="h-1.5 rounded-full bg-fc-dark overflow-hidden">
-                        <div class="h-full bg-fc-accent rounded-full" style="width:${Math.min(100, value)}%"></div>
-                    </div>
-                </div>
-            `;
-
+            // Same visual language as the Position Group Quality rows right
+            // below it (small-caps label + bg-fc-dark/60 row) instead of a
+            // separate boxed widget with progress bars — one consistent
+            // card, not a patchwork of different styles.
             container.innerHTML = `
-                <div class="bg-fc-dark/60 border border-fc-border/60 rounded-lg p-3 space-y-3">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-lg bg-fc-accent/10 border border-fc-accent/30 flex items-center justify-center text-fc-accent shrink-0">
-                            <i class="fa-solid ${identity.icon} text-sm"></i>
-                        </div>
-                        <div class="min-w-0">
-                            <div class="font-extrabold text-sm text-white leading-tight">${identity.headline}</div>
-                            <div class="text-xs text-gray-400 leading-snug">${identity.description}</div>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        ${statBar(labels.pace, identity.stats.pace)}
-                        ${statBar(labels.physical, identity.stats.physical)}
-                        ${statBar(labels.defense, identity.stats.defense)}
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'أسلوب اللعب' : 'Playstyle'}</span>
+                <div class="flex items-center justify-between bg-fc-dark/60 p-2 rounded-lg border border-fc-border/60 mt-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <i class="fa-solid ${identity.icon} text-fc-accent text-xs shrink-0"></i>
+                        <span class="text-gray-200 font-semibold text-sm truncate">${identity.headline}</span>
                     </div>
                 </div>
+                <div class="text-[11px] text-gray-500 mt-1.5 leading-snug">${identity.description}</div>
+                <div class="text-[10px] text-gray-600 font-mono mt-1">${statLine}</div>
             `;
         }
 
