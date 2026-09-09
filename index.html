@@ -72,6 +72,16 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #00f2fe;
         }
+        /* Scroll still works, the bar itself just doesn't render — used on
+           the modal panels below, where a native/overlay scrollbar can
+           otherwise show as a chunky pill that overlaps the content. */
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
         .player-card-glow {
             box-shadow: 0 4px 20px -2px rgba(0, 242, 254, 0.15);
             transition: all 0.2s ease-in-out;
@@ -489,7 +499,7 @@
 
                     <div>
                         <span data-i18n="scrapeLogTitle" class="text-xs font-bold text-gray-400">Scrape Log</span>
-                        <div id="scrape-status-log" class="mt-2 bg-black/30 border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-400 max-h-40 overflow-y-auto space-y-1">
+                        <div id="scrape-status-log" class="mt-2 bg-black/30 border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-400 max-h-40 overflow-y-auto hide-scrollbar space-y-1">
                             <div class="text-gray-600" data-i18n="scrapeLogIdle">— idle —</div>
                         </div>
                     </div>
@@ -507,7 +517,7 @@
 
     <!-- Player Details Modal -->
     <div id="player-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
-        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-4xl w-full p-6 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-4xl w-full p-6 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto hide-scrollbar" onclick="event.stopPropagation()">
             <button onclick="closePlayerModal()" class="absolute top-5 right-5 rtl:right-auto rtl:left-5 text-gray-400 hover:text-white text-lg">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -560,7 +570,7 @@
                 <button onclick="closeExplanationModal()" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
             </div>
             
-            <div id="explanation-content" class="space-y-4 text-sm text-gray-300 max-h-[60vh] overflow-y-auto pr-2"></div>
+            <div id="explanation-content" class="space-y-4 text-sm text-gray-300 max-h-[60vh] overflow-y-auto hide-scrollbar pr-2"></div>
 
             <div class="flex justify-end pt-4 border-t border-fc-border">
                 <button onclick="closeExplanationModal()" data-i18n="closeBtn" class="px-5 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-bold hover:bg-fc-accentHover">Close</button>
@@ -2236,9 +2246,19 @@
 
                 const topPct = TOP_PCT + ((rowNum - MIN_ROW) / (MAX_ROW - MIN_ROW)) * (BOTTOM_PCT - TOP_PCT);
                 const rowDiv = document.createElement('div');
-                rowDiv.className = "absolute left-0 right-0 flex justify-around items-center w-full px-2";
-                rowDiv.style.top = topPct + '%';
-                rowDiv.style.transform = 'translateY(-50%)';
+                // The pitch grass is a trapezoid that narrows toward the top
+                // (see .pitch-3d clip-path: 18% inset at y=0%, 0% inset at
+                // y=100%). Rows near the top need real left/right padding
+                // or their cards hang off the edge of the grass entirely —
+                // a flat "justify-around" across the full container width
+                // ignored that narrowing. Compute the actual grass inset at
+                // this row's height, plus a fixed buffer for the card's own
+                // half-width, so every row's cards stay safely on the grass.
+                const grassInset = 18 * (1 - topPct / 100); // % inset of the grass edge at this height
+                const rowInset = Math.min(24, Math.max(3, grassInset + 5));
+                const rowDivStyle = `top:${topPct}%; transform:translateY(-50%); padding-left:${rowInset}%; padding-right:${rowInset}%;`;
+                rowDiv.className = "absolute left-0 right-0 flex justify-center items-center w-full gap-3 sm:gap-4";
+                rowDiv.setAttribute('style', rowDivStyle);
 
                 rowItems.forEach(item => {
                     const player = item.player;
@@ -2283,7 +2303,7 @@
                                 </button>
                             </div>
                             <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-xl px-1.5 py-1 transition-all">
-                                <span class="block text-[9px] font-bold text-fc-accent truncate" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</span>
+                                <span class="block text-center text-[9px] font-bold text-fc-accent truncate" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</span>
                             </div>
                         `;
                         wrapper.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
