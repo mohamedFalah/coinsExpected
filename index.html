@@ -382,8 +382,8 @@
                     </div>
 
                     <div class="border-t border-fc-border pt-4 space-y-2">
-                        <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Position Group Quality</span>
-                        <div id="group-breakdown" class="space-y-1 text-xs">
+                        <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Quality by Line</span>
+                        <div id="group-breakdown" class="grid grid-cols-2 gap-2">
                             <!-- Populated by renderSquadSummary() -->
                         </div>
                     </div>
@@ -610,7 +610,7 @@
                 availableBudget: "Available Budget",
                 totalSquadCost: "Total Squad Cost",
                 remainingCoins: "Remaining Coins",
-                posGroupQuality: "Position Group Quality",
+                posGroupQuality: "Quality by Line",
                 suggestedTactics: "Suggested Tactics",
                 nextBestUpgrade: "NEXT BEST UPGRADE",
                 optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
@@ -686,7 +686,7 @@
                 availableBudget: "الميزانية المتاحة",
                 totalSquadCost: "إجمالي تكلفة التشكيلة",
                 remainingCoins: "الكوينز المتبقية",
-                posGroupQuality: "جودة مراكز الخطوط",
+                posGroupQuality: "الجودة حسب الخط",
                 suggestedTactics: "التكتيك المقترح",
                 nextBestUpgrade: "الترقية التالية المقترحة",
                 optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
@@ -2243,19 +2243,20 @@
                 rowItems.forEach(item => {
                     const player = item.player;
                     const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
-                    const card = document.createElement('div');
-                    card.className = `w-28 sm:w-32 bg-fc-card/95 hover:bg-fc-cardHover border rounded-xl p-2.5 text-center cursor-pointer player-card-glow transition-all flex flex-col items-center relative group ${isLocked ? 'border-fc-gold ring-2 ring-fc-gold/40' : 'border-fc-border hover:border-fc-accent'}`;
-                    
+                    const borderClasses = isLocked ? 'border-fc-gold' : 'border-fc-border group-hover:border-fc-accent';
                     const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
+
+                    // Wrapper holds the main card AND a role-badge strip
+                    // attached flush underneath it (no gap, shared border
+                    // color) so the role reads as one connected unit with
+                    // the card instead of a faint line of text easy to miss.
+                    const wrapper = document.createElement('div');
+                    wrapper.className = `w-28 sm:w-32 cursor-pointer player-card-glow transition-all relative group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
 
                     if (player) {
                         const lockTitle = isLocked
                             ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
                             : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
-                        // Suggested Player Role — always visible as its own
-                        // line under the name (not just a hover tooltip),
-                        // so the tactical picture is readable at a glance
-                        // without having to mouse over every card.
                         const roleInfo = getRoleSuggestion(player, item.slot.pos);
                         const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[item.idx];
                         const chemPoints = chemInfo ? chemInfo.points : 0;
@@ -2269,27 +2270,33 @@
                             const color = !chemInPos ? 'border-red-500/70' : (filled ? 'bg-green-400 border-green-400' : 'border-gray-500');
                             return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
                         }).join('');
-                        card.innerHTML = `
-                            <div class="absolute top-1.5 left-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
-                            <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
-                            <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
-                            <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
-                            <div class="text-[9px] font-semibold text-gray-500 truncate w-full leading-tight" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</div>
-                            <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
-                            <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
-                            <button onclick="event.stopPropagation(); window.toggleLockPlayer(${item.idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
-                                <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[9px]"></i>
-                            </button>
+                        wrapper.innerHTML = `
+                            <div class="bg-fc-card/95 group-hover:bg-fc-cardHover border border-b-0 ${borderClasses} rounded-t-xl p-2.5 text-center flex flex-col items-center relative transition-all">
+                                <div class="absolute top-1.5 left-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
+                                <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
+                                <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
+                                <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
+                                <div class="flex items-center justify-center gap-0.5 mt-1" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
+                                <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
+                                <button onclick="event.stopPropagation(); window.toggleLockPlayer(${item.idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
+                                    <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[9px]"></i>
+                                </button>
+                            </div>
+                            <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-xl px-1.5 py-1 transition-all">
+                                <span class="block text-[9px] font-bold text-fc-accent truncate" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</span>
+                            </div>
                         `;
-                        card.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
+                        wrapper.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
                     } else {
                         const emptyTxt = currentLanguage === 'ar' ? 'مكان فارغ' : 'Empty Slot';
-                        card.innerHTML = `
-                            <div class="text-xs text-gray-500 font-bold py-6">${emptyTxt}</div>
-                            <div class="text-[10px] text-gray-400">${item.slot.label}</div>
+                        wrapper.innerHTML = `
+                            <div class="bg-fc-card/95 border ${borderClasses} rounded-xl p-2.5 text-center">
+                                <div class="text-xs text-gray-500 font-bold py-6">${emptyTxt}</div>
+                                <div class="text-[10px] text-gray-400">${item.slot.label}</div>
+                            </div>
                         `;
                     }
-                    rowDiv.appendChild(card);
+                    rowDiv.appendChild(wrapper);
                 });
 
                 container.appendChild(rowDiv);
@@ -2561,17 +2568,21 @@
                 const avgRtg = Math.round(list.reduce((acc, curr) => acc + curr.rating, 0) / list.length);
                 const metaVals = list.filter(p => typeof p.meta === 'number' && !isNaN(p.meta));
                 const avgMetaText = metaVals.length > 0
-                    ? ` · MR ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}`
+                    ? (currentLanguage === 'ar' ? ` · ميتا ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}` : ` · Meta ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}`)
                     : '';
+                const playersText = currentLanguage === 'ar' ? `${list.length} لاعبين` : `${list.length} players`;
 
-                const row = document.createElement('div');
-                row.className = "flex justify-between items-center py-1";
-                const avgText = (currentLanguage === 'ar' ? `معدل ${avgRtg} (${list.length} لاعبين)` : `Avg ${avgRtg} (${list.length} players)`) + avgMetaText;
-                row.innerHTML = `
-                    <span class="text-gray-400">${groupName}</span>
-                    <span class="font-bold text-white">${avgText}</span>
+                // A dedicated cell per line — each owns its own box, so a
+                // longer value never wraps into and collides with a
+                // neighboring label the way a shared flex row could.
+                const cell = document.createElement('div');
+                cell.className = "bg-fc-dark/40 rounded-lg p-2.5";
+                cell.innerHTML = `
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide truncate">${groupName}</div>
+                    <div class="text-base font-black text-white leading-tight mt-0.5">${avgRtg} <span class="text-[10px] font-bold text-gray-500">OVR</span></div>
+                    <div class="text-[10px] text-gray-500 mt-0.5">${playersText}${avgMetaText}</div>
                 `;
-                breakdownContainer.appendChild(row);
+                breakdownContainer.appendChild(cell);
             });
         }
 
