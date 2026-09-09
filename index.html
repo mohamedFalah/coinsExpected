@@ -2257,7 +2257,13 @@
                 const grassInset = 18 * (1 - topPct / 100); // % inset of the grass edge at this height
                 const rowInset = Math.min(24, Math.max(3, grassInset + 5));
                 const rowDivStyle = `top:${topPct}%; transform:translateY(-50%); padding-left:${rowInset}%; padding-right:${rowInset}%;`;
-                rowDiv.className = "absolute left-0 right-0 flex justify-center items-center w-full gap-3 sm:gap-4";
+                // justify-evenly (not a fixed pixel gap) so the whitespace
+                // between cards scales with however much room this row
+                // actually has inside its grass-safe padding — a static
+                // 12-16px gap reads as basically nothing on a wide desktop
+                // pitch, but evenly distributing the real leftover space
+                // gives clearly visible gaps at any screen size.
+                rowDiv.className = "absolute left-0 right-0 flex justify-evenly items-center w-full";
                 rowDiv.setAttribute('style', rowDivStyle);
 
                 rowItems.forEach(item => {
