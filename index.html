@@ -2574,11 +2574,33 @@
             CF:  ['finishing', 'shotPower', 'positioning', 'acceleration', 'sprintSpeed', 'dribblingSkill']
         };
 
-        function getGranularValue(detail, candidates) {
+        // Normalizes an attribute key so naming-convention differences
+        // (camelCase vs snake_case vs spaced words vs casing) don't cause a
+        // real field to be missed just because our guessed name doesn't
+        // match the API's exact formatting.
+        function normalizeAttrKey(key) {
+            return String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+        }
+
+        function getGranularValue(detail, candidates, label) {
             if (!detail || !detail.inGameAttributes) return null;
+            const attrs = detail.inGameAttributes;
+            // Direct hit first (cheap, covers the common case).
             for (const key of candidates) {
-                const v = detail.inGameAttributes[key];
+                const v = attrs[key];
                 if (typeof v === 'number') return v;
+            }
+            // Fall back to a normalized match against every real key in the
+            // response — catches cases where our guessed candidate name
+            // differs only in casing/underscores/spacing from the API's
+            // actual field name, without ever inventing a value that isn't
+            // really there.
+            const allCandidates = label ? candidates.concat([label]) : candidates;
+            const wanted = allCandidates.map(normalizeAttrKey);
+            for (const realKey of Object.keys(attrs)) {
+                if (typeof attrs[realKey] !== 'number') continue;
+                const normReal = normalizeAttrKey(realKey);
+                if (wanted.includes(normReal)) return attrs[realKey];
             }
             return null;
         }
@@ -2590,31 +2612,13 @@
             return '★'.repeat(filled) + '☆'.repeat(5 - filled);
         }
 
-        // Body type isn't in the bulk feed at all — only the per-player
-        // detail endpoint has bodyTypeId, and EasySBC provides no public
-        // name lookup for that ID (same "no name lookup" situation as
-        // club/nation/league IDs elsewhere in this app). So rather than
-        // guess a body-type name from the ID, this shows the honest raw ID
-        // once verified, or a plain "couldn't verify" state if the fetch
-        // failed — never a fabricated label.
-        function renderBodyType(detail) {
-            const el = document.getElementById('body-type-live');
-            if (!el) return;
-            const isAr = currentLanguage === 'ar';
-            if (!detail || typeof detail.bodyTypeId !== 'number') {
-                el.innerHTML = `<span class="text-gray-500 italic font-normal text-[10px]">${isAr ? 'تعذّر التحقق.' : "Couldn't verify."}</span>`;
-                return;
-            }
-            const note = isAr
-                ? 'لا يوجد اسم رسمي لهذا المعرف من EasySBC'
-                : 'No name lookup available for this ID';
-            el.innerHTML = `#${detail.bodyTypeId} <span class="block text-gray-500 italic font-normal text-[9px] normal-case">${note}</span>`;
-        }
-
         // Fills in the #granular-attrs-live placeholder once the detail
         // fetch settles (success, partial, or failure) — mirrors the
         // honest loading -> verified/failed pattern used for AcceleRATE.
-        function renderGranularAttrs(player, detail) {
+        // Takes the position the player is ACTUALLY playing in the current
+        // formation slot (not necessarily their card's preferred position),
+        // so a CM played at LM gets LM's relevant sub-stats, not CM's.
+        function renderGranularAttrs(pos, detail) {
             const el = document.getElementById('granular-attrs-live');
             if (!el) return;
             const isAr = currentLanguage === 'ar';
@@ -2624,11 +2628,11 @@
                 return;
             }
 
-            const relevantKeys = POSITION_GRANULAR_ATTRS[player.pos] || [];
+            const relevantKeys = POSITION_GRANULAR_ATTRS[pos] || [];
             const rows = relevantKeys.map(key => {
                 const def = GRANULAR_ATTR_DEFS[key];
                 if (!def) return null;
-                const val = getGranularValue(detail, def.candidates);
+                const val = getGranularValue(detail, def.candidates, def.en);
                 if (val === null) return null;
                 return { label: isAr ? def.ar : def.en, val };
             }).filter(Boolean);
@@ -2650,7 +2654,7 @@
             `;
         }
 
-        function loadPlayerDeepDive(player) {
+        function loadPlayerDeepDive(player, effectivePos) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
             currentModalResourceId = resourceId;
@@ -2664,8 +2668,7 @@
                 // Independent of AcceleRATE verification below (which can
                 // legitimately be null for GKs) — the granular attribute
                 // breakdown should still render whenever we have detail.
-                renderGranularAttrs(player, detail);
-                renderBodyType(detail);
+                renderGranularAttrs(effectivePos, detail);
 
                 if (!detail) {
                     // Fetch failed — say so plainly rather than leaving a
@@ -2703,7 +2706,7 @@
                         if (verified.type !== 'Lengthy') {
                             const conv = checkLengthyConversion(detail);
                             if (conv && conv.eligible && conv.bestStyle) {
-                                const recommended = recommendedLengthyStyleFor(player.pos);
+                                const recommended = recommendedLengthyStyleFor(effectivePos);
                                 const bestIsRecommended = recommended.includes(conv.bestStyle.style);
                                 const styleNote = isAr
                                     ? (recommended.includes('Anchor') || recommended.includes('Sentinel')
@@ -2754,8 +2757,7 @@
                 const badgeEl = document.getElementById('accel-badge-live');
                 const feelEl = document.getElementById('movement-feel-live');
                 const isAr = currentLanguage === 'ar';
-                renderGranularAttrs(player, null);
-                renderBodyType(null);
+                renderGranularAttrs(effectivePos, null);
                 if (badgeEl) badgeEl.remove();
                 if (feelEl) {
                     feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
@@ -2767,8 +2769,8 @@
         // Named roles match FC's real Player Roles system, but these are OUR
         // heuristic suggestions from stats — not pulled from EA/EasySBC data
         // (the API's playerRoleId has no public name lookup).
-        function getRoleSuggestion(player) {
-            const pos = player.pos;
+        function getRoleSuggestion(player, pos) {
+            pos = pos || player.pos;
             const a = player.att;
             if (pos === 'GK') {
                 if (a.kic >= 82 && a.spe >= 55) return { role: 'Sweeper Keeper', focus: 'Attack',
@@ -2876,7 +2878,7 @@
                 </button>
             `).join('');
 
-            const roleInfo = getRoleSuggestion(topPick);
+            const roleInfo = getRoleSuggestion(topPick, slot.pos);
             const psPlusTop = Array.isArray(topPick.playstylesPlus) ? topPick.playstylesPlus : [];
             const psBaseTop = Array.isArray(topPick.playstyles) ? topPick.playstyles : [];
             const hasPsTop = psPlusTop.length > 0 || psBaseTop.length > 0;
@@ -2962,19 +2964,25 @@
             const whyText = currentLanguage === 'ar' ? 'لماذا تم اختيار هذا اللاعب:' : 'Why this player was selected:';
             const hasMeta = typeof player.meta === 'number';
 
+            // The position this player is ACTUALLY playing in the current
+            // formation slot — not necessarily their card's preferred
+            // position, since a player can be (and often is) deployed out
+            // of position via an alt-position match. Key Attributes, the
+            // granular breakdown, and the role suggestion should all be
+            // evaluated against the role they're actually filling right
+            // now, not whatever position their card defaults to.
+            const slotsForModal = formationSlots[squadState.formation];
+            const effectivePos = (typeof slotIdx === 'number' && slotsForModal && slotsForModal[slotIdx])
+                ? slotsForModal[slotIdx].pos
+                : player.pos;
+
             // Physical profile: weak foot, skill moves and preferred foot
             // are already in the bulk player data (no fetch needed), shown
-            // as star ratings. Body type is NOT in the bulk feed — only the
-            // per-player detail endpoint has it (bodyTypeId), and per our
-            // own data-honesty notes there's no public name lookup for that
-            // ID, so it's deferred to the async detail fetch and shown as
-            // the honest raw ID rather than a guessed body-type name.
+            // as star ratings.
             const naLabel = currentLanguage === 'ar' ? 'غير متاح' : 'N/A';
             const weakFootLabel = currentLanguage === 'ar' ? 'القدم الضعيفة' : 'Weak Foot';
             const skillMovesLabel = currentLanguage === 'ar' ? 'المهارات' : 'Skill Moves';
             const preferredFootLabel = currentLanguage === 'ar' ? 'القدم المفضلة' : 'Preferred Foot';
-            const bodyTypeLabel = currentLanguage === 'ar' ? 'نوع الجسم' : 'Body Type';
-            const verifyingLabel = currentLanguage === 'ar' ? 'جارٍ التحقق…' : 'Verifying…';
             const weakFootValue = typeof player.weakFoot === 'number' ? renderStarRating(player.weakFoot) : naLabel;
             const skillMovesValue = typeof player.skillMoves === 'number' ? renderStarRating(player.skillMoves) : naLabel;
             const footValue = player.foot
@@ -2986,10 +2994,10 @@
             const hasPlaystyles = psPlus.length > 0 || psBase.length > 0;
 
             // Key Attributes grid: surface which of the 6 broad attributes
-            // actually matter for THIS player's position first, with a star
-            // + accent highlight, instead of listing all six with equal
-            // visual weight.
-            const keyAttrsForPos = getKeyAttributesForPosition(player.pos);
+            // actually matter for the position this player is CURRENTLY
+            // FILLING first, with a star + accent highlight, instead of
+            // listing all six with equal visual weight.
+            const keyAttrsForPos = getKeyAttributesForPosition(effectivePos);
             // Only show the broad composites this position actually cares
             // about (e.g. no Defending on a striker) rather than all 6 with
             // some just de-emphasized — the irrelevant ones are dropped
@@ -2998,8 +3006,8 @@
                 .filter(([k]) => keyAttrsForPos.includes(k))
                 .sort((a, b) => keyAttrsForPos.indexOf(a[0]) - keyAttrsForPos.indexOf(b[0]));
             const keyAttrLegend = currentLanguage === 'ar'
-                ? `يتم عرض الخصائص المرتبطة فعلياً بمركز ${player.pos} فقط.`
-                : `Only showing the attributes that actually matter for the ${player.pos} position.`;
+                ? `يتم عرض الخصائص المرتبطة فعلياً بمركز ${effectivePos} فقط.`
+                : `Only showing the attributes that actually matter for the ${effectivePos} position.`;
 
             // "Why" text: lead with meta vs raw-rating reasoning as before,
             // then fold in a playstyle-specific clause only when the card
@@ -3031,7 +3039,7 @@
             // the fetch fails). Role suggestion reuses the same
             // getRoleSuggestion() the Meta Analyst panel uses below, so the
             // two sections never disagree.
-            const roleInfoWhy = getRoleSuggestion(player);
+            const roleInfoWhy = getRoleSuggestion(player, effectivePos);
             const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):';
             const roleLabel = currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:';
             const focusProfileHtml = `
@@ -3183,24 +3191,18 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-4 gap-2 text-center text-[10px]">
-                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
-                        <span class="text-gray-400 uppercase block">${weakFootLabel}</span>
-                        <span class="font-black text-fc-gold text-sm"><bdi>${weakFootValue}</bdi></span>
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                        <span class="text-gray-400 uppercase text-[10px] tracking-wide">${weakFootLabel}</span>
+                        <span class="font-black text-fc-gold text-sm leading-none"><bdi>${weakFootValue}</bdi></span>
                     </div>
-                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
-                        <span class="text-gray-400 uppercase block">${skillMovesLabel}</span>
-                        <span class="font-black text-fc-gold text-sm"><bdi>${skillMovesValue}</bdi></span>
+                    <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                        <span class="text-gray-400 uppercase text-[10px] tracking-wide">${skillMovesLabel}</span>
+                        <span class="font-black text-fc-gold text-sm leading-none"><bdi>${skillMovesValue}</bdi></span>
                     </div>
-                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
-                        <span class="text-gray-400 uppercase block">${preferredFootLabel}</span>
-                        <span class="font-black text-white text-sm"><bdi>${footValue}</bdi></span>
-                    </div>
-                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
-                        <span class="text-gray-400 uppercase block">${bodyTypeLabel}</span>
-                        <div id="body-type-live" class="font-black text-white text-sm">
-                            <span class="text-gray-500 italic font-normal text-[10px]">${verifyingLabel}</span>
-                        </div>
+                    <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                        <span class="text-gray-400 uppercase text-[10px] tracking-wide">${preferredFootLabel}</span>
+                        <span class="font-black text-white text-sm leading-none"><bdi>${footValue}</bdi></span>
                     </div>
                 </div>
 
@@ -3252,7 +3254,7 @@
             // gender/substats) in the background and upgrade the
             // AcceleRATE badge + Movement Feel text once it resolves —
             // see loadPlayerDeepDive() for why this isn't done in bulk.
-            loadPlayerDeepDive(player);
+            loadPlayerDeepDive(player, effectivePos);
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
