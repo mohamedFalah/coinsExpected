@@ -40,15 +40,23 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <style>
-        .pitch-bg {
-            background: radial-gradient(circle at center, #1b4d3e 0%, #0f2c22 100%);
-            box-shadow: inset 0 0 50px rgba(0,0,0,0.6);
-        }
-        .pitch-lines {
-            background-image: 
-                linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px);
-            background-size: 50px 50px;
+        /* Pseudo-3D half-pitch: a trapezoid (clip-path only, no perspective
+           transforms or 3D engine) so the halfway line reads as "far away"
+           (narrow) and the goal end reads as "close to camera" (wide) —
+           the same illusion real broadcast/game pitch graphics use. Pure
+           CSS gradients, no images, no extra libraries — stays light. */
+        .pitch-3d {
+            clip-path: polygon(18% 0%, 82% 0%, 100% 100%, 0% 100%);
+            background:
+                repeating-linear-gradient(
+                    180deg,
+                    rgba(255,255,255,0.05) 0px,
+                    rgba(255,255,255,0.05) 34px,
+                    transparent 34px,
+                    transparent 68px
+                ),
+                linear-gradient(180deg, #0c2e23 0%, #1c5643 55%, #227354 100%);
+            box-shadow: inset 0 0 70px rgba(0,0,0,0.55);
         }
         ::-webkit-scrollbar {
             width: 8px;
@@ -299,14 +307,29 @@
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
                 <!-- Left 3 Cols: Football Pitch -->
                 <div class="lg:col-span-3 bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-                    <div class="absolute inset-0 pitch-bg pitch-lines opacity-90 pointer-events-none"></div>
-                    
-                    <div class="absolute inset-10 border-2 border-white/10 rounded-2xl pointer-events-none flex flex-col justify-between items-center">
-                        <div class="w-32 h-16 border-b-2 border-x-2 border-white/10 rounded-b-xl"></div>
-                        <div class="w-full h-0 border-t border-white/10"></div>
-                        <div class="w-32 h-16 border-t-2 border-x-2 border-white/10 rounded-t-xl"></div>
+                    <!-- Pseudo-3D half-pitch background (trapezoid, not a
+                         real 3D transform — see .pitch-3d comment). -->
+                    <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
+
+                    <!-- Pitch markings kept to the essentials only: halfway
+                         line + center circle at the far edge, penalty box +
+                         six-yard box + spot + arc + goal at the near edge
+                         where the GK stands. No corner arcs or extra
+                         flourishes — nothing that isn't needed. -->
+                    <div class="absolute inset-0 pointer-events-none">
+                        <div class="absolute top-0 left-[18%] right-[18%] h-px bg-white/30"></div>
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-14 overflow-hidden">
+                            <div class="absolute -top-14 left-0 w-28 h-28 rounded-full border-2 border-white/30"></div>
+                        </div>
+
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                        <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                            <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                        </div>
+                        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                     </div>
-                    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-white/10 rounded-full pointer-events-none"></div>
 
                     <!-- Dynamic Pitch Row Container -->
                     <!-- dir="ltr" forced: a football pitch is a spatial
