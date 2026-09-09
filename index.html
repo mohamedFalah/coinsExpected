@@ -377,6 +377,19 @@
                         </div>
                     </div>
 
+                    <!-- Suggested Tactics Card — real in-game Build-Up
+                         Style / Defensive Approach derived from the squad's
+                         own computed identity above, not a generic default. -->
+                    <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-1">
+                        <h3 class="font-extrabold text-base text-white flex items-center gap-2 mb-2">
+                            <i class="fa-solid fa-clipboard-list text-fc-accent"></i>
+                            <span data-i18n="suggestedTactics">Suggested Tactics</span>
+                        </h3>
+                        <div id="tactics-content">
+                            <!-- Populated by renderTacticsSummary() -->
+                        </div>
+                    </div>
+
                     <!-- Next Best Upgrade Helper Card -->
                     <div class="bg-gradient-to-br from-fc-card to-blue-950/30 border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
                         <div class="flex items-center space-x-2 rtl:space-x-reverse text-fc-accent">
@@ -604,6 +617,7 @@
                 totalSquadCost: "Total Squad Cost",
                 remainingCoins: "Remaining Coins",
                 posGroupQuality: "Position Group Quality",
+                suggestedTactics: "Suggested Tactics",
                 nextBestUpgrade: "NEXT BEST UPGRADE",
                 optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
                 dataArch: "DATA ARCHITECTURE",
@@ -679,6 +693,7 @@
                 totalSquadCost: "إجمالي تكلفة التشكيلة",
                 remainingCoins: "الكوينز المتبقية",
                 posGroupQuality: "جودة مراكز الخطوط",
+                suggestedTactics: "التكتيك المقترح",
                 nextBestUpgrade: "الترقية التالية المقترحة",
                 optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
                 dataArch: "هندسة البيانات",
@@ -2243,6 +2258,13 @@
                         const lockTitle = isLocked
                             ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
                             : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
+                        // Suggested Player Role shown as a hover tooltip on
+                        // the card itself — real per-player tactics info
+                        // without adding a permanent extra line to every
+                        // card (keeps the pitch clean; open the player's
+                        // modal for the full role writeup).
+                        const roleInfo = getRoleSuggestion(player, item.slot.pos);
+                        card.title = `${roleInfo.role} · ${roleInfo.focus}`;
                         const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[item.idx];
                         const chemPoints = chemInfo ? chemInfo.points : 0;
                         const chemInPos = chemInfo ? chemInfo.inPosition : true;
@@ -2362,6 +2384,10 @@
                 icon,
                 headline,
                 description,
+                dominantAxis: dominant.axis,
+                dominantNotable: dominant.dev >= NOTABLE,
+                weakestAxis: weakest.axis,
+                weakestNotable: (weakest.axis !== dominant.axis && weakest.dev <= -NOTABLE),
                 stats: {
                     pace: Math.round(axes.pace),
                     power: Math.round(axes.power),
@@ -2369,6 +2395,89 @@
                     defense: Math.round(axes.defense)
                 }
             };
+        }
+
+        // ===================================================================
+        // SUGGESTED TACTICS — real in-game settings, not just squad flavor
+        // ===================================================================
+        // Maps the squad's own computed identity (see computeSquadIdentity
+        // above) onto the actual in-game tactics systems: Build-Up Style
+        // (Balanced/Counter/Possession) and Defensive Approach (Deep/
+        // Balanced/High/Aggressive) with a Line Height value — the same
+        // settings and effects described in the game's own tactics screen.
+        // Rule of thumb: lean the Build-Up Style into whatever the squad is
+        // genuinely best at, but let a real defensive WEAKNESS override an
+        // aggressive line even if the squad is otherwise fast/physical —
+        // there's no point pressing high with a back line that can't cope
+        // with the space left in behind.
+        function suggestSquadTactics(identity) {
+            if (!identity) return null;
+            const isAr = currentLanguage === 'ar';
+
+            let buildUp = 'balanced';
+            if (identity.dominantNotable && identity.dominantAxis === 'pace') buildUp = 'counter';
+            else if (identity.dominantNotable && identity.dominantAxis === 'buildup') buildUp = 'possession';
+
+            let approach, lineHeight;
+            if (identity.weakestNotable && identity.weakestAxis === 'defense') {
+                approach = 'deep'; lineHeight = 35;
+            } else if (identity.dominantNotable && identity.dominantAxis === 'defense') {
+                approach = 'aggressive'; lineHeight = 88;
+            } else if (identity.dominantNotable && identity.dominantAxis === 'pace') {
+                approach = 'high'; lineHeight = 78;
+            } else {
+                approach = 'balanced'; lineHeight = 55;
+            }
+
+            const BUILDUP_LABELS = { balanced: { en: 'Balanced', ar: 'متوازن' }, counter: { en: 'Counter', ar: 'مرتد سريع' }, possession: { en: 'Possession', ar: 'استحواذ' } };
+            const APPROACH_LABELS = { deep: { en: 'Deep', ar: 'عميق' }, balanced: { en: 'Balanced', ar: 'متوازن' }, high: { en: 'High', ar: 'مرتفع' }, aggressive: { en: 'Aggressive', ar: 'هجومي (عالي المخاطر)' } };
+            const BUILDUP_WHY = {
+                balanced: { en: 'No single trait dominant enough to force a style — mix short passing with selective forward runs.', ar: 'لا توجد سمة مهيمنة بما يكفي لفرض أسلوب معين — امزج التمرير القصير مع اختيار لحظات الاندفاع للأمام.' },
+                counter: { en: "Pace is this squad's edge — win the ball back and go vertical immediately, before the opponent resets their shape.", ar: 'السرعة هي ميزة هذه التشكيلة — استرجع الكرة واندفع عمودياً فوراً قبل أن يستعيد الخصم تموضعه.' },
+                possession: { en: "Passing is this squad's edge — keep the ball moving through tight triangles and control the tempo.", ar: 'التمرير هو ميزة هذه التشكيلة — حافظ على حركة الكرة عبر مثلثات ضيقة وتحكم بالإيقاع.' }
+            };
+            const APPROACH_WHY = {
+                deep: { en: "The back line is a real weakness here — sit off, protect the space in behind, and hit on the counter instead of pressing.", ar: 'خط الدفاع نقطة ضعف حقيقية هنا — تراجع، احمِ المساحة الخلفية، واضرب بالهجمات المرتدة بدلاً من الضغط.' },
+                aggressive: { en: "Defense is this squad's biggest strength — push the line up, press high, and choke the game out of the opponent.", ar: 'الدفاع هو أكبر نقاط قوة هذه التشكيلة — ادفع الخط للأمام، اضغط عالياً، واخنق لعب الخصم.' },
+                high: { en: 'Real pace covers for a high line — compress the pitch and press, trusting the recovery speed in behind.', ar: 'السرعة الحقيقية تغطي المخاطرة بخط مرتفع — اضغط المساحة، معتمداً على سرعة الاسترجاع خلف الدفاع.' },
+                balanced: { en: 'Nothing specific to protect or exploit — hold a standard, flexible defensive shape.', ar: 'لا يوجد ما يستدعي الحماية أو الاستغلال تحديداً — حافظ على شكل دفاعي قياسي ومرن.' }
+            };
+
+            return {
+                buildUp,
+                buildUpLabel: isAr ? BUILDUP_LABELS[buildUp].ar : BUILDUP_LABELS[buildUp].en,
+                buildUpWhy: isAr ? BUILDUP_WHY[buildUp].ar : BUILDUP_WHY[buildUp].en,
+                approach,
+                approachLabel: isAr ? APPROACH_LABELS[approach].ar : APPROACH_LABELS[approach].en,
+                approachWhy: isAr ? APPROACH_WHY[approach].ar : APPROACH_WHY[approach].en,
+                lineHeight
+            };
+        }
+
+        function renderTacticsSummary() {
+            const container = document.getElementById('tactics-content');
+            if (!container) return;
+            const identity = computeSquadIdentity();
+            const tactics = suggestSquadTactics(identity);
+            if (!tactics) { container.innerHTML = ''; return; }
+
+            const isAr = currentLanguage === 'ar';
+            const row = (label, value) => `
+                <div class="flex justify-between items-center py-2.5 border-b border-fc-border/60 last:border-0">
+                    <span class="text-sm text-gray-400">${label}</span>
+                    <span class="text-sm font-black text-white">${value}</span>
+                </div>
+            `;
+
+            container.innerHTML = `
+                ${row(isAr ? 'التشكيلة' : 'Formation', squadState.formation)}
+                ${row(isAr ? 'أسلوب البناء' : 'Build-Up Style', tactics.buildUpLabel)}
+                ${row(isAr ? 'الأسلوب الدفاعي' : 'Defensive Approach', `${tactics.approachLabel} · ${tactics.lineHeight}`)}
+                <div class="pt-3 space-y-2">
+                    <p class="text-xs text-gray-500 leading-snug"><span class="text-fc-accent font-bold">${isAr ? 'أسلوب البناء: ' : 'Build-Up: '}</span>${tactics.buildUpWhy}</p>
+                    <p class="text-xs text-gray-500 leading-snug"><span class="text-fc-gold font-bold">${isAr ? 'الأسلوب الدفاعي: ' : 'Defense: '}</span>${tactics.approachWhy}</p>
+                </div>
+            `;
         }
 
         function renderSquadIdentityBlock() {
@@ -2401,6 +2510,7 @@
 
         function renderSquadSummary() {
             renderSquadIdentityBlock();
+            renderTacticsSummary();
             const badge = document.getElementById('squad-overall-badge');
             const metaBadge = document.getElementById('squad-meta-badge');
             const chemBadge = document.getElementById('squad-chem-badge');
@@ -3079,6 +3189,13 @@
         // Named roles match FC's real Player Roles system, but these are OUR
         // heuristic suggestions from stats — not pulled from EA/EasySBC data
         // (the API's playerRoleId has no public name lookup).
+        // Role vocabulary and branching aligned to the game's real Player
+        // Roles system (Advanced Forward/Target Forward/False 9/Poacher,
+        // Winger/Inside Forward/Wide Playmaker/Wide Midfielder, Playmaker/
+        // Box-to-Box/Holding/Deep-Lying Playmaker/Shadow Striker, Fullback/
+        // Attacking Wingback/Inverted Wingback/Ball-Playing Defender/
+        // Stopper, Sweeper Keeper) — each branch keyed off real attributes,
+        // not a guess at EA's own role ID (still not exposed by the feed).
         function getRoleSuggestion(player, pos) {
             pos = pos || player.pos;
             const a = player.att;
@@ -3098,10 +3215,13 @@
                     en: 'Strength/defending-led profile is best used as a pure last-line stopper rather than covering space in behind.',
                     ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كخط دفاعي أخير دون تكليفه بتغطية المساحات الخلفية.' };
             }
-            if (pos === 'LB' || pos === 'RB') {
+            if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') {
                 if (a.pac >= 85 && a.dri >= 78) return { role: 'Attacking Wingback', focus: 'Attack',
                     en: 'Pace and dribbling let them overlap and create in the final third without wrecking defensive shape.',
                     ar: 'سرعته ومهارته تتيحان له التداخل والمشاركة الهجومية دون الإخلال الكبير بالتوازن الدفاعي.' };
+                if (a.pas >= 75 && a.dri >= 75 && a.pac < 80) return { role: 'Inverted Wingback', focus: 'Build Up',
+                    en: 'Passing and close control let them tuck inside into midfield during possession, forming a temporary double-pivot instead of just holding the touchline.',
+                    ar: 'تمريره وتحكمه بالكرة يتيحان له الدخول للوسط أثناء الاستحواذ ليشكّل محوراً مزدوجاً مؤقتاً بدلاً من الثبات على الخط الجانبي فقط.' };
                 return { role: 'Fullback', focus: 'Defend',
                     en: 'A more balanced/defensive profile holds the line better than it bombs forward.',
                     ar: 'ملفه الأكثر توازناً ودفاعياً يجعله أفضل في الثبات دفاعياً بدلاً من الاندفاع المستمر للأمام.' };
@@ -3115,6 +3235,12 @@
                     ar: 'ملفه الدفاعي/البدني يجعله الأفضل في حماية خط الدفاع، ما يمنح لاعبي الإبداع حرية أكبر.' };
             }
             if (pos === 'CM') {
+                if (a.def >= 78 && a.phy >= 75) return { role: 'Holding / Ball-Winning', focus: 'Defend',
+                    en: 'Defending and physicality this strong at CM are better spent anchoring in front of the back four than roaming forward.',
+                    ar: 'قدرته الدفاعية وبدنيته القويتان في مركز الوسط أفضل استغلالاً في الارتكاز أمام خط الدفاع بدلاً من التقدم للأمام.' };
+                if (a.pas >= 82 && a.pac <= 72) return { role: 'Deep-Lying Playmaker', focus: 'Build Up',
+                    en: 'Elite passing with modest pace is wasted box-to-box — drop them deeper to recycle and dictate tempo instead.',
+                    ar: 'التمرير النخبوي مع سرعة متواضعة يُهدر في الجري بين الخطين — أنزله للعمق ليعيد توزيع الكرة ويتحكم بالإيقاع.' };
                 if (a.sho >= 78 && a.pac >= 78) return { role: 'Box-to-Box', focus: 'Attack',
                     en: 'Enough shooting and pace to join the front line late without abandoning defensive duty entirely.',
                     ar: 'تسديده وسرعته الكافيان يتيحان الانضمام للهجوم في اللحظة الأخيرة دون التخلي التام عن الدفاع.' };
@@ -3131,9 +3257,12 @@
                     ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' };
             }
             if (pos === 'LM' || pos === 'RM') {
-                if (a.def >= 60) return { role: 'Winger', focus: 'Support',
-                    en: 'Defending is actually usable here, so they can provide width and still track back some.',
-                    ar: 'قدرته الدفاعية قابلة للاستخدام فعلياً، فيمنح الاتساع مع مساهمة دفاعية جزئية.' };
+                if (a.pas >= 78 && a.dri >= 75 && a.def < 65) return { role: 'Wide Playmaker', focus: 'Support',
+                    en: 'Creative, low-defending profile is better drifting inside into pockets to create than holding the touchline.',
+                    ar: 'ملفه الإبداعي وضعف دفاعه يجعلانه أفضل في الانزلاق للمساحات الداخلية للصناعة بدلاً من الثبات على الخط الجانبي.' };
+                if (a.def >= 60) return { role: 'Wide Midfielder', focus: 'Support',
+                    en: 'Defending is actually usable here, so they can provide width and still track back into a flat defensive line.',
+                    ar: 'قدرته الدفاعية قابلة للاستخدام فعلياً، فيمنح الاتساع مع تراجع دفاعي لتشكيل خط دفاعي مسطح عند الحاجة.' };
                 return { role: 'Inside Forward', focus: 'Attack',
                     en: 'Low defending means their value is entirely in attack — cutting inside maximizes usable output.',
                     ar: 'ضعف قدرته الدفاعية يعني أن قيمته بالكامل في الهجوم، فالدخول للداخل يعظّم أثره الفعلي.' };
@@ -3146,13 +3275,19 @@
                     en: 'Dribbling/pace-led profile is best used holding width and beating the fullback outside.',
                     ar: 'ملفه القائم على المراوغة والسرعة يجعله الأفضل في الثبات على الجناح وتخطي الظهير من الخارج.' };
             }
-            if (pos === 'ST') {
+            if (pos === 'ST' || pos === 'CF') {
                 if (a.pas >= 78 && a.dri >= 80) return { role: 'False 9', focus: 'Attack',
                     en: 'Passing/dribbling on par with a creator lets them drop deep to link play before attacking the space they just opened.',
                     ar: 'تمريره ومراوغته بمستوى صانع الألعاب يتيحان النزول للعمق لربط اللعب قبل مهاجمة المساحة التي فتحها.' };
-                return { role: 'Advanced Forward', focus: 'Attack',
-                    en: 'Pace/shooting-led with lighter passing means the highest-value job is getting in behind and finishing quickly.',
-                    ar: 'ملفه القائم على السرعة والتسديد مع تمرير أخف يعني أن قيمته الأعلى في الانطلاق خلف الدفاع والإنهاء السريع.' };
+                if (a.phy >= 82 && a.pac <= 75) return { role: 'Target Forward', focus: 'Attack',
+                    en: 'A physical focal point — backs into center-backs to shield and win the ball rather than running in behind.',
+                    ar: 'محور هجومي بدني — يسند نفسه على قلوب الدفاع لحماية الكرة وكسبها بدلاً من الجري خلف الدفاع.' };
+                if (a.pac >= 85) return { role: 'Advanced Forward', focus: 'Attack',
+                    en: 'Elite pace is best spent constantly breaking the defensive line with runs in behind, not dropping deep.',
+                    ar: 'سرعته النخبوية تُستغل أفضل في كسر خط الدفاع باستمرار بالجري خلفه، لا بالنزول للعمق.' };
+                return { role: 'Poacher', focus: 'Attack',
+                    en: 'No single standout trait to build a specialist role around — stays central inside the box for rebounds, crosses, and cutbacks.',
+                    ar: 'لا توجد سمة واحدة بارزة كفاية لبناء دور متخصص — يبقى مركزياً داخل منطقة الجزاء لاستغلال الارتدادات والعرضيات.' };
             }
             return { role: pos, focus: 'Balanced',
                 en: 'General-purpose role based on standard positioning for this slot.',
