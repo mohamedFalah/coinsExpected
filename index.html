@@ -2611,46 +2611,65 @@
             return '★'.repeat(filled) + '☆'.repeat(5 - filled);
         }
 
-        // Fills in the #granular-attrs-live placeholder once the detail
-        // fetch settles (success, partial, or failure) — mirrors the
-        // honest loading -> verified/failed pattern used for AcceleRATE.
-        // Takes the position the player is ACTUALLY playing in the current
-        // formation slot (not necessarily their card's preferred position),
-        // so a CM played at LM gets LM's relevant sub-stats, not CM's.
+        // Renders a red-to-green color for a 0-99 attribute value, used for
+        // the granular attribute bars.
+        function getAttrBarColor(v) {
+            const clamped = Math.max(0, Math.min(99, v));
+            const hue = (clamped / 99) * 120; // 0 = red, 120 = green
+            return `hsl(${hue}, 70%, 48%)`;
+        }
+
+        // Fills in the pre-rendered granular attribute bars once the detail
+        // fetch settles — mirrors the honest loading -> verified/failed
+        // pattern used for AcceleRATE, but since the ATTRIBUTE NAMES for a
+        // position are known instantly (no fetch needed for those), the
+        // rows are already on screen with empty grey bars; this only needs
+        // to update each bar's width/color and the numeric value in place,
+        // never rebuild the whole list. Takes the position the player is
+        // ACTUALLY playing in the current formation slot (not necessarily
+        // their card's preferred position), so a CM played at LM gets LM's
+        // relevant sub-stats, not CM's.
         function renderGranularAttrs(pos, detail) {
-            const el = document.getElementById('granular-attrs-live');
-            if (!el) return;
             const isAr = currentLanguage === 'ar';
+            const statusEl = document.getElementById('granular-status');
+            const relevantKeys = POSITION_GRANULAR_ATTRS[pos] || [];
 
             if (!detail || !detail.inGameAttributes) {
-                el.innerHTML = `<span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من الإحصائيات الدقيقة لهذا اللاعب.' : "Couldn't verify granular stats for this player."}</span>`;
+                if (statusEl) {
+                    statusEl.classList.remove('hidden');
+                    statusEl.textContent = isAr ? 'تعذّر التحقق من الإحصائيات الدقيقة لهذا اللاعب.' : "Couldn't verify granular stats for this player.";
+                }
                 return;
             }
 
-            const relevantKeys = POSITION_GRANULAR_ATTRS[pos] || [];
-            const rows = relevantKeys.map(key => {
+            let anyFound = false;
+            relevantKeys.forEach(key => {
                 const def = GRANULAR_ATTR_DEFS[key];
-                if (!def) return null;
+                if (!def) return;
+                const barEl = document.getElementById(`granular-bar-${key}`);
+                const valEl = document.getElementById(`granular-val-${key}`);
                 const val = getGranularValue(detail, def.candidates, def.en);
-                if (val === null) return null;
-                return { label: isAr ? def.ar : def.en, val };
-            }).filter(Boolean);
 
-            if (rows.length === 0) {
-                el.innerHTML = `<span class="text-gray-500 italic">${isAr ? 'لا تتوفر بيانات دقيقة إضافية لهذه البطاقة.' : 'No additional granular attribute data available for this card.'}</span>`;
-                return;
+                if (val === null) {
+                    if (valEl) valEl.innerHTML = `<bdi>N/A</bdi>`;
+                    return;
+                }
+                anyFound = true;
+                if (barEl) {
+                    barEl.style.width = Math.max(2, Math.min(99, val)) + '%';
+                    barEl.style.backgroundColor = getAttrBarColor(val);
+                }
+                if (valEl) {
+                    valEl.innerHTML = `<bdi>${val}</bdi>`;
+                    valEl.classList.remove('text-gray-500');
+                    valEl.classList.add('text-white');
+                }
+            });
+
+            if (!anyFound && statusEl) {
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = isAr ? 'لا تتوفر بيانات دقيقة إضافية لهذه البطاقة.' : 'No additional granular attribute data available for this card.';
             }
-
-            el.innerHTML = `
-                <div class="grid grid-cols-2 gap-2">
-                    ${rows.map(r => `
-                        <div class="flex items-center justify-between bg-fc-dark p-2 rounded-lg border border-fc-border">
-                            <span class="text-gray-400">${r.label}</span>
-                            <span class="font-black text-white">${r.val}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
         }
 
         // Kicks off the deep-dive fetch for the currently-open modal and
@@ -2978,6 +2997,12 @@
             const effectivePos = (typeof slotIdx === 'number' && slotsForModal && slotsForModal[slotIdx])
                 ? slotsForModal[slotIdx].pos
                 : player.pos;
+            // The list of granular attributes for this position is fixed
+            // and known instantly — no need to wait on a fetch to know
+            // WHICH attributes to show, only to know their VALUES. So the
+            // rows render immediately with empty bars, and only the
+            // bar width/color/number get filled in once verified.
+            const granularKeysForPos = POSITION_GRANULAR_ATTRS[effectivePos] || [];
 
             // Physical profile: weak foot, skill moves and preferred foot
             // are already in the bulk player data (no fetch needed), shown
@@ -3227,9 +3252,23 @@
 
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الإحصائيات الدقيقة داخل اللعبة' : 'Granular In-Game Attributes'}</span>
-                    <div id="granular-attrs-live" class="text-[11px] text-gray-500 italic">
-                        ${currentLanguage === 'ar' ? 'جارٍ التحقق من الإحصائيات الدقيقة الحقيقية…' : 'Verifying real granular stats for this player…'}
+                    <div class="space-y-1.5">
+                        ${granularKeysForPos.map(key => {
+                            const def = GRANULAR_ATTR_DEFS[key];
+                            if (!def) return '';
+                            const label = currentLanguage === 'ar' ? def.ar : def.en;
+                            return `
+                                <div class="flex items-center gap-2 text-[11px]">
+                                    <span class="text-gray-400 w-28 shrink-0 truncate" title="${label}">${label}</span>
+                                    <div class="flex-1 h-2 bg-fc-dark rounded-full overflow-hidden border border-fc-border/60">
+                                        <div id="granular-bar-${key}" class="h-full rounded-full transition-all duration-700 ease-out" style="width:2%;background-color:#3a4256;"></div>
+                                    </div>
+                                    <span id="granular-val-${key}" class="text-gray-500 font-black w-7 text-right shrink-0"><bdi>--</bdi></span>
+                                </div>
+                            `;
+                        }).join('')}
                     </div>
+                    <p id="granular-status" class="hidden text-[10px] text-gray-500 italic"></p>
                 </div>
 
                 ${chemistrySection}
