@@ -3159,27 +3159,69 @@
                 ar: 'دور عام يعتمد على التمركز القياسي لهذا المركز.' };
         }
 
+        // How this player's Meta Rating stacks up against every other
+        // loaded player who can actually fill this position (their own
+        // position or as an alt) — gives a real, comparable anchor instead
+        // of a bare floating number like "85.5" that means nothing on its
+        // own to someone unfamiliar with the scale.
+        function computeMetaPercentile(player, pos) {
+            const pool = fc27Database.filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+            if (pool.length === 0) return null;
+            const myScore = getMetaValue(player);
+            const better = pool.filter(p => getMetaValue(p) > myScore).length;
+            const percentile = Math.round(((pool.length - better) / pool.length) * 100);
+            return { percentile, poolSize: pool.length };
+        }
+
         window.setAnalystFocus = function(focusKey) {
             analystFocus = focusKey;
             renderAnalystPanel();
         };
 
+        // ===================================================================
+        // META ANALYST PANEL — rebuilt to actually explain the number
+        // ===================================================================
+        // The old version just showed a re-rankable "best pick" with no
+        // context for what Meta Rating even means or how THIS player's
+        // number should be read. This version answers three plain
+        // questions in order: (1) what is this number, (2) how good is
+        // THIS player's number really (percentile vs. the loaded pool +
+        // how it compares to their own OVR), (3) does prioritizing a
+        // different trait (Speed/Dribbling/Physicality instead of the
+        // balanced Meta score) change who's the best fit for this slot.
         function renderAnalystPanel() {
             const container = document.getElementById('analyst-panel');
             if (!container || !analystContext) return;
             const isAr = currentLanguage === 'ar';
             const { slotIdx, slot } = analystContext;
+            const evalPlayer = analystContext.player;
 
-            const picks = computeFocusPicks(slotIdx, analystFocus);
-            const topPick = picks[0] || analystContext.player;
-            const currentInSlot = squadState.selectedXI[slotIdx];
-            const isAlreadyInSlot = currentInSlot && topPick && currentInSlot.id === topPick.id;
+            // --- Question 2: how good is THIS player's number, really ---
+            const evalMetaValue = getMetaValue(evalPlayer);
+            const standing = computeMetaPercentile(evalPlayer, slot.pos);
+            const hasOwnMeta = typeof evalPlayer.meta === 'number' && !isNaN(evalPlayer.meta);
+            const ovrGap = hasOwnMeta ? (evalPlayer.meta - evalPlayer.rating) : null;
+            let gapNote = '';
+            if (ovrGap !== null) {
+                if (ovrGap >= 1) {
+                    gapNote = isAr
+                        ? `الميتا أعلى من التقييم العام (OVR) بـ ${ovrGap.toFixed(1)} نقطة — يؤدي فعلياً أفضل مما يوحي به رقمه العام.`
+                        : `Meta is ${ovrGap.toFixed(1)} points ABOVE raw OVR — this card plays better in-game than its OVR alone suggests.`;
+                } else if (ovrGap <= -1) {
+                    gapNote = isAr
+                        ? `الميتا أقل من التقييم العام (OVR) بـ ${Math.abs(ovrGap).toFixed(1)} نقطة — الرقم العام يبالغ في تقدير أدائه الفعلي بهذا المركز.`
+                        : `Meta is ${Math.abs(ovrGap).toFixed(1)} points BELOW raw OVR — the OVR overstates how this card actually performs here.`;
+                } else {
+                    gapNote = isAr ? 'الميتا قريبة جداً من التقييم العام — لا فرق يُذكر.' : 'Meta closely matches raw OVR — no real surprise either way.';
+                }
+            }
 
+            // --- Question 3: re-rank by a different priority ---
             const focusLabels = {
-                meta: isAr ? '🧠 الميتا (افتراضي)' : '🧠 Meta (Default)',
-                pace: isAr ? '⚡ التركيز على السرعة' : '⚡ Pace / Speed',
-                agility: isAr ? '🪶 خفيف / مرن' : '🪶 Agility / "Light"',
-                physical: isAr ? '💪 بدني / صراع' : '💪 Physical / Grind'
+                meta: isAr ? 'متوازن (افتراضي)' : 'Balanced (Default)',
+                pace: isAr ? 'السرعة' : 'Speed',
+                agility: isAr ? 'المراوغة والتحكم' : 'Dribbling & Control',
+                physical: isAr ? 'القوة البدنية' : 'Physicality'
             };
             const focusButtons = Object.keys(focusLabels).map(key => `
                 <button onclick="window.setAnalystFocus('${key}')"
@@ -3187,6 +3229,11 @@
                     ${focusLabels[key]}
                 </button>
             `).join('');
+
+            const picks = computeFocusPicks(slotIdx, analystFocus);
+            const topPick = picks[0] || evalPlayer;
+            const currentInSlot = squadState.selectedXI[slotIdx];
+            const isAlreadyInSlot = currentInSlot && topPick && currentInSlot.id === topPick.id;
 
             const roleInfo = getRoleSuggestion(topPick, slot.pos);
             const psPlusTop = Array.isArray(topPick.playstylesPlus) ? topPick.playstylesPlus : [];
@@ -3196,13 +3243,6 @@
             const topChemPoints = getResultingChemPoints(slotIdx, topPick);
             const chemDotColor = topChemPoints >= 3 ? '#4ade80' : topChemPoints === 2 ? '#fbbf24' : topChemPoints === 1 ? '#f97316' : '#6b7280';
             const chemDots = [0, 1, 2].map(i => `<span class="inline-block w-2 h-2 rotate-45 border" style="${i < topChemPoints ? `background-color:${chemDotColor};border-color:${chemDotColor};` : 'border-color:#6b7280;'}"></span>`).join(' ');
-            const chemNote = isAr
-                ? `يشمل تقييم الميتا تأثير الكيمياء المتوقعة (${topChemPoints}/3) لهذا المركز — ليس فقط تقييم اللاعب المنفرد.`
-                : `This pick already accounts for expected chemistry (${topChemPoints}/3) at this slot — not just the player's standalone rating.`;
-
-            const pickHeaderText = analystFocus === 'meta'
-                ? (isAr ? 'الاختيار المُعتمد على الميتا' : 'The Meta Selection')
-                : (isAr ? `أفضل خيار لتركيز: ${focusLabels[analystFocus]}` : `Best Pick for ${focusLabels[analystFocus]}`);
 
             const swapHint = isAr ? 'اضغط لاستبدال اللاعب الحالي بهذا الخيار' : 'Click to swap this pick into the starting XI';
             const swapBtn = !isAlreadyInSlot ? `
@@ -3210,13 +3250,7 @@
                     class="mt-2 w-full text-center text-[11px] font-bold text-fc-dark bg-fc-accent hover:bg-fc-accentHover rounded-lg py-1.5">
                     ${isAr ? 'استخدام هذا الاختيار' : 'Use This Pick'}
                 </button>
-            ` : `<p class="mt-2 text-[11px] text-green-400 font-bold text-center">${isAr ? '✓ هذا هو اللاعب الحالي في التشكيلة' : '✓ Already your current starting player'}</p>`;
-
-            // AcceleRATE isn't shown here — it needs the verified per-player
-            // detail fetch (real height/agility/strength/acceleration), which
-            // only runs for whichever single player's own modal is open, not
-            // for every candidate the Analyst considers. Open this pick's own
-            // card to see its verified type.
+            ` : '';
 
             const playstyleBlock = hasPsTop ? `
                 <div class="flex flex-wrap gap-1.5">
@@ -3227,38 +3261,70 @@
 
             container.innerHTML = `
                 <div class="bg-fc-dark/60 border border-fc-border rounded-xl p-3.5 space-y-3">
-                    <div class="flex items-center justify-between flex-wrap gap-2">
-                        <span class="text-xs font-bold text-white uppercase tracking-wider">🧠 ${isAr ? 'محلل الميتا' : 'Meta Analyst'}</span>
-                    </div>
-                    <div class="flex flex-wrap gap-1.5">${focusButtons}</div>
+                    <span class="text-xs font-bold text-white uppercase tracking-wider">🧠 ${isAr ? 'محلل الميتا' : 'Meta Analyst'}</span>
 
+                    <!-- Question 1: what is this number -->
+                    <p class="text-[11px] text-gray-400 leading-snug">
+                        ${isAr
+                            ? 'تقييم الميتا (Meta Rating) يقدّر الأداء الفعلي داخل اللعبة لهذه البطاقة في هذا المركز تحديداً — وليس مجرد التقييم العام (OVR). يجمع بين الخصائص وأنماط اللعب معاً، ولهذا قد يختلف عن الرقم العام.'
+                            : "Meta Rating estimates real in-game performance for THIS exact position — not just the overall rating (OVR). It weighs attributes and playstyles together, which is why it can land above or below the OVR."}
+                    </p>
+
+                    <!-- Question 2: how good is THIS player's number -->
                     <div class="bg-fc-card/60 rounded-lg p-3 space-y-2 border border-fc-border/60">
-                        <div class="flex items-center gap-2">
-                            <img src="${topPick.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
-                            <div class="min-w-0 flex-1">
-                                <span class="text-[10px] font-bold text-fc-accent uppercase block">${pickHeaderText}</span>
-                                <div class="text-xs font-bold text-white truncate">${topPick.name} <span class="text-gray-400 font-normal">(${topPick.rating} OVR${topMeta ? ` · MR ${topMeta}` : ''} · ${topPick.price.toLocaleString()}${isAr ? 'ك' : 'c'})</span></div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wide">${isAr ? 'مكانة هذا اللاعب' : "This Player's Standing"}</span>
+                            <span class="text-sm font-black text-fc-accent">${evalMetaValue.toFixed(1)} MR</span>
+                        </div>
+                        ${standing ? `
+                            <div class="space-y-1">
+                                <div class="h-1.5 rounded-full bg-fc-dark overflow-hidden">
+                                    <div class="h-full bg-fc-accent rounded-full" style="width:${standing.percentile}%"></div>
+                                </div>
+                                <p class="text-[10px] text-gray-500">${isAr
+                                    ? `أفضل من ${standing.percentile}% من لاعبي مركز ${slot.pos} في قاعدة البيانات المحمّلة (${standing.poolSize} لاعب).`
+                                    : `Better than ${standing.percentile}% of ${slot.pos} options in the loaded pool (${standing.poolSize} players).`}</p>
                             </div>
-                            <div class="shrink-0 flex flex-col items-center gap-0.5" title="${isAr ? 'الكيمياء المتوقعة' : 'Expected chemistry'}">
-                                <div class="flex gap-0.5">${chemDots}</div>
-                                <span class="text-[9px] font-bold text-gray-400">${topChemPoints}/3</span>
-                            </div>
-                        </div>
-                        <p class="text-[10px] text-gray-500 italic">${chemNote}</p>
-
-                        <div class="space-y-1">
-                            <span class="text-[11px] font-bold text-gray-400">PlayStyles</span>
-                            ${playstyleBlock}
-                        </div>
-
-                        <div class="text-xs text-gray-300 pt-1 border-t border-fc-border/60">
-                            <span class="font-bold text-fc-gold">${isAr ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:'}</span>
-                            <span class="font-bold text-white"> ${roleInfo.role} / ${roleInfo.focus}</span>
-                            <p class="text-gray-400 mt-0.5">${isAr ? roleInfo.ar : roleInfo.en}</p>
-                        </div>
-
-                        ${swapBtn}
+                        ` : ''}
+                        ${gapNote ? `<p class="text-[10px] text-gray-500">${gapNote}</p>` : ''}
                     </div>
+
+                    <!-- Question 3: re-rank by a different priority -->
+                    <div class="space-y-2">
+                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wide">${isAr ? 'أعد الترتيب حسب ما يهمك' : 'Re-rank by what matters to you'}</span>
+                        <div class="flex flex-wrap gap-1.5">${focusButtons}</div>
+                    </div>
+
+                    ${isAlreadyInSlot ? `
+                        <p class="text-[11px] text-green-400 font-bold text-center">${isAr ? '✓ يبقى الخيار الأفضل حتى مع هذه الأولوية' : '✓ Still the best fit for this slot even weighted this way'}</p>
+                    ` : `
+                        <div class="bg-fc-card/60 rounded-lg p-3 space-y-2 border border-fc-border/60">
+                            <div class="flex items-center gap-2">
+                                <img src="${topPick.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                                <div class="min-w-0 flex-1">
+                                    <span class="text-[10px] font-bold text-fc-accent uppercase block">${isAr ? `الأفضل لو الأولوية: ${focusLabels[analystFocus]}` : `Best fit if you prioritize: ${focusLabels[analystFocus]}`}</span>
+                                    <div class="text-xs font-bold text-white truncate">${topPick.name} <span class="text-gray-400 font-normal">(${topPick.rating} OVR${topMeta ? ` · MR ${topMeta}` : ''} · ${topPick.price.toLocaleString()}${isAr ? 'ك' : 'c'})</span></div>
+                                </div>
+                                <div class="shrink-0 flex flex-col items-center gap-0.5" title="${isAr ? 'الكيمياء المتوقعة' : 'Expected chemistry'}">
+                                    <div class="flex gap-0.5">${chemDots}</div>
+                                    <span class="text-[9px] font-bold text-gray-400">${topChemPoints}/3</span>
+                                </div>
+                            </div>
+
+                            <div class="space-y-1">
+                                <span class="text-[11px] font-bold text-gray-400">PlayStyles</span>
+                                ${playstyleBlock}
+                            </div>
+
+                            <div class="text-xs text-gray-300 pt-1 border-t border-fc-border/60">
+                                <span class="font-bold text-fc-gold">${isAr ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:'}</span>
+                                <span class="font-bold text-white"> ${roleInfo.role} / ${roleInfo.focus}</span>
+                                <p class="text-gray-400 mt-0.5">${isAr ? roleInfo.ar : roleInfo.en}</p>
+                            </div>
+
+                            ${swapBtn}
+                        </div>
+                    `}
                 </div>
             `;
         }
@@ -3665,7 +3731,7 @@
 
             if (typeof slotIdx === 'number') {
                 if (!preserveFocus) analystFocus = 'meta';
-                analystContext = { player, slotIdx, slot: { pos: player.pos, label: slotLabel } };
+                analystContext = { player, slotIdx, slot: { pos: effectivePos, label: slotLabel } };
                 renderAnalystPanel();
             }
 
