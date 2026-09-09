@@ -2512,43 +2512,43 @@
         // but never invents a number: a missing field is simply omitted.
         const GRANULAR_ATTR_DEFS = {
             // Goalkeeper (5)
-            gkDiving:           { en: 'GK Diving', ar: 'غطس الحارس', candidates: ['gkDiving'] },
-            gkHandling:         { en: 'GK Handling', ar: 'إمساك الحارس', candidates: ['gkHandling'] },
-            gkKicking:          { en: 'GK Kicking', ar: 'ركل الحارس', candidates: ['gkKicking'] },
-            gkPositioning:      { en: 'GK Positioning', ar: 'تمركز الحارس', candidates: ['gkPositioning'] },
-            gkReflexes:         { en: 'GK Reflexes', ar: 'ردود فعل الحارس', candidates: ['gkReflexes'] },
+            gkDiving:           { en: 'GK Diving', ar: 'غطس الحارس', candidates: ['gkDiving'], icon: 'fa-person-falling' },
+            gkHandling:         { en: 'GK Handling', ar: 'إمساك الحارس', candidates: ['gkHandling'], icon: 'fa-hand' },
+            gkKicking:          { en: 'GK Kicking', ar: 'ركل الحارس', candidates: ['gkKicking'], icon: 'fa-shoe-prints' },
+            gkPositioning:      { en: 'GK Positioning', ar: 'تمركز الحارس', candidates: ['gkPositioning'], icon: 'fa-map-pin' },
+            gkReflexes:         { en: 'GK Reflexes', ar: 'ردود فعل الحارس', candidates: ['gkReflexes'], icon: 'fa-bolt' },
             // Defender (7)
-            defensiveAwareness: { en: 'Defensive Awareness', ar: 'الوعي الدفاعي', candidates: ['defensiveAwareness'] },
-            headingAccuracy:    { en: 'Heading Accuracy', ar: 'دقة الرأسيات', candidates: ['headingAccuracy'] },
-            interceptions:      { en: 'Interceptions', ar: 'الاعتراض', candidates: ['interceptions'] },
-            jumping:            { en: 'Jumping', ar: 'القفز', candidates: ['jumping'] },
-            slidingTackles:     { en: 'Sliding Tackle', ar: 'التدخل بالانزلاق', candidates: ['slidingTackles'] },
-            standingTackles:    { en: 'Standing Tackle', ar: 'التدخل واقفاً', candidates: ['standingTackles'] },
-            strength:           { en: 'Strength', ar: 'القوة', candidates: ['strength'] },
+            defensiveAwareness: { en: 'Defensive Awareness', ar: 'الوعي الدفاعي', candidates: ['defensiveAwareness'], icon: 'fa-eye' },
+            headingAccuracy:    { en: 'Heading Accuracy', ar: 'دقة الرأسيات', candidates: ['headingAccuracy'], icon: 'fa-futbol' },
+            interceptions:      { en: 'Interceptions', ar: 'الاعتراض', candidates: ['interceptions'], icon: 'fa-shuffle' },
+            jumping:            { en: 'Jumping', ar: 'القفز', candidates: ['jumping'], icon: 'fa-person-running' },
+            slidingTackles:     { en: 'Sliding Tackle', ar: 'التدخل بالانزلاق', candidates: ['slidingTackles'], icon: 'fa-person-running' },
+            standingTackles:    { en: 'Standing Tackle', ar: 'التدخل واقفاً', candidates: ['standingTackles'], icon: 'fa-shield-halved' },
+            strength:           { en: 'Strength', ar: 'القوة', candidates: ['strength'], icon: 'fa-dumbbell' },
             // Midfielder (8)
-            aggression:         { en: 'Aggression', ar: 'العدوانية', candidates: ['aggression'] },
-            ballControl:        { en: 'Ball Control', ar: 'التحكم بالكرة', candidates: ['ballControl'] },
-            crossing:           { en: 'Crossing', ar: 'العرضيات', candidates: ['crossing'] },
-            curve:              { en: 'Curve', ar: 'الانحناء', candidates: ['curve'] },
-            longPassing:        { en: 'Long Passing', ar: 'التمرير الطويل', candidates: ['longPassing'] },
-            shortPassing:       { en: 'Short Passing', ar: 'التمرير القصير', candidates: ['shortPassing'] },
-            stamina:            { en: 'Stamina', ar: 'التحمل', candidates: ['stamina'] },
-            vision:             { en: 'Vision', ar: 'الرؤية', candidates: ['vision'] },
+            aggression:         { en: 'Aggression', ar: 'العدوانية', candidates: ['aggression'], icon: 'fa-fire' },
+            ballControl:        { en: 'Ball Control', ar: 'التحكم بالكرة', candidates: ['ballControl'], icon: 'fa-futbol' },
+            crossing:           { en: 'Crossing', ar: 'العرضيات', candidates: ['crossing'], icon: 'fa-route' },
+            curve:              { en: 'Curve', ar: 'الانحناء', candidates: ['curve'], icon: 'fa-wave-square' },
+            longPassing:        { en: 'Long Passing', ar: 'التمرير الطويل', candidates: ['longPassing'], icon: 'fa-paper-plane' },
+            shortPassing:       { en: 'Short Passing', ar: 'التمرير القصير', candidates: ['shortPassing'], icon: 'fa-arrow-right-arrow-left' },
+            stamina:            { en: 'Stamina', ar: 'التحمل', candidates: ['stamina'], icon: 'fa-battery-three-quarters' },
+            vision:             { en: 'Vision', ar: 'الرؤية', candidates: ['vision'], icon: 'fa-eye' },
             // Forward / Winger (14)
-            acceleration:       { en: 'Acceleration', ar: 'التسارع', candidates: ['acceleration'] },
-            agility:            { en: 'Agility', ar: 'الرشاقة', candidates: ['agility'] },
-            balance:            { en: 'Balance', ar: 'التوازن', candidates: ['balance'] },
-            composure:          { en: 'Composure', ar: 'رباطة الجأش', candidates: ['composure'] },
-            dribbling:          { en: 'Dribbling', ar: 'المراوغة', candidates: ['dribbling'] },
-            finishing:          { en: 'Finishing', ar: 'الإنهاء', candidates: ['finishing'] },
-            freeKickAccuracy:   { en: 'Free Kick Accuracy', ar: 'دقة الركلات الحرة', candidates: ['freeKickAccuracy'] },
-            longShots:          { en: 'Long Shots', ar: 'التسديد من بعيد', candidates: ['longShots'] },
-            penalties:          { en: 'Penalties', ar: 'ركلات الجزاء', candidates: ['penalties'] },
-            positioning:        { en: 'Positioning', ar: 'التمركز الهجومي', candidates: ['positioning'] },
-            reactions:          { en: 'Reactions', ar: 'ردود الفعل', candidates: ['reactions'] },
-            shotPower:          { en: 'Shot Power', ar: 'قوة التسديد', candidates: ['shotPower'] },
-            sprintSpeed:        { en: 'Sprint Speed', ar: 'سرعة الركض', candidates: ['sprintSpeed'] },
-            volleys:            { en: 'Volleys', ar: 'الطائرة', candidates: ['volleys'] }
+            acceleration:       { en: 'Acceleration', ar: 'التسارع', candidates: ['acceleration'], icon: 'fa-gauge-high' },
+            agility:            { en: 'Agility', ar: 'الرشاقة', candidates: ['agility'], icon: 'fa-person-running' },
+            balance:            { en: 'Balance', ar: 'التوازن', candidates: ['balance'], icon: 'fa-scale-balanced' },
+            composure:          { en: 'Composure', ar: 'رباطة الجأش', candidates: ['composure'], icon: 'fa-face-smile' },
+            dribbling:          { en: 'Dribbling', ar: 'المراوغة', candidates: ['dribbling'], icon: 'fa-futbol' },
+            finishing:          { en: 'Finishing', ar: 'الإنهاء', candidates: ['finishing'], icon: 'fa-bullseye' },
+            freeKickAccuracy:   { en: 'Free Kick Accuracy', ar: 'دقة الركلات الحرة', candidates: ['freeKickAccuracy'], icon: 'fa-crosshairs' },
+            longShots:          { en: 'Long Shots', ar: 'التسديد من بعيد', candidates: ['longShots'], icon: 'fa-location-arrow' },
+            penalties:          { en: 'Penalties', ar: 'ركلات الجزاء', candidates: ['penalties'], icon: 'fa-flag' },
+            positioning:        { en: 'Positioning', ar: 'التمركز الهجومي', candidates: ['positioning'], icon: 'fa-map-pin' },
+            reactions:          { en: 'Reactions', ar: 'ردود الفعل', candidates: ['reactions'], icon: 'fa-bolt' },
+            shotPower:          { en: 'Shot Power', ar: 'قوة التسديد', candidates: ['shotPower'], icon: 'fa-fire-flame-curved' },
+            sprintSpeed:        { en: 'Sprint Speed', ar: 'سرعة الركض', candidates: ['sprintSpeed'], icon: 'fa-person-running' },
+            volleys:            { en: 'Volleys', ar: 'الطائرة', candidates: ['volleys'], icon: 'fa-futbol' }
         };
 
         // Curated per-position shortlist — the sub-stats a real coach/player
@@ -2613,10 +2613,10 @@
 
         // Renders a red-to-green color for a 0-99 attribute value, used for
         // the granular attribute bars.
-        function getAttrBarColor(v) {
+        function getAttrBarGradient(v) {
             const clamped = Math.max(0, Math.min(99, v));
             const hue = (clamped / 99) * 120; // 0 = red, 120 = green
-            return `hsl(${hue}, 70%, 48%)`;
+            return `linear-gradient(90deg, hsl(${hue}, 55%, 30%), hsl(${hue}, 80%, 55%))`;
         }
 
         // Fills in the pre-rendered granular attribute bars once the detail
@@ -2656,12 +2656,12 @@
                 }
                 anyFound = true;
                 if (barEl) {
-                    barEl.style.width = Math.max(2, Math.min(99, val)) + '%';
-                    barEl.style.backgroundColor = getAttrBarColor(val);
+                    barEl.style.width = Math.max(3, Math.min(100, val)) + '%';
+                    barEl.style.background = getAttrBarGradient(val);
                 }
                 if (valEl) {
                     valEl.innerHTML = `<bdi>${val}</bdi>`;
-                    valEl.classList.remove('text-gray-500');
+                    valEl.classList.remove('text-gray-600');
                     valEl.classList.add('text-white');
                 }
             });
@@ -3252,22 +3252,34 @@
 
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الإحصائيات الدقيقة داخل اللعبة' : 'Granular In-Game Attributes'}</span>
-                    <div class="space-y-1.5">
-                        ${granularKeysForPos.map(key => {
+                    ${(() => {
+                        const total = granularKeysForPos.length;
+                        const cards = granularKeysForPos.map((key, idx) => {
                             const def = GRANULAR_ATTR_DEFS[key];
                             if (!def) return '';
                             const label = currentLanguage === 'ar' ? def.ar : def.en;
-                            return `
-                                <div class="flex items-center gap-2 text-[11px]">
-                                    <span class="text-gray-400 w-28 shrink-0 truncate" title="${label}">${label}</span>
-                                    <div class="flex-1 h-2 bg-fc-dark rounded-full overflow-hidden border border-fc-border/60">
-                                        <div id="granular-bar-${key}" class="h-full rounded-full transition-all duration-700 ease-out" style="width:2%;background-color:#3a4256;"></div>
+                            const cardHtml = `
+                                <div class="bg-fc-dark/70 border border-fc-border rounded-2xl p-3 flex flex-col gap-1.5">
+                                    <div class="flex items-center gap-1.5 text-gray-400">
+                                        <i class="fa-solid ${def.icon || 'fa-chart-simple'} text-xs w-4 text-center shrink-0"></i>
+                                        <span class="font-bold text-[11px] truncate" title="${label}">${label}</span>
                                     </div>
-                                    <span id="granular-val-${key}" class="text-gray-500 font-black w-7 text-right shrink-0"><bdi>--</bdi></span>
+                                    <div id="granular-val-${key}" class="text-2xl font-black text-gray-600 leading-none"><bdi>--</bdi></div>
+                                    <div class="h-1.5 rounded-full bg-black/40 overflow-hidden">
+                                        <div id="granular-bar-${key}" class="h-full rounded-full transition-all duration-700 ease-out" style="width:3%;background:#2a3b5c;"></div>
+                                    </div>
                                 </div>
                             `;
-                        }).join('')}
-                    </div>
+                            // Center a lone trailing card when the group has
+                            // an odd count (e.g. GK's 5, Defender's 7) so it
+                            // doesn't sit awkwardly flush-left on its own row.
+                            const isLastOdd = (total % 2 === 1) && (idx === total - 1);
+                            return isLastOdd
+                                ? `<div class="col-span-2 flex justify-center"><div class="w-1/2 min-w-[140px]">${cardHtml}</div></div>`
+                                : cardHtml;
+                        });
+                        return `<div class="grid grid-cols-2 gap-2.5">${cards.join('')}</div>`;
+                    })()}
                     <p id="granular-status" class="hidden text-[10px] text-gray-500 italic"></p>
                 </div>
 
