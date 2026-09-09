@@ -2557,21 +2557,21 @@
         // irrelevant categories entirely (e.g. no Defending sub-stats for a
         // striker) rather than showing them at a meaningless low value.
         const POSITION_GRANULAR_ATTRS = {
-            GK:  ['gkReflexes', 'gkDiving', 'gkHandling', 'gkKicking'],
-            CB:  ['standingTackle', 'slidingTackle', 'interceptions', 'headingAccuracy', 'strength', 'sprintSpeed'],
-            LB:  ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
-            RB:  ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
-            LWB: ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
-            RWB: ['sprintSpeed', 'acceleration', 'standingTackle', 'interceptions', 'crossing', 'stamina'],
-            CDM: ['interceptions', 'standingTackle', 'shortPassing', 'stamina', 'strength', 'aggression'],
-            CM:  ['shortPassing', 'longPassing', 'vision', 'stamina', 'ballControl', 'dribblingSkill'],
-            CAM: ['vision', 'shortPassing', 'dribblingSkill', 'finishing', 'ballControl', 'curve'],
-            LM:  ['crossing', 'dribblingSkill', 'sprintSpeed', 'ballControl', 'stamina', 'shortPassing'],
-            RM:  ['crossing', 'dribblingSkill', 'sprintSpeed', 'ballControl', 'stamina', 'shortPassing'],
-            LW:  ['acceleration', 'sprintSpeed', 'dribblingSkill', 'finishing', 'agility', 'curve'],
-            RW:  ['acceleration', 'sprintSpeed', 'dribblingSkill', 'finishing', 'agility', 'curve'],
-            ST:  ['finishing', 'shotPower', 'acceleration', 'sprintSpeed', 'positioning', 'volleys'],
-            CF:  ['finishing', 'shotPower', 'acceleration', 'sprintSpeed', 'positioning', 'volleys']
+            GK:  ['gkReflexes', 'gkDiving', 'gkPositioning', 'gkHandling', 'gkKicking'],
+            CB:  ['defensiveAwareness', 'standingTackle', 'slidingTackle', 'strength', 'jumping', 'headingAccuracy'],
+            LB:  ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
+            RB:  ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
+            LWB: ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
+            RWB: ['acceleration', 'sprintSpeed', 'stamina', 'standingTackle', 'slidingTackle', 'crossing'],
+            CDM: ['interceptions', 'defensiveAwareness', 'standingTackle', 'strength', 'stamina', 'shortPassing'],
+            CM:  ['vision', 'shortPassing', 'longPassing', 'ballControl', 'reactions', 'stamina'],
+            CAM: ['vision', 'shortPassing', 'longPassing', 'ballControl', 'reactions', 'stamina'],
+            LM:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
+            RM:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
+            LW:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
+            RW:  ['acceleration', 'sprintSpeed', 'agility', 'crossing', 'dribblingSkill', 'shortPassing'],
+            ST:  ['finishing', 'shotPower', 'positioning', 'acceleration', 'sprintSpeed', 'dribblingSkill'],
+            CF:  ['finishing', 'shotPower', 'positioning', 'acceleration', 'sprintSpeed', 'dribblingSkill']
         };
 
         function getGranularValue(detail, candidates) {
@@ -2581,6 +2581,34 @@
                 if (typeof v === 'number') return v;
             }
             return null;
+        }
+
+        // Renders a 1-5 star rating (e.g. Weak Foot, Skill Moves) as filled
+        // vs empty star characters.
+        function renderStarRating(n) {
+            const filled = Math.max(0, Math.min(5, typeof n === 'number' ? n : 0));
+            return '★'.repeat(filled) + '☆'.repeat(5 - filled);
+        }
+
+        // Body type isn't in the bulk feed at all — only the per-player
+        // detail endpoint has bodyTypeId, and EasySBC provides no public
+        // name lookup for that ID (same "no name lookup" situation as
+        // club/nation/league IDs elsewhere in this app). So rather than
+        // guess a body-type name from the ID, this shows the honest raw ID
+        // once verified, or a plain "couldn't verify" state if the fetch
+        // failed — never a fabricated label.
+        function renderBodyType(detail) {
+            const el = document.getElementById('body-type-live');
+            if (!el) return;
+            const isAr = currentLanguage === 'ar';
+            if (!detail || typeof detail.bodyTypeId !== 'number') {
+                el.innerHTML = `<span class="text-gray-500 italic font-normal text-[10px]">${isAr ? 'تعذّر التحقق.' : "Couldn't verify."}</span>`;
+                return;
+            }
+            const note = isAr
+                ? 'لا يوجد اسم رسمي لهذا المعرف من EasySBC'
+                : 'No name lookup available for this ID';
+            el.innerHTML = `#${detail.bodyTypeId} <span class="block text-gray-500 italic font-normal text-[9px] normal-case">${note}</span>`;
         }
 
         // Fills in the #granular-attrs-live placeholder once the detail
@@ -2637,6 +2665,7 @@
                 // legitimately be null for GKs) — the granular attribute
                 // breakdown should still render whenever we have detail.
                 renderGranularAttrs(player, detail);
+                renderBodyType(detail);
 
                 if (!detail) {
                     // Fetch failed — say so plainly rather than leaving a
@@ -2726,6 +2755,7 @@
                 const feelEl = document.getElementById('movement-feel-live');
                 const isAr = currentLanguage === 'ar';
                 renderGranularAttrs(player, null);
+                renderBodyType(null);
                 if (badgeEl) badgeEl.remove();
                 if (feelEl) {
                     feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
@@ -2932,6 +2962,25 @@
             const whyText = currentLanguage === 'ar' ? 'لماذا تم اختيار هذا اللاعب:' : 'Why this player was selected:';
             const hasMeta = typeof player.meta === 'number';
 
+            // Physical profile: weak foot, skill moves and preferred foot
+            // are already in the bulk player data (no fetch needed), shown
+            // as star ratings. Body type is NOT in the bulk feed — only the
+            // per-player detail endpoint has it (bodyTypeId), and per our
+            // own data-honesty notes there's no public name lookup for that
+            // ID, so it's deferred to the async detail fetch and shown as
+            // the honest raw ID rather than a guessed body-type name.
+            const naLabel = currentLanguage === 'ar' ? 'غير متاح' : 'N/A';
+            const weakFootLabel = currentLanguage === 'ar' ? 'القدم الضعيفة' : 'Weak Foot';
+            const skillMovesLabel = currentLanguage === 'ar' ? 'المهارات' : 'Skill Moves';
+            const preferredFootLabel = currentLanguage === 'ar' ? 'القدم المفضلة' : 'Preferred Foot';
+            const bodyTypeLabel = currentLanguage === 'ar' ? 'نوع الجسم' : 'Body Type';
+            const verifyingLabel = currentLanguage === 'ar' ? 'جارٍ التحقق…' : 'Verifying…';
+            const weakFootValue = typeof player.weakFoot === 'number' ? renderStarRating(player.weakFoot) : naLabel;
+            const skillMovesValue = typeof player.skillMoves === 'number' ? renderStarRating(player.skillMoves) : naLabel;
+            const footValue = player.foot
+                ? (currentLanguage === 'ar' ? (player.foot.toLowerCase() === 'left' ? 'اليسرى' : 'اليمنى') : player.foot)
+                : naLabel;
+
             const psPlus = Array.isArray(player.playstylesPlus) ? player.playstylesPlus : [];
             const psBase = Array.isArray(player.playstyles) ? player.playstyles : [];
             const hasPlaystyles = psPlus.length > 0 || psBase.length > 0;
@@ -3131,6 +3180,27 @@
                         </div>
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-4 gap-2 text-center text-[10px]">
+                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
+                        <span class="text-gray-400 uppercase block">${weakFootLabel}</span>
+                        <span class="font-black text-fc-gold text-sm"><bdi>${weakFootValue}</bdi></span>
+                    </div>
+                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
+                        <span class="text-gray-400 uppercase block">${skillMovesLabel}</span>
+                        <span class="font-black text-fc-gold text-sm"><bdi>${skillMovesValue}</bdi></span>
+                    </div>
+                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
+                        <span class="text-gray-400 uppercase block">${preferredFootLabel}</span>
+                        <span class="font-black text-white text-sm"><bdi>${footValue}</bdi></span>
+                    </div>
+                    <div class="bg-fc-dark p-2 rounded-xl border border-fc-border">
+                        <span class="text-gray-400 uppercase block">${bodyTypeLabel}</span>
+                        <div id="body-type-live" class="font-black text-white text-sm">
+                            <span class="text-gray-500 italic font-normal text-[10px]">${verifyingLabel}</span>
+                        </div>
                     </div>
                 </div>
 
