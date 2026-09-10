@@ -4112,12 +4112,34 @@
             if (panel) panel.classList.toggle('hidden');
         };
 
+        // EasySBC's raw feed sometimes only gives a bare numeric PlayStyle
+        // id with no attached name (see formatPlaystyleEntry below) — this
+        // is the actual id → name lookup table for all 36 PlayStyles.
+        const PLAYSTYLE_NAMES = {
+            0: 'Finesse Shot', 1: 'Chip Shot', 2: 'Power Shot', 3: 'Dead Ball',
+            4: 'Precision Header', 5: 'Acrobatic', 6: 'Low Driven Shot', 7: 'Gamechanger',
+            8: 'Incisive Pass', 9: 'Pinged Pass', 10: 'Long Ball Pass', 11: 'Tiki Taka',
+            12: 'Whipped Pass', 13: 'Inventive',
+            14: 'Jockey', 15: 'Block', 16: 'Intercept', 17: 'Anticipate',
+            18: 'Slide Tackle', 19: 'Aerial Fortress',
+            20: 'Technical', 21: 'Rapid', 22: 'First Touch', 23: 'Trickster', 24: 'Press Proven',
+            25: 'Quick Step', 26: 'Relentless', 27: 'Long Throw', 28: 'Bruiser', 29: 'Enforcer',
+            30: 'Far Throw', 31: 'Footwork', 32: 'Cross Claimer', 33: 'Rush Out',
+            34: 'Far Reach', 35: 'Deflector'
+        };
+
         // Turns one raw playstyle entry (shape varies: plain string, {name},
         // or a bare numeric id if EasySBC hasn't attached a label yet) into a
         // readable string for display.
         function formatPlaystyleEntry(item) {
             if (typeof item === 'string') return item;
-            if (item && typeof item === 'object') return item.name || item.label || item.playstyleName || `PlayStyle #${item.id ?? '?'}`;
+            if (item && typeof item === 'object') {
+                if (item.name || item.label || item.playstyleName) return item.name || item.label || item.playstyleName;
+                const objId = item.id;
+                if (typeof objId === 'number' && PLAYSTYLE_NAMES[objId]) return PLAYSTYLE_NAMES[objId];
+                return `PlayStyle #${objId ?? '?'}`;
+            }
+            if (typeof item === 'number' && PLAYSTYLE_NAMES[item]) return PLAYSTYLE_NAMES[item];
             return `PlayStyle #${item}`;
         }
 
