@@ -423,7 +423,7 @@
 
                     <div class="border-t border-fc-border pt-4 space-y-2">
                         <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Quality by Line</span>
-                        <div id="group-breakdown" class="grid grid-cols-2 gap-2">
+                        <div id="group-breakdown" class="space-y-1">
                             <!-- Populated by renderSquadSummary() -->
                         </div>
                     </div>
@@ -2652,21 +2652,20 @@
                 const avgRtg = Math.round(list.reduce((acc, curr) => acc + curr.rating, 0) / list.length);
                 const metaVals = list.filter(p => typeof p.meta === 'number' && !isNaN(p.meta));
                 const avgMetaText = metaVals.length > 0
-                    ? (currentLanguage === 'ar' ? ` · ميتا ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}` : ` · Meta ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}`)
+                    ? ` · MR ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}`
                     : '';
-                const playersText = currentLanguage === 'ar' ? `${list.length} لاعبين` : `${list.length} players`;
 
-                // A dedicated cell per line — each owns its own box, so a
-                // longer value never wraps into and collides with a
-                // neighboring label the way a shared flex row could.
-                const cell = document.createElement('div');
-                cell.className = "bg-fc-dark/40 rounded-lg p-2.5";
-                cell.innerHTML = `
-                    <div class="text-[10px] text-gray-500 uppercase tracking-wide truncate">${groupName}</div>
-                    <div class="text-base font-black text-white leading-tight mt-0.5">${avgRtg} <span class="text-[10px] font-bold text-gray-500">OVR</span></div>
-                    <div class="text-[10px] text-gray-500 mt-0.5">${playersText}${avgMetaText}</div>
+                // Minimized to one plain line per group (label left, stats
+                // right, no boxed cell) — same info, far less vertical
+                // space. "whitespace-nowrap" on the value keeps it from
+                // ever wrapping into and colliding with the label.
+                const row = document.createElement('div');
+                row.className = "flex items-center justify-between text-xs gap-2";
+                row.innerHTML = `
+                    <span class="text-gray-400 shrink-0">${groupName}</span>
+                    <span class="font-bold text-white whitespace-nowrap">${avgRtg} OVR · ${list.length}p${avgMetaText}</span>
                 `;
-                breakdownContainer.appendChild(cell);
+                breakdownContainer.appendChild(row);
             });
 
             renderPlaystylesByLine(groups);
@@ -2767,7 +2766,7 @@
                     }
                 });
                 if (best) {
-                    rows.push({ slotLabel: slot.label, current: currentPlayer, upgrade: best.upgrade, costDiff: best.costDiff, metaDiff: best.metaDiff });
+                    rows.push({ slotLabel: slot.label, slotIdx: idx, current: currentPlayer, upgrade: best.upgrade, costDiff: best.costDiff, metaDiff: best.metaDiff });
                 }
             });
 
@@ -2802,29 +2801,36 @@
                         // equally.
                         const isBestValue = i === 0;
                         const bestValueTag = isBestValue
-                            ? `<span class="absolute -top-2 left-3 text-[9px] font-black uppercase tracking-wide text-fc-dark bg-fc-accent px-2 py-0.5 rounded-full shadow">${isAr ? 'أفضل قيمة' : 'Best Value'}</span>`
+                            ? `<span class="absolute -top-2 left-3 text-[9px] font-black uppercase tracking-wide text-fc-dark bg-fc-accent px-2 py-0.5 rounded-full shadow z-10">${isAr ? 'أفضل قيمة' : 'Best Value'}</span>`
                             : '';
+                        const swapTitle = isAr ? 'استبدال هذا اللاعب في التشكيلة الآن' : 'Swap this player into the squad now';
                         return `
-                            <div class="relative bg-fc-dark/40 border border-fc-border border-l-4 ${tierAccent} rounded-lg p-3 ${isBestValue ? 'ring-1 ring-fc-accent/40' : ''}">
+                            <div class="relative bg-white/[0.04] backdrop-blur-md border border-white/10 border-l-4 ${tierAccent} rounded-xl p-3 shadow-lg shadow-black/20 ${isBestValue ? 'ring-1 ring-fc-accent/40' : ''}">
                                 ${bestValueTag}
                                 <div class="flex items-center justify-between gap-1.5 mb-2.5">
-                                    <span class="text-[10px] text-gray-500 uppercase tracking-wide truncate">${r.slotLabel}</span>
+                                    <span class="text-[10px] text-gray-400 uppercase tracking-wide truncate">${r.slotLabel}</span>
                                     ${ovrTag}
                                 </div>
                                 <div class="flex items-center justify-center gap-2.5 mb-2.5">
-                                    <img src="${r.current.photo}" alt="" class="w-9 h-9 rounded-full object-cover border border-fc-border bg-fc-dark shrink-0 opacity-80" onerror="this.src='https://placehold.co/64x64/1b4d3e/ffffff?text=?'">
-                                    <div class="w-6 h-6 rounded-full bg-fc-dark border border-fc-border flex items-center justify-center shrink-0">
-                                        <i class="fa-solid fa-angles-right text-gray-500 text-[10px]"></i>
+                                    <img src="${r.current.photo}" alt="" class="w-9 h-9 rounded-full object-cover border border-white/10 bg-fc-dark shrink-0 opacity-80" onerror="this.src='https://placehold.co/64x64/1b4d3e/ffffff?text=?'">
+                                    <div class="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                                        <i class="fa-solid fa-angles-right text-gray-400 text-[10px]"></i>
                                     </div>
                                     <img src="${r.upgrade.photo}" alt="" class="w-11 h-11 rounded-full object-cover border-2 border-fc-accent bg-fc-dark shrink-0 shadow-lg shadow-fc-accent/20" onerror="this.src='https://placehold.co/64x64/1b4d3e/ffffff?text=?'">
                                 </div>
                                 <div class="space-y-0.5 mb-2.5 text-center">
-                                    <div class="text-[11px] text-gray-500 truncate" title="${r.current.name}">${r.current.name} (${r.current.rating})</div>
+                                    <div class="text-[11px] text-gray-400 truncate" title="${r.current.name}">${r.current.name} (${r.current.rating})</div>
                                     <div class="text-xs text-white font-bold truncate" title="${r.upgrade.name}">${r.upgrade.name} (${r.upgrade.rating}${upgradeMeta})</div>
                                 </div>
-                                <div class="flex items-center justify-center gap-1 pt-2.5 border-t border-fc-border/40">
-                                    <i class="fa-solid fa-coins ${costColor} text-[10px]"></i>
-                                    <span class="text-sm font-black ${costColor}">+${r.costDiff.toLocaleString()}${coinLabel}</span>
+                                <div class="flex items-center justify-between gap-2 pt-2.5 border-t border-white/10">
+                                    <div class="flex items-center gap-1">
+                                        <i class="fa-solid fa-coins ${costColor} text-[10px]"></i>
+                                        <span class="text-sm font-black ${costColor}">+${r.costDiff.toLocaleString()}${coinLabel}</span>
+                                    </div>
+                                    <button onclick="window.swapAlternativeIntoSlot(${r.slotIdx}, '${r.upgrade.id}')" title="${swapTitle}"
+                                        class="text-[10px] font-bold text-fc-dark bg-fc-accent hover:bg-fc-accentHover px-2.5 py-1 rounded-lg flex items-center gap-1 shrink-0 transition-all">
+                                        <i class="fa-solid fa-right-left"></i>${isAr ? 'استبدال' : 'Swap In'}
+                                    </button>
                                 </div>
                             </div>
                         `;
