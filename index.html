@@ -2249,6 +2249,85 @@
         // player being replaced simply returns to the pool — clicking any of
         // its own alternatives afterward (which will now include the player
         // just swapped out) puts it right back, so swaps are reversible.
+        // Search ANY player by name (not just the curated alternatives
+        // list) and get an immediate, honest verdict against whoever
+        // currently holds this exact slot — real position match, real meta
+        // delta, real price delta — not a generic "good/bad" guess.
+        window.searchReplacementPlayers = function(query) {
+            const resultsContainer = document.getElementById('player-search-results');
+            if (!resultsContainer) return;
+            const q = query.trim().toLowerCase();
+            if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
+            if (!analystContext) return;
+
+            const { slotIdx, slot } = analystContext;
+            const effectivePos = slot.pos;
+            const currentPlayer = squadState.selectedXI[slotIdx] || analystContext.player;
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+
+            const matches = fc27Database.filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
+            if (matches.length === 0) {
+                resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${isAr ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
+                return;
+            }
+
+            resultsContainer.innerHTML = matches.map(candidate => {
+                const isSamePlayer = currentPlayer && candidate.id === currentPlayer.id;
+                const posMatch = candidate.pos === effectivePos || (candidate.alt && candidate.alt.includes(effectivePos));
+                const metaDelta = getMetaValue(candidate) - getMetaValue(currentPlayer);
+                const priceDelta = candidate.price - currentPlayer.price;
+                const candMetaTag = typeof candidate.meta === 'number' ? ` · MR ${candidate.meta.toFixed(1)}` : '';
+
+                let verdictIcon, verdictColor, verdictText;
+                if (isSamePlayer) {
+                    verdictIcon = 'fa-circle-info'; verdictColor = 'text-gray-400';
+                    verdictText = isAr ? 'هذا هو لاعبك الحالي في هذا المركز.' : 'This is already your current player here.';
+                } else if (!posMatch) {
+                    verdictIcon = 'fa-triangle-exclamation'; verdictColor = 'text-red-400';
+                    verdictText = isAr ? `خارج مركزه — سيسجل 0 كيمياء في ${effectivePos}.` : `Out of position — would score 0 chemistry at ${effectivePos}.`;
+                } else if (metaDelta >= 3) {
+                    verdictIcon = 'fa-circle-check'; verdictColor = 'text-green-400';
+                    verdictText = isAr
+                        ? `ترقية واضحة: +${metaDelta.toFixed(1)} ميتا${priceDelta > 0 ? ` مقابل ${priceDelta.toLocaleString()}${coinLabel} إضافية` : (priceDelta < 0 ? ` وأرخص بـ ${Math.abs(priceDelta).toLocaleString()}${coinLabel}` : '')}.`
+                        : `Clear upgrade: +${metaDelta.toFixed(1)} meta${priceDelta > 0 ? ` for ${priceDelta.toLocaleString()}${coinLabel} more` : (priceDelta < 0 ? `, and ${Math.abs(priceDelta).toLocaleString()}${coinLabel} cheaper` : '')}.`;
+                } else if (metaDelta > 0.3) {
+                    verdictIcon = 'fa-circle-check'; verdictColor = 'text-green-400';
+                    verdictText = isAr ? `ترقية طفيفة: +${metaDelta.toFixed(1)} ميتا.` : `Slight upgrade: +${metaDelta.toFixed(1)} meta.`;
+                } else if (metaDelta >= -0.3) {
+                    verdictIcon = 'fa-equals'; verdictColor = 'text-gray-400';
+                    verdictText = isAr ? 'تبديل متكافئ تقريباً من ناحية الأداء.' : 'Roughly an even swap in performance.';
+                } else {
+                    verdictIcon = 'fa-circle-xmark'; verdictColor = 'text-red-400';
+                    verdictText = isAr
+                        ? `تراجع: ${metaDelta.toFixed(1)} ميتا${priceDelta < 0 ? ` لكن أرخص بـ ${Math.abs(priceDelta).toLocaleString()}${coinLabel}` : ''}.`
+                        : `Downgrade: ${metaDelta.toFixed(1)} meta${priceDelta < 0 ? `, though ${Math.abs(priceDelta).toLocaleString()}${coinLabel} cheaper` : ''}.`;
+                }
+
+                const swapBtn = !isSamePlayer ? `
+                    <button onclick="event.stopPropagation(); window.swapAlternativeIntoSlot(${slotIdx}, '${candidate.id}')" class="text-[10px] font-bold text-fc-dark bg-fc-accent hover:bg-fc-accentHover rounded-lg px-2.5 py-1 shrink-0">
+                        ${isAr ? 'استبدال' : 'Swap In'}
+                    </button>
+                ` : '';
+
+                return `
+                    <div class="bg-fc-dark border border-fc-border rounded-xl p-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <img src="${candidate.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                                <div class="min-w-0">
+                                    <div class="text-xs font-bold text-white truncate">${candidate.name}</div>
+                                    <div class="text-[10px] text-gray-400">${candidate.rating} OVR${candMetaTag} · ${candidate.price.toLocaleString()}${coinLabel} · ${candidate.pos}</div>
+                                </div>
+                            </div>
+                            ${swapBtn}
+                        </div>
+                        <p class="text-[11px] ${verdictColor} mt-1.5 flex items-start gap-1"><i class="fa-solid ${verdictIcon} mt-0.5 shrink-0"></i><span>${verdictText}</span></p>
+                    </div>
+                `;
+            }).join('');
+        };
+
         window.swapAlternativeIntoSlot = function(slotIdx, altPlayerId) {
             const slots = formationSlots[squadState.formation];
             const slot = slots[slotIdx];
@@ -3907,6 +3986,24 @@
             const altsTitle = currentLanguage === 'ar' ? 'بدائل لهذا المركز' : 'Alternatives for this slot';
             const altsHint = currentLanguage === 'ar' ? 'اضغط لاستبدال اللاعب الحالي' : 'Click to swap into the starting XI';
             const swapLbl = currentLanguage === 'ar' ? 'استبدال' : 'Swap In';
+
+            // Search any player by name (not just the curated alternatives
+            // list) and get an immediate, honest verdict against the
+            // current occupant of this exact slot — real position match,
+            // real meta delta, real price delta — with a one-click swap.
+            const searchSection = (typeof slotIdx === 'number') ? `
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'ابحث عن بديل' : 'Search for a Replacement'}</span>
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none"></i>
+                        <input type="text" id="player-search-input" placeholder="${currentLanguage === 'ar' ? 'اكتب اسم اللاعب...' : 'Type a player name...'}"
+                            oninput="window.searchReplacementPlayers(this.value)"
+                            class="w-full bg-fc-dark border border-fc-border rounded-xl pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 text-sm text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div id="player-search-results" class="space-y-2"></div>
+                </div>
+            ` : '';
+
             const alternativesSection = (typeof slotIdx === 'number') ? `
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${altsTitle}</span>
@@ -4115,6 +4212,8 @@
                         </div>
 
                         <div id="analyst-panel"></div>
+
+                        ${searchSection}
 
                         ${alternativesSection}
                     </div>
