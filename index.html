@@ -2389,6 +2389,11 @@
             container.innerHTML = '';
 
             const slots = formationSlots[squadState.formation];
+            // Team-aware role assignment — computed once per render for the
+            // whole XI (see computeTeamRoles above) so every card reflects
+            // the team's actual shape, not each player scored alone.
+            squadState.teamRoles = computeTeamRoles(squadState.selectedXI, slots);
+
             let rows = {};
             slots.forEach((slot, idx) => {
                 if (!rows[slot.row]) rows[slot.row] = [];
@@ -2458,7 +2463,10 @@
                         const lockTitle = isLocked
                             ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
                             : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
-                        const roleInfo = getRoleSuggestion(player, item.slot.pos);
+                        const roleInfo = (squadState.teamRoles && squadState.teamRoles[item.idx]) || getRoleSuggestion(player, item.slot.pos);
+                        const roleTooltip = roleInfo.adjusted
+                            ? `${roleInfo.role} · ${roleInfo.focus} — ${currentLanguage === 'ar' ? roleInfo.adjustAr : roleInfo.adjustEn}`
+                            : `${roleInfo.role} · ${roleInfo.focus}`;
                         const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[item.idx];
                         const chemPoints = chemInfo ? chemInfo.points : 0;
                         const chemInPos = chemInfo ? chemInfo.inPosition : true;
@@ -2483,8 +2491,9 @@
                                     <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[9px]"></i>
                                 </button>
                             </div>
-                            <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-xl px-1.5 py-1 transition-all">
-                                <span class="block text-center text-[9px] font-bold text-fc-accent truncate" title="${roleInfo.role} · ${roleInfo.focus}">${roleInfo.role} · ${roleInfo.focus}</span>
+                            <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-xl px-1.5 py-1 transition-all relative">
+                                ${roleInfo.adjusted ? `<span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-fc-gold" title="${currentLanguage === 'ar' ? 'تم تعديل الدور لموازنة شكل التشكيلة' : 'Role adjusted for team shape'}"></span>` : ''}
+                                <span class="block text-center text-[9px] font-bold text-fc-accent truncate" title="${roleTooltip}">${roleInfo.role} · ${roleInfo.focus}</span>
                             </div>
                         `;
                         wrapper.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
@@ -3615,6 +3624,213 @@
                 ar: 'دور عام يعتمد على التمركز القياسي لهذا المركز.' };
         }
 
+        // ===================================================================
+        // TEAM-AWARE ROLE ASSIGNMENT
+        // ===================================================================
+        // getRoleSuggestion() above picks each player's best role in total
+        // isolation — it has no idea what the other 10 players are doing.
+        // In practice that means nothing stops two fullbacks both getting
+        // "Attacking Wingback" with zero cover behind them, both central
+        // mids getting attack-focused roles with nobody anchoring, or two
+        // attackers both getting a deep-dropping creator role and running
+        // into the same space. This layer scores EVERY viable role for
+        // each player (not just the single best one), then makes a second
+        // pass across each line of the team to keep the shape coherent —
+        // capping how many wingbacks bomb forward at once, guaranteeing at
+        // least one holding presence in midfield, and preventing attackers
+        // from doubling up on the same movement pattern. The goal is a
+        // team shape that gets real value out of the specific 11 players
+        // you have, not just 11 independently "optimal" labels stapled
+        // together.
+        function getRoleCandidates(player, pos) {
+            pos = pos || player.pos;
+            const a = player.att;
+            if (pos === 'GK') return [
+                { role: 'Sweeper Keeper', focus: 'Attack', score: a.kic * 0.6 + a.spe * 0.4,
+                    en: 'High kicking and mobility let them act as an auxiliary sweeper and launch attacks with distribution, not just shot-stop.',
+                    ar: 'دقة الإرسال والحركة العالية تتيحان له دور الحارس الكاسح وبدء الهجمات بالتمرير، وليس فقط التصدي.' },
+                { role: 'Goalkeeper', focus: 'Defend', score: 70,
+                    en: 'Reflex/handling-led profile is best kept on pure shot-stopping rather than sweeping high up the pitch.',
+                    ar: 'ملفه يعتمد على ردود الفعل والإمساك بالكرة، فيُفضل إبقاؤه في التصدي التقليدي دون الكشف العالي.' }
+            ];
+            if (pos === 'CB') return [
+                { role: 'Ball-Playing Defender', focus: 'Build Up', score: a.pac * 0.5 + a.pas * 0.3 + 20,
+                    en: 'Enough pace to safely step out of the back line and support build-up without being exposed in behind.',
+                    ar: 'سرعته تتيح له الخروج من خط الدفاع بأمان والمساهمة في بناء اللعب دون التعرض للخطر خلفه.' },
+                { role: 'Stopper', focus: 'Defend', score: a.def * 0.5 + a.phy * 0.3 + 25,
+                    en: 'Strength/defending-led profile is best used as a pure last-line stopper rather than covering space in behind.',
+                    ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كخط دفاعي أخير دون تكليفه بتغطية المساحات الخلفية.' }
+            ];
+            if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') return [
+                { role: 'Attacking Wingback', focus: 'Attack', score: a.pac * 0.4 + a.dri * 0.3 + 10,
+                    en: 'Pace and dribbling let them overlap and create in the final third without wrecking defensive shape.',
+                    ar: 'سرعته ومهارته تتيحان له التداخل والمشاركة الهجومية دون الإخلال الكبير بالتوازن الدفاعي.' },
+                { role: 'Inverted Wingback', focus: 'Build Up', score: a.pas * 0.4 + a.dri * 0.3 + 5,
+                    en: 'Passing and close control let them tuck inside into midfield during possession, forming a temporary double-pivot instead of just holding the touchline.',
+                    ar: 'تمريره وتحكمه بالكرة يتيحان له الدخول للوسط أثناء الاستحواذ ليشكّل محوراً مزدوجاً مؤقتاً بدلاً من الثبات على الخط الجانبي فقط.' },
+                { role: 'Fullback', focus: 'Defend', score: a.def * 0.4 + a.phy * 0.2 + 15,
+                    en: 'A more balanced/defensive profile holds the line better than it bombs forward.',
+                    ar: 'ملفه الأكثر توازناً ودفاعياً يجعله أفضل في الثبات دفاعياً بدلاً من الاندفاع المستمر للأمام.' }
+            ];
+            if (pos === 'CDM') return [
+                { role: 'Deep-Lying Playmaker', focus: 'Build Up', score: a.pas * 0.4 + a.dri * 0.3 + 10,
+                    en: 'Passing range and close control let them dictate tempo from deep, not just break up play.',
+                    ar: 'مدى تمريره وتحكمه بالكرة يتيحان التحكم بإيقاع اللعب من العمق، لا فقط قطع الكرات.' },
+                { role: 'Holding', focus: 'Defend', score: a.def * 0.4 + a.phy * 0.3 + 15,
+                    en: 'Defending/physical-led profile screens the back four best, freeing creative midfielders to carry the ball.',
+                    ar: 'ملفه الدفاعي/البدني يجعله الأفضل في حماية خط الدفاع، ما يمنح لاعبي الإبداع حرية أكبر.' }
+            ];
+            if (pos === 'CM') return [
+                { role: 'Holding / Ball-Winning', focus: 'Defend', score: a.def * 0.35 + a.phy * 0.3 + 5,
+                    en: 'Defending and physicality this strong at CM are better spent anchoring in front of the back four than roaming forward.',
+                    ar: 'قدرته الدفاعية وبدنيته القويتان في مركز الوسط أفضل استغلالاً في الارتكاز أمام خط الدفاع بدلاً من التقدم للأمام.' },
+                { role: 'Deep-Lying Playmaker', focus: 'Build Up', score: a.pas * 0.4 - a.pac * 0.1 + 15,
+                    en: 'Elite passing with modest pace is wasted box-to-box — drop them deeper to recycle and dictate tempo instead.',
+                    ar: 'التمرير النخبوي مع سرعة متواضعة يُهدر في الجري بين الخطين — أنزله للعمق ليعيد توزيع الكرة ويتحكم بالإيقاع.' },
+                { role: 'Box-to-Box', focus: 'Attack', score: a.sho * 0.3 + a.pac * 0.3 + 10,
+                    en: 'Enough shooting and pace to join the front line late without abandoning defensive duty entirely.',
+                    ar: 'تسديده وسرعته الكافيان يتيحان الانضمام للهجوم في اللحظة الأخيرة دون التخلي التام عن الدفاع.' },
+                { role: 'Playmaker', focus: 'Support', score: a.pas * 0.35 + a.dri * 0.2 + 12,
+                    en: 'Passing-led profile is best used dictating play from a deeper, central position.',
+                    ar: 'ملفه القائم على التمرير يجعله الأفضل في التحكم باللعب من مركز أعمق وأكثر مركزية.' }
+            ];
+            if (pos === 'CAM') return [
+                { role: 'Shadow Striker', focus: 'Attack', score: a.sho * 0.5 + 5,
+                    en: "Shooting rivals a real striker's, so pushing them almost level with the front line maximizes shot volume.",
+                    ar: 'قدرته التسديدية تضاهي المهاجمين، لذا دفعه ليكون شبه محاذٍ لخط الهجوم يعظّم عدد تسديداته.' },
+                { role: 'Playmaker', focus: 'Attack', score: a.pas * 0.35 + a.dri * 0.25 + 15,
+                    en: 'Passing/dribbling-led profile is best used creating chances just behind the striker.',
+                    ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' }
+            ];
+            if (pos === 'LM' || pos === 'RM') return [
+                { role: 'Wide Playmaker', focus: 'Support', score: a.pas * 0.35 + a.dri * 0.25 - a.def * 0.2 + 10,
+                    en: 'Creative, low-defending profile is better drifting inside into pockets to create than holding the touchline.',
+                    ar: 'ملفه الإبداعي وضعف دفاعه يجعلانه أفضل في الانزلاق للمساحات الداخلية للصناعة بدلاً من الثبات على الخط الجانبي.' },
+                { role: 'Wide Midfielder', focus: 'Support', score: a.def * 0.3 + a.pas * 0.2 + 12,
+                    en: 'Defending is actually usable here, so they can provide width and still track back into a flat defensive line.',
+                    ar: 'قدرته الدفاعية قابلة للاستخدام فعلياً، فيمنح الاتساع مع تراجع دفاعي لتشكيل خط دفاعي مسطح عند الحاجة.' },
+                { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.3 + a.dri * 0.2 + 8,
+                    en: 'Low defending means their value is entirely in attack — cutting inside maximizes usable output.',
+                    ar: 'ضعف قدرته الدفاعية يعني أن قيمته بالكامل في الهجوم، فالدخول للداخل يعظّم أثره الفعلي.' }
+            ];
+            if (pos === 'LW' || pos === 'RW') return [
+                { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.45 + 10,
+                    en: 'Striker-level shooting means cutting inside onto their stronger foot to shoot is the highest-value use of their attributes.',
+                    ar: 'قدرته التسديدية بمستوى المهاجمين، فالدخول للداخل نحو قدمه الأقوى للتسديد هو الاستغلال الأمثل.' },
+                { role: 'Winger', focus: 'Attack', score: a.dri * 0.35 + a.pac * 0.25 + 15,
+                    en: 'Dribbling/pace-led profile is best used holding width and beating the fullback outside.',
+                    ar: 'ملفه القائم على المراوغة والسرعة يجعله الأفضل في الثبات على الجناح وتخطي الظهير من الخارج.' }
+            ];
+            if (pos === 'ST' || pos === 'CF') return [
+                { role: 'False 9', focus: 'Attack', score: a.pas * 0.4 + a.dri * 0.3 + 5,
+                    en: 'Passing/dribbling on par with a creator lets them drop deep to link play before attacking the space they just opened.',
+                    ar: 'تمريره ومراوغته بمستوى صانع الألعاب يتيحان النزول للعمق لربط اللعب قبل مهاجمة المساحة التي فتحها.' },
+                { role: 'Target Forward', focus: 'Attack', score: a.phy * 0.45 - a.pac * 0.1 + 10,
+                    en: 'A physical focal point — backs into center-backs to shield and win the ball rather than running in behind.',
+                    ar: 'محور هجومي بدني — يسند نفسه على قلوب الدفاع لحماية الكرة وكسبها بدلاً من الجري خلف الدفاع.' },
+                { role: 'Advanced Forward', focus: 'Attack', score: a.pac * 0.5 + 8,
+                    en: 'Elite pace is best spent constantly breaking the defensive line with runs in behind, not dropping deep.',
+                    ar: 'سرعته النخبوية تُستغل أفضل في كسر خط الدفاع باستمرار بالجري خلفه، لا بالنزول للعمق.' },
+                { role: 'Poacher', focus: 'Attack', score: a.sho * 0.3 + 20,
+                    en: 'No single standout trait to build a specialist role around — stays central inside the box for rebounds, crosses, and cutbacks.',
+                    ar: 'لا توجد سمة واحدة بارزة كفاية لبناء دور متخصص — يبقى مركزياً داخل منطقة الجزاء لاستغلال الارتدادات والعرضيات.' }
+            ];
+            return [{ role: pos, focus: 'Balanced', score: 50,
+                en: 'General-purpose role based on standard positioning for this slot.',
+                ar: 'دور عام يعتمد على التمركز القياسي لهذا المركز.' }];
+        }
+
+        // Assigns every player in the current XI a role with full awareness
+        // of the other 10 — see the block comment above getRoleCandidates
+        // for why this exists. Returns { [slotIdx]: {role, focus, en, ar,
+        // adjusted, adjustEn, adjustAr} }. Cached on squadState.teamRoles
+        // and recomputed once per render in renderFootballPitch(), so every
+        // consumer (pitch cards, the player modal's "Optimal Role & Tactic"
+        // section) reads the same team-consistent assignment.
+        function computeTeamRoles(xi, slots) {
+            const assignments = {};
+            const candidatesBySlot = {};
+
+            Object.keys(xi).forEach(slotIdx => {
+                const player = xi[slotIdx];
+                if (!player || !slots[slotIdx]) return;
+                const options = getRoleCandidates(player, slots[slotIdx].pos).slice().sort((a, b) => b.score - a.score);
+                candidatesBySlot[slotIdx] = options;
+                assignments[slotIdx] = { ...options[0] };
+            });
+
+            const byLine = { ATT: [], MID: [], DEF: [], GK: [] };
+            Object.keys(assignments).forEach(slotIdx => {
+                byLine[zoneOfPosition(slots[slotIdx].pos)].push(slotIdx);
+            });
+
+            const adjust = (slotIdx, roleName, note) => {
+                const opt = candidatesBySlot[slotIdx].find(o => o.role === roleName);
+                if (!opt) return;
+                assignments[slotIdx] = { ...opt, adjusted: true, adjustEn: note.en, adjustAr: note.ar };
+            };
+
+            // Rule 1 — Midfield needs at least one anchor. If every CM/CDM
+            // ended up with an attacking or creative role independently,
+            // nobody's actually shielding the back four once the ball is
+            // lost. Reassign whoever has the strongest holding score.
+            const midSlots = byLine.MID.filter(idx => ['CM', 'CDM'].includes(slots[idx].pos));
+            if (midSlots.length >= 2) {
+                const anchored = midSlots.some(idx => assignments[idx].role.includes('Holding'));
+                if (!anchored) {
+                    let best = null;
+                    midSlots.forEach(idx => {
+                        const opt = candidatesBySlot[idx].find(o => o.role.includes('Holding'));
+                        if (opt && (!best || opt.score > best.opt.score)) best = { idx, opt };
+                    });
+                    if (best) adjust(best.idx, best.opt.role, {
+                        en: 'Shifted to anchor the midfield — with the rest of the line pushing on, someone has to sit and screen the back four.',
+                        ar: 'تم تحويله لارتكاز الوسط — مع تقدم بقية الخط، يجب أن يبقى أحدهم لحماية خط الدفاع.'
+                    });
+                }
+            }
+
+            // Rule 2 — Cap attacking wingbacks. Both fullbacks bombing
+            // forward with nobody holding behind them leaves the back line
+            // exposed on both sides at once. Allow it only when midfield
+            // actually has a holding presence to cover.
+            const fbSlots = byLine.DEF.filter(idx => ['LB', 'RB', 'LWB', 'RWB'].includes(slots[idx].pos));
+            const hasHoldingMid = midSlots.some(idx => assignments[idx].role.includes('Holding'));
+            const maxAttackingFbs = hasHoldingMid ? 2 : 1;
+            let attackingFbs = fbSlots.filter(idx => assignments[idx].role === 'Attacking Wingback');
+            if (attackingFbs.length > maxAttackingFbs) {
+                attackingFbs.sort((a, b) => assignments[a].score - assignments[b].score); // weakest fit first
+                for (let i = 0; i < attackingFbs.length - maxAttackingFbs; i++) {
+                    adjust(attackingFbs[i], 'Fullback', {
+                        en: 'Pulled back to a conservative Fullback — both wingbacks bombing forward with no holding midfielder behind them would leave the back line exposed.',
+                        ar: 'تم إرجاعه لدور الظهير التقليدي — اندفاع كلا الظهيرين للأمام دون لاعب ارتكاز خلفهما يترك خط الدفاع مكشوفاً.'
+                    });
+                }
+            }
+
+            // Rule 3 — Don't stack deep-dropping creators up front. A False
+            // 9, a Shadow Striker, and a Deep-Lying Playmaker all want the
+            // same pocket of space between the lines; only the strongest
+            // fit keeps that job, the rest stay higher/wider instead of
+            // literally standing on top of each other.
+            const deepRoles = ['False 9', 'Shadow Striker', 'Deep-Lying Playmaker'];
+            const attSlots = [...byLine.ATT, ...midSlots.filter(idx => slots[idx].pos === 'CM')];
+            let creators = attSlots.filter(idx => deepRoles.includes(assignments[idx].role));
+            if (creators.length > 1) {
+                creators.sort((a, b) => assignments[b].score - assignments[a].score);
+                for (let i = 1; i < creators.length; i++) {
+                    const idx = creators[i];
+                    const alt = candidatesBySlot[idx].find(o => !deepRoles.includes(o.role));
+                    if (alt) adjust(idx, alt.role, {
+                        en: 'Kept higher and wider instead — with a teammate already dropping deep to link play, doubling up there would just crowd the same space.',
+                        ar: 'أُبقي متقدماً وعريضاً بدلاً من ذلك — بما أن زميلاً آخر ينزل للعمق للربط، فإن التكرار في نفس المنطقة سيؤدي فقط لازدحام المساحة.'
+                    });
+                }
+            }
+
+            return assignments;
+        }
+
         // How this player's Meta Rating stacks up against every other
         // loaded player who can actually fill this position (their own
         // position or as an alt) — gives a real, comparable anchor instead
@@ -3954,12 +4170,19 @@
             // modal renders) — AcceleRATE must be accurate, not a proxy
             // guess, so this starts as a loading state and gets filled in
             // once verified data arrives (or stays as "couldn't verify" if
-            // the fetch fails). Role suggestion reuses the same
-            // getRoleSuggestion() the Meta Analyst panel uses below, so the
-            // two sections never disagree.
-            const roleInfoWhy = getRoleSuggestion(player, effectivePos);
+            // the fetch fails). Role suggestion uses the team-aware
+            // assignment (see computeTeamRoles) when this player is
+            // currently in the XI, so this matches exactly what's shown on
+            // their pitch card — falls back to the standalone per-player
+            // heuristic only when there's no team context (e.g. viewing a
+            // bench player not in the squad).
+            const roleInfoWhy = (typeof slotIdx === 'number' && squadState.teamRoles && squadState.teamRoles[slotIdx])
+                || getRoleSuggestion(player, effectivePos);
             const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):';
             const roleLabel = currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:';
+            const roleAdjustNote = roleInfoWhy.adjusted
+                ? `<p class="text-[11px] text-fc-gold mt-1 flex items-start gap-1"><i class="fa-solid fa-people-arrows mt-0.5 shrink-0"></i><span>${currentLanguage === 'ar' ? roleInfoWhy.adjustAr : roleInfoWhy.adjustEn}</span></p>`
+                : '';
             const focusProfileHtml = `
                 <div class="mt-2 pt-2 border-t border-fc-border/60 space-y-2">
                     ${player.pos !== 'GK' ? `
@@ -3972,6 +4195,7 @@
                         <span class="font-bold text-fc-gold">${roleLabel}</span>
                         <span class="font-bold text-white"> ${roleInfoWhy.role} / ${roleInfoWhy.focus}</span>
                         <p class="text-gray-400 mt-0.5">${currentLanguage === 'ar' ? roleInfoWhy.ar : roleInfoWhy.en}</p>
+                        ${roleAdjustNote}
                     </div>
                 </div>
             `;
