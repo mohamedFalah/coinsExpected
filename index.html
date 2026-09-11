@@ -603,7 +603,7 @@
             <button onclick="closePlayerModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
                 <i class="fa-solid fa-xmark"></i>
             </button>
-            <div class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-6">
+            <div id="player-modal-scroll" class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-6">
                 <div id="modal-player-content"></div>
             </div>
         </div>
@@ -4115,6 +4115,13 @@
             const modal = document.getElementById('player-modal');
             const content = document.getElementById('modal-player-content');
             if (!modal || !content) return;
+
+            // Reset scroll to the top every time — without this, opening a
+            // new player right after scrolling to the bottom of the
+            // previous one kept the old scroll offset, so the new modal
+            // opened already scrolled down instead of starting fresh.
+            const scrollWrap = document.getElementById('player-modal-scroll');
+            if (scrollWrap) scrollWrap.scrollTop = 0;
             
             const priceLbl = currentLanguage === 'ar' ? 'السعر' : 'Price';
             const coinLbl = currentLanguage === 'ar' ? 'كوينز' : 'coins';
