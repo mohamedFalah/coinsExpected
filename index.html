@@ -527,7 +527,7 @@
                             <span data-i18n="scrapeHelpToggle">How do I find the real data endpoint?</span>
                         </button>
                     </div>
-                    <p data-i18n="scrapeDesc" class="text-xs text-gray-400">Pulls live ratings, prices and attributes directly from EasySBC's own player API (found via their site's network requests) and syncs them into the database below. The full EasySBC database has 1000+ pages (~20k players) sorted by meta rating, so pick how many pages to pull — each page is about 20 players.</p>
+                    <p data-i18n="scrapeDesc" class="text-xs text-gray-400">Pulls live ratings, prices and attributes directly from EasySBC's own player API (found via their site's network requests) and syncs them into the database below. The full EasySBC database has 1000+ pages (~20k players) sorted by meta rating, so pick how many pages to pull — each page is about 20 players. Pages fetch concurrently (in batches), so pulling more pages doesn't mean waiting proportionally longer.</p>
 
                     <div id="scrape-help-panel" class="hidden bg-fc-card border border-fc-border rounded-xl p-4 text-xs text-gray-300 space-y-2">
                         <p data-i18n="scrapeHelpStep1" class="font-bold text-white">1. Open the EasySBC players page in your browser.</p>
@@ -544,7 +544,7 @@
                         </div>
                         <div class="w-full sm:w-40">
                             <label data-i18n="scrapePagesLabel" class="text-xs text-gray-500 block mb-1">Pages to fetch</label>
-                            <input id="scrape-pages-input" type="number" min="1" max="100" value="15"
+                            <input id="scrape-pages-input" type="number" min="1" max="500" value="200"
                                 class="w-full bg-fc-card border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-300 focus:outline-none focus:border-fc-accent" dir="ltr">
                         </div>
                     </div>
@@ -4393,10 +4393,13 @@
         //   Outfield -> [pace, shooting, passing, dribbling, defending, physical]
         //   GK       -> [diving, handling, kicking, reflexes, speed, positioning]
         // The full DB is 1000+ pages (~20k players), so we fetch a
-        // user-controlled number of pages (default 15 ≈ 300 top players,
+        // user-controlled number of pages (default 200 ≈ 4,000 top players,
         // already sorted best-to-worst by meta rating) rather than the whole
-        // thing. A CORS proxy fallback is kept in case the API host doesn't
-        // allow requests from this page's origin.
+        // thing. Pages fetch concurrently in a worker pool (see
+        // runWithConcurrency below) rather than one at a time, so a bigger
+        // page count doesn't mean a proportionally longer wait. A CORS
+        // proxy fallback is kept in case the API host doesn't allow
+        // requests from this page's origin.
 
         const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
         const EASYSBC_PLAYERS_PER_PAGE = 20; // as observed from the live API
@@ -4633,6 +4636,23 @@
             throw lastErr || new Error('All fetch strategies failed');
         }
 
+        // Runs `worker` over `items` with at most `concurrency` calls in
+        // flight at once — a small worker-pool instead of Promise.all
+        // (which would fire everything at once and risk hammering/getting
+        // rate-limited by the API) or a plain sequential loop (which is
+        // what made 200 pages slow in the first place).
+        async function runWithConcurrency(items, concurrency, worker) {
+            let nextIndex = 0;
+            async function runOne() {
+                while (nextIndex < items.length) {
+                    const i = nextIndex++;
+                    await worker(items[i], i);
+                }
+            }
+            const pool = Array.from({ length: Math.min(concurrency, items.length) }, runOne);
+            await Promise.all(pool);
+        }
+
         window.scrapeEasySBCPlayers = async function() {
             const btn = document.getElementById('btn-scrape');
             const logBox = document.getElementById('scrape-status-log');
@@ -4641,7 +4661,7 @@
             const urlInput = document.getElementById('scrape-url-input');
             const pagesInput = document.getElementById('scrape-pages-input');
             const baseUrl = (urlInput && urlInput.value.trim()) || 'https://api-fc27.easysbc.io/players?v2';
-            const pageCount = Math.max(1, Math.min(100, parseInt(pagesInput && pagesInput.value) || 15));
+            const pageCount = Math.max(1, Math.min(500, parseInt(pagesInput && pagesInput.value) || 200));
 
             if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-not-allowed'); }
             setScrapeProgress(0);
@@ -4650,29 +4670,46 @@
             const collected = [];
             let preferProxy = false;
             let failures = 0;
+            let completed = 0;
+            const PAGE_CONCURRENCY = 12; // pages in flight at once
 
-            for (let page = 1; page <= pageCount; page++) {
-                try {
-                    const { data, usedProxy } = await fetchEasySbcPage(baseUrl, page, preferProxy);
-                    if (page === 1) {
-                        preferProxy = usedProxy;
-                        scrapeLog(usedProxy ? 'Direct request was blocked (CORS) — using proxy for remaining pages.' : 'Direct request succeeded — no proxy needed.', usedProxy ? 'warn' : 'ok');
-                        if (typeof data.totalPages === 'number') {
-                            scrapeLog(`EasySBC reports ${data.totalPages} total pages available (~${data.totalPages * EASYSBC_PLAYERS_PER_PAGE} players). Fetching ${pageCount} of them.`, 'info');
-                        }
-                    }
-                    collected.push(...data.players);
-                    setScrapeProgress((page / pageCount) * 100);
-                } catch (err) {
-                    failures++;
-                    scrapeLog(`Page ${page} failed: ${err.message}`, 'err');
-                    if (page === 1) {
-                        // If the very first page fails outright, stop early — further
-                        // pages will fail the same way.
-                        scrapeLog('Could not reach the EasySBC API at all (network blocked or URL changed). Falling back to whatever is in the Import box, if anything.', 'warn');
-                        break;
-                    }
+            // Page 1 goes first, alone — it's what tells us whether direct
+            // requests are blocked by CORS (usedProxy), which decides the
+            // fetch strategy every other page will use. Everything after
+            // it can safely run concurrently once that's known.
+            let firstPageOk = false;
+            try {
+                const { data, usedProxy } = await fetchEasySbcPage(baseUrl, 1, false);
+                preferProxy = usedProxy;
+                firstPageOk = true;
+                scrapeLog(usedProxy ? 'Direct request was blocked (CORS) — using proxy for remaining pages.' : 'Direct request succeeded — no proxy needed.', usedProxy ? 'warn' : 'ok');
+                if (typeof data.totalPages === 'number') {
+                    scrapeLog(`EasySBC reports ${data.totalPages} total pages available (~${data.totalPages * EASYSBC_PLAYERS_PER_PAGE} players). Fetching ${pageCount} of them.`, 'info');
                 }
+                collected.push(...data.players);
+                completed++;
+                setScrapeProgress((completed / pageCount) * 100);
+            } catch (err) {
+                failures++;
+                scrapeLog(`Page 1 failed: ${err.message}`, 'err');
+                scrapeLog('Could not reach the EasySBC API at all (network blocked or URL changed). Falling back to whatever is in the Import box, if anything.', 'warn');
+            }
+
+            if (firstPageOk && pageCount > 1) {
+                const remainingPages = Array.from({ length: pageCount - 1 }, (_, i) => i + 2);
+                scrapeLog(`Fetching the remaining ${remainingPages.length} page(s) concurrently (${PAGE_CONCURRENCY} at a time)...`, 'info');
+                await runWithConcurrency(remainingPages, PAGE_CONCURRENCY, async (page) => {
+                    try {
+                        const { data } = await fetchEasySbcPage(baseUrl, page, preferProxy);
+                        collected.push(...data.players);
+                    } catch (err) {
+                        failures++;
+                        scrapeLog(`Page ${page} failed: ${err.message}`, 'err');
+                    } finally {
+                        completed++;
+                        setScrapeProgress((completed / pageCount) * 100);
+                    }
+                });
             }
 
             if (collected.length > 0) {
