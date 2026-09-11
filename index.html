@@ -4115,13 +4115,6 @@
             const modal = document.getElementById('player-modal');
             const content = document.getElementById('modal-player-content');
             if (!modal || !content) return;
-
-            // Reset scroll to the top every time — without this, opening a
-            // new player right after scrolling to the bottom of the
-            // previous one kept the old scroll offset, so the new modal
-            // opened already scrolled down instead of starting fresh.
-            const scrollWrap = document.getElementById('player-modal-scroll');
-            if (scrollWrap) scrollWrap.scrollTop = 0;
             
             const priceLbl = currentLanguage === 'ar' ? 'السعر' : 'Price';
             const coinLbl = currentLanguage === 'ar' ? 'كوينز' : 'coins';
@@ -4579,6 +4572,19 @@
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
+
+            // Reset scroll to the top every time — must happen AFTER the
+            // modal is actually visible. Setting scrollTop while the panel
+            // still has display:none (i.e. before removing 'hidden') is a
+            // no-op in browsers, since a non-rendered element has no real
+            // scroll position to set — that's why resetting it at the top
+            // of this function, before showing the modal, didn't actually
+            // stick, and reopening kept whatever scroll offset was left
+            // over from last time.
+            const scrollWrap = document.getElementById('player-modal-scroll');
+            if (scrollWrap) {
+                requestAnimationFrame(() => { scrollWrap.scrollTop = 0; });
+            }
         };
 
         window.closePlayerModal = function() {
