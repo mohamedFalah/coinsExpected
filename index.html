@@ -356,10 +356,7 @@
                     </div>
                 </div>
 
-                <!-- Right 1 Col: Squad Overview — ONE card (summary, identity,
-                     budget, position quality, next upgrade) instead of two
-                     separately-floating boxes, so the sidebar reads as a
-                     single continuous sheet with light internal dividers. -->
+                <!-- Right 1 Col: Squad Overview -->
                 <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
                     <div class="space-y-3 border-b border-fc-border pb-4">
                         <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
@@ -370,32 +367,30 @@
                         </div>
                     </div>
 
-                    <div id="squad-identity" class="pb-1">
+                    <!-- Budget — minimized to one compact row (no repeated
+                         "Coins" wording) instead of three separate lines. -->
+                    <div class="flex items-center gap-2 text-xs">
+                        <i class="fa-solid fa-coins text-fc-gold text-[11px] shrink-0"></i>
+                        <div class="flex-1 grid grid-cols-3 gap-1 text-center">
+                            <div>
+                                <div class="text-[9px] text-gray-500 uppercase" data-i18n="budgetShort">Budget</div>
+                                <div id="summary-budget" class="font-bold text-fc-gold">0</div>
+                            </div>
+                            <div>
+                                <div class="text-[9px] text-gray-500 uppercase" data-i18n="spentShort">Spent</div>
+                                <div id="summary-cost" class="font-bold text-white">0</div>
+                            </div>
+                            <div>
+                                <div class="text-[9px] text-gray-500 uppercase" data-i18n="leftShort">Left</div>
+                                <div id="summary-remaining" class="font-bold text-emerald-400">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="squad-identity" class="border-t border-fc-border pt-4">
                         <!-- Populated by renderSquadSummary(): a quick,
                              relative read on this squad's dominant trait
                              (pace/power/buildup/defense vs its own average). -->
-                    </div>
-
-                    <div class="space-y-2 border-t border-fc-border pt-4">
-                        <div class="flex justify-between text-sm">
-                            <span data-i18n="availableBudget" class="text-gray-400">Available Budget</span>
-                            <span id="summary-budget" class="font-bold text-fc-gold">0 Coins</span>
-                        </div>
-                        <div class="flex justify-between text-sm">
-                            <span data-i18n="totalSquadCost" class="text-gray-400">Total Squad Cost</span>
-                            <span id="summary-cost" class="font-bold text-white">0 Coins</span>
-                        </div>
-                        <div class="flex justify-between text-sm pt-2 border-t border-fc-border/60">
-                            <span data-i18n="remainingCoins" class="text-gray-400">Remaining Coins</span>
-                            <span id="summary-remaining" class="font-bold text-emerald-400">0 Coins</span>
-                        </div>
-                    </div>
-
-                    <div class="border-t border-fc-border pt-4 space-y-2">
-                        <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Quality by Line</span>
-                        <div id="group-breakdown" class="grid grid-cols-2 gap-2">
-                            <!-- Populated by renderSquadSummary() -->
-                        </div>
                     </div>
 
                     <div class="border-t border-fc-border pt-4 space-y-2.5">
@@ -406,11 +401,25 @@
                     </div>
 
                     <div class="border-t border-fc-border pt-4 space-y-2">
-                        <span data-i18n="nextBestUpgrade" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Next Best Upgrade</span>
-                        <div id="next-upgrade-content" class="text-xs text-gray-300 space-y-2">
-                            <p data-i18n="optimizeFirst" class="italic text-gray-400">Optimize a squad first to calculate the highest-impact player upgrade.</p>
+                        <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Quality by Line</span>
+                        <div id="group-breakdown" class="grid grid-cols-2 gap-2">
+                            <!-- Populated by renderSquadSummary() -->
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Next Best Upgrade — moved below the full squad (was
+                 cramped into the narrow sidebar as a single suggestion).
+                 Now full-width, one compact card per position that has an
+                 affordable upgrade available, minimal wording. -->
+            <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-3">
+                <div class="flex items-center gap-2 text-fc-accent">
+                    <i class="fa-solid fa-arrow-trend-up"></i>
+                    <h3 data-i18n="nextBestUpgrade" class="font-extrabold text-sm text-white">NEXT BEST UPGRADE</h3>
+                </div>
+                <div id="next-upgrade-content" class="text-xs text-gray-300">
+                    <p data-i18n="optimizeFirst" class="italic text-gray-400">Optimize a squad first to calculate the highest-impact player upgrade.</p>
                 </div>
             </div>
         </div>
@@ -627,6 +636,9 @@
                 availableBudget: "Available Budget",
                 totalSquadCost: "Total Squad Cost",
                 remainingCoins: "Remaining Coins",
+                budgetShort: "Budget",
+                spentShort: "Spent",
+                leftShort: "Left",
                 posGroupQuality: "Quality by Line",
                 playstylesByLine: "PlayStyles by Line",
                 suggestedTactics: "Suggested Tactics",
@@ -704,6 +716,9 @@
                 availableBudget: "الميزانية المتاحة",
                 totalSquadCost: "إجمالي تكلفة التشكيلة",
                 remainingCoins: "الكوينز المتبقية",
+                budgetShort: "الميزانية",
+                spentShort: "المصروف",
+                leftShort: "المتبقي",
                 posGroupQuality: "الجودة حسب الخط",
                 playstylesByLine: "أنماط اللعب حسب الخط",
                 suggestedTactics: "التكتيك المقترح",
@@ -2556,7 +2571,6 @@
             const chemBadge = document.getElementById('squad-chem-badge');
             const sumBudget = document.getElementById('summary-budget');
             const sumCost = document.getElementById('summary-cost');
-            const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'Coins';
 
             if (badge) badge.innerText = `OVR ${squadState.avgRating}`;
             if (metaBadge) {
@@ -2578,13 +2592,13 @@
                     ? 'text-sm font-black text-fc-gold'
                     : 'text-sm font-black text-green-400';
             }
-            if (sumBudget) sumBudget.innerText = squadState.budget.toLocaleString() + ' ' + coinLabel;
-            if (sumCost) sumCost.innerText = squadState.totalCost.toLocaleString() + ' ' + coinLabel;
+            if (sumBudget) sumBudget.innerText = squadState.budget.toLocaleString();
+            if (sumCost) sumCost.innerText = squadState.totalCost.toLocaleString();
             
             const remaining = squadState.budget - squadState.totalCost;
             const remEl = document.getElementById('summary-remaining');
             if (remEl) {
-                remEl.innerText = remaining.toLocaleString() + ' ' + coinLabel;
+                remEl.innerText = remaining.toLocaleString();
                 remEl.className = remaining >= 0 ? "font-bold text-emerald-400" : "font-bold text-red-400";
             }
 
@@ -2692,16 +2706,21 @@
             });
         }
 
+        // Now full-width and one card per POSITION (not just a single best
+        // pick overall), each with the cheapest real upgrade available for
+        // that slot and its exact extra cost. Minimal wording by design —
+        // name/rating/meta and the coin delta say everything that matters,
+        // no explanatory sentence needed per card.
         function calculateNextBestUpgrade() {
             const container = document.getElementById('next-upgrade-content');
             if (!container) return;
-            let bestUpgradeCandidate = null;
-            let maxMetaImprovement = 0;
-            let minAdditionalCost = 999999;
 
             const remainingBudget = squadState.budget - squadState.totalCost;
             const slots = formationSlots[squadState.formation];
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
 
+            const rows = [];
             slots.forEach((slot, idx) => {
                 const currentPlayer = squadState.selectedXI[idx];
                 if (!currentPlayer) return;
@@ -2709,41 +2728,48 @@
                 const currentMeta = getMetaValue(currentPlayer);
                 const alternatives = fc27Database.filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && getMetaValue(p) > currentMeta);
 
+                // Best per slot = biggest meta gain; ties broken by whichever
+                // costs less, so the shown pick is always the most efficient
+                // one for that exact gain, not just the priciest option.
+                let best = null;
                 alternatives.forEach(alt => {
                     const costDiff = alt.price - currentPlayer.price;
                     if (costDiff > 0 && costDiff <= (remainingBudget + 50000)) {
                         const metaDiff = getMetaValue(alt) - currentMeta;
-                        if (metaDiff >= maxMetaImprovement) {
-                            maxMetaImprovement = metaDiff;
-                            if (costDiff < minAdditionalCost) {
-                                minAdditionalCost = costDiff;
-                                bestUpgradeCandidate = { current: currentPlayer, upgrade: alt, costDiff, slot: slot.label };
-                            }
+                        if (!best || metaDiff > best.metaDiff || (metaDiff === best.metaDiff && costDiff < best.costDiff)) {
+                            best = { upgrade: alt, costDiff, metaDiff };
                         }
                     }
                 });
+                if (best) {
+                    rows.push({ slotLabel: slot.label, current: currentPlayer, upgrade: best.upgrade, costDiff: best.costDiff });
+                }
             });
 
-            const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'coins';
-
-            if (bestUpgradeCandidate) {
-                const upgradeHasMeta = typeof bestUpgradeCandidate.upgrade.meta === 'number';
-                const currentHasMeta = typeof bestUpgradeCandidate.current.meta === 'number';
-                const upgradeMetaTag = upgradeHasMeta ? ` · MR ${bestUpgradeCandidate.upgrade.meta.toFixed(1)}` : '';
-                const currentMetaTag = currentHasMeta ? ` · MR ${bestUpgradeCandidate.current.meta.toFixed(1)}` : '';
-                container.innerHTML = `
-                    <div class="space-y-1.5">
-                        <div class="font-bold text-white">${bestUpgradeCandidate.slot}: ${currentLanguage === 'ar' ? 'الترقية إلى' : 'Upgrade to'} ${bestUpgradeCandidate.upgrade.name} (${bestUpgradeCandidate.upgrade.rating} OVR${upgradeMetaTag})</div>
-                        <div class="flex justify-between text-gray-400">
-                            <span>${currentLanguage === 'ar' ? 'الحالي' : 'Current'}: ${bestUpgradeCandidate.current.name} (${bestUpgradeCandidate.current.rating}${currentMetaTag})</span>
-                            <span class="text-fc-gold font-bold">+${bestUpgradeCandidate.costDiff.toLocaleString()} ${coinLabel}</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                const msg = currentLanguage === 'ar' ? 'تشكيلتك مُحسّنة للغاية! وفّر المزيد من الكوينز لفتح ترقيات أعلى مستوى.' : 'Your squad is heavily optimized! Save more coins to unlock higher tier upgrades.';
-                container.innerHTML = `<p class="italic text-gray-400">${msg}</p>`;
+            if (rows.length === 0) {
+                const msg = isAr ? 'تشكيلتك مُحسّنة للغاية! وفّر المزيد من الكوينز لفتح ترقيات أعلى مستوى.' : 'Your squad is heavily optimized! Save more coins to unlock higher tier upgrades.';
+                container.innerHTML = `<p class="italic text-gray-400 text-sm">${msg}</p>`;
+                return;
             }
+
+            // Cheapest, most immediately-affordable upgrades first.
+            rows.sort((a, b) => a.costDiff - b.costDiff);
+
+            container.innerHTML = `
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                    ${rows.map(r => {
+                        const upgradeMeta = typeof r.upgrade.meta === 'number' ? ` · MR ${r.upgrade.meta.toFixed(1)}` : '';
+                        return `
+                            <div class="bg-fc-dark/40 rounded-lg p-2.5">
+                                <div class="text-[10px] text-gray-500 uppercase tracking-wide truncate">${r.slotLabel}</div>
+                                <div class="text-[11px] text-gray-500 mt-1 truncate">${r.current.name} (${r.current.rating})</div>
+                                <div class="text-xs text-white font-bold mt-0.5 truncate">→ ${r.upgrade.name} (${r.upgrade.rating}${upgradeMeta})</div>
+                                <div class="text-xs font-black text-fc-gold mt-1">+${r.costDiff.toLocaleString()}${coinLabel}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         // ===================================================================
