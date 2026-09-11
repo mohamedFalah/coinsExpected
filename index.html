@@ -3104,6 +3104,105 @@
             renderSquadVulnerabilities(groups);
         }
 
+        // For one stat key, finds THIS LINE's own best and worst player on
+        // that stat, relative to the LINE'S OWN average — never compared
+        // against a different role's typical range (a striker's dribbling
+        // and a centre-back's dribbling aren't the same yardstick), and
+        // never an absolute threshold, matching the relative-not-absolute
+        // approach used everywhere else in this file (see
+        // computeSquadIdentity above). Needs at least 2 players with that
+        // stat in the line, or there's nothing real to compare.
+        function computeLineStatExtremes(list, statKey) {
+            const withStat = list.filter(p => p.att && typeof p.att[statKey] === 'number');
+            if (withStat.length < 2) return null;
+            const avg = withStat.reduce((s, p) => s + p.att[statKey], 0) / withStat.length;
+            let best = withStat[0], worst = withStat[0];
+            withStat.forEach(p => {
+                if (p.att[statKey] > best.att[statKey]) best = p;
+                if (p.att[statKey] < worst.att[statKey]) worst = p;
+            });
+            return {
+                avg,
+                best: { player: best, value: best.att[statKey], dev: best.att[statKey] - avg },
+                worst: { player: worst, value: worst.att[statKey], dev: worst.att[statKey] - avg }
+            };
+        }
+
+        // The "who specifically, and for what reason" layer — shared by
+        // the vulnerabilities list (biggest negative deviation = a risk)
+        // and the PlayStyles-by-line block (biggest positive deviation =
+        // a strength), so the same real comparison produces both the
+        // negative and positive read of the same underlying stat. `gap`
+        // is the minimum deviation from the line's own average needed
+        // before naming a specific player — small deviations are normal
+        // squad variance, not a real standout either way. Templates omit
+        // the trailing period so the dribbling axis can splice in a
+        // skill-moves note before either function adds it back.
+        const LINE_STAT_AXES = {
+            defence: [
+                {
+                    statKey: 'def', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) is the shakiest tackler in this back line — likely to lose more duels and come away with fewer blocks or interceptions than the rest`,
+                    riskAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) هو الأضعف في التدخلات ضمن خط الدفاع — يُتوقع خسارته مواجهات أكثر وحصوله على اعتراضات وتغطيات أقل من زملائه`,
+                    strength: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) is this back line's most reliable defender — the one most likely to win the duel or step in front of a pass to intercept it`,
+                    strengthAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) هو الأكثر اعتماداً في خط الدفاع — الأقرب للفوز بالمواجهة أو اعتراض التمريرة`
+                },
+                {
+                    statKey: 'phy', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} PHY vs. a ${Math.round(a)} line average) is the easiest of this back line to shove off the ball in a physical duel`,
+                    riskAr: (n, v, a) => `${n} (${v} بدني مقابل معدل الخط ${Math.round(a)}) هو الأسهل دفعه بدنياً عن الكرة ضمن هذا الخط`,
+                    strength: (n, v, a) => `${n} (${v} PHY vs. a ${Math.round(a)} line average) wins the physical battles here — the hardest of this line to knock off the ball`,
+                    strengthAr: (n, v, a) => `${n} (${v} بدني مقابل معدل الخط ${Math.round(a)}) يفوز بالمواجهات البدنية — الأصعب دفعاً عن الكرة ضمن هذا الخط`
+                }
+            ],
+            midfield: [
+                {
+                    statKey: 'pas', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} PAS vs. a ${Math.round(a)} line average) is the most turnover-prone passer here — expect more misplaced passes under pressure than their partners`,
+                    riskAr: (n, v, a) => `${n} (${v} تمرير مقابل معدل الخط ${Math.round(a)}) هو الأكثر عرضة لإضاعة الكرة بالتمرير هنا — تمريرات مفقودة أكثر تحت الضغط مقارنة بشركائه`,
+                    strength: (n, v, a) => `${n} (${v} PAS vs. a ${Math.round(a)} line average) is the safest pair of hands on the ball here — the one most likely to keep possession moving under pressure`,
+                    strengthAr: (n, v, a) => `${n} (${v} تمرير مقابل معدل الخط ${Math.round(a)}) هو الأكثر أماناً في تمرير الكرة هنا — الأقدر على الحفاظ على الاستحواذ تحت الضغط`
+                },
+                {
+                    statKey: 'dri', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the easiest to dispossess in tight areas among this midfield`,
+                    riskAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأسهل لانتزاع الكرة منه في المساحات الضيقة ضمن هذا الوسط`,
+                    strength: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the hardest to dispossess in tight areas among this midfield — carries the ball through pressure the others can't`,
+                    strengthAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأصعب لانتزاع الكرة منه في المساحات الضيقة — يحمل الكرة عبر الضغط أفضل من زملائه`
+                },
+                {
+                    statKey: 'def', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) offers the least defensively here — unlikely to make the blocks or interceptions that break up an attack`,
+                    riskAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) يقدّم أقل إسهام دفاعي هنا — من غير المرجح أن يصنع اعتراضات أو تغطيات تكسر الهجمة`,
+                    strength: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) does the most defensive work in this midfield — the one most likely to break up an attack with a block or interception`,
+                    strengthAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) يقدّم أكبر إسهام دفاعي في هذا الوسط — الأقرب لكسر هجمة بتغطية أو اعتراض`
+                }
+            ],
+            attack: [
+                {
+                    statKey: 'sho', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} SHO vs. a ${Math.round(a)} line average) is the least clinical finisher up front — likely to convert fewer of the half-chances that fall to them than their attacking partners`,
+                    riskAr: (n, v, a) => `${n} (${v} تسديد مقابل معدل الخط ${Math.round(a)}) هو الأقل حسماً في الهجوم — يُتوقع تحويله فرصاً أقل من نصف الفرص مقارنة بشركائه`,
+                    strength: (n, v, a) => `${n} (${v} SHO vs. a ${Math.round(a)} line average) is the most clinical finisher up front — the one most likely to convert a half-chance the others might waste`,
+                    strengthAr: (n, v, a) => `${n} (${v} تسديد مقابل معدل الخط ${Math.round(a)}) هو الأكثر حسماً في الهجوم — الأقدر على تحويل نصف فرصة قد يهدرها الآخرون`
+                },
+                {
+                    statKey: 'dri', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the easiest forward here to dispossess when running at a defender`,
+                    riskAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأسهل لانتزاع الكرة منه عند مواجهة مدافع`,
+                    strength: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the hardest forward here to dispossess — the one most likely to beat a defender one-on-one`,
+                    strengthAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأصعب لانتزاع الكرة منه — الأقدر على تجاوز مدافع في مواجهة فردية`
+                },
+                {
+                    statKey: 'pac', gap: 4,
+                    risk: (n, v, a) => `${n} (${v} PAC vs. a ${Math.round(a)} line average) is clearly the slowest of this front line — lacks the pace to consistently beat the last defender in behind`,
+                    riskAr: (n, v, a) => `${n} (${v} سرعة مقابل معدل الخط ${Math.round(a)}) هو الأبطأ بوضوح في هذا الخط الهجومي — يفتقر للسرعة لتجاوز آخر مدافع بشكل متكرر`,
+                    strength: (n, v, a) => `${n} (${v} PAC vs. a ${Math.round(a)} line average) is clearly the fastest of this front line — the one most likely to win the race in behind a high defensive line`,
+                    strengthAr: (n, v, a) => `${n} (${v} سرعة مقابل معدل الخط ${Math.round(a)}) هو الأسرع بوضوح في هذا الخط الهجومي — الأقدر على الفوز بسباق السرعة خلف خط دفاعي مرتفع`
+                }
+            ]
+        };
+
         // No section title by design — straight into the actual weaknesses.
         // Grouped by line (Defence / Midfield / Attack — GK excluded, same
         // as the Quality-by-Line row above, since a single player has no
@@ -3111,7 +3210,7 @@
         // the context of where on the pitch it actually bites, rather than
         // as one flat, unordered list.
         //
-        // Every line finds up to three KINDS of problem, each stated with
+        // Every line finds up to FOUR kinds of problem, each stated with
         // the real number behind it instead of a vague adjective:
         //   1. Named chemistry problems for players IN that line — out of
         //      position (0 chem, named + their real vs. played position),
@@ -3125,6 +3224,18 @@
         //      instead of one whole-squad "weakest axis" label.
         //   3. This line's average rating vs. the squad's own average,
         //      with the exact point gap, when it's the real drag on OVR.
+        //   4. Named, per-axis risks from LINE_STAT_AXES — the specific
+        //      player behind each concrete match outcome (losing duels,
+        //      no blocks/interceptions, misplaced passes, getting
+        //      dispossessed, missed half-chances) rather than a generic
+        //      "this line is weak" statement. Defence also gets one
+        //      cross-line pace check: its slowest player vs. this SAME
+        //      squad's own front-line pace, as an honest, grounded proxy
+        //      for "how fast are the attackers he's realistically up
+        //      against" — real opponent data isn't available, so this
+        //      squad's own attacking pace is the most defensible stand-in
+        //      for it, and that reasoning is stated in the text itself
+        //      rather than presented as a hard fact.
         function renderSquadVulnerabilities(groups) {
             const container = document.getElementById('squad-vulnerabilities');
             if (!container) return;
@@ -3132,14 +3243,14 @@
 
             const lineDefs = isAr
                 ? [
-                    { key: 'الدفاع', label: 'الدفاع', statKey: 'def', statLabel: 'الدفاع', icon: 'fa-shield-halved' },
-                    { key: 'الوسط', label: 'الوسط', statKey: 'pas', statLabel: 'التمرير', icon: 'fa-chess' },
-                    { key: 'الهجوم', label: 'الهجوم', statKey: 'pac', statLabel: 'السرعة', icon: 'fa-bolt' }
+                    { id: 'defence', key: 'الدفاع', label: 'الدفاع', statKey: 'def', statLabel: 'الدفاع', icon: 'fa-shield-halved' },
+                    { id: 'midfield', key: 'الوسط', label: 'الوسط', statKey: 'pas', statLabel: 'التمرير', icon: 'fa-chess' },
+                    { id: 'attack', key: 'الهجوم', label: 'الهجوم', statKey: 'pac', statLabel: 'السرعة', icon: 'fa-bolt' }
                   ]
                 : [
-                    { key: 'Defence', label: 'Defence', statKey: 'def', statLabel: 'Defending', icon: 'fa-shield-halved' },
-                    { key: 'Midfield', label: 'Midfield', statKey: 'pas', statLabel: 'Passing', icon: 'fa-chess' },
-                    { key: 'Attack', label: 'Attack', statKey: 'pac', statLabel: 'Pace', icon: 'fa-bolt' }
+                    { id: 'defence', key: 'Defence', label: 'Defence', statKey: 'def', statLabel: 'Defending', icon: 'fa-shield-halved' },
+                    { id: 'midfield', key: 'Midfield', label: 'Midfield', statKey: 'pas', statLabel: 'Passing', icon: 'fa-chess' },
+                    { id: 'attack', key: 'Attack', label: 'Attack', statKey: 'pac', statLabel: 'Pace', icon: 'fa-bolt' }
                   ];
 
             // Slot -> line lookup, built straight from the active formation,
@@ -3157,6 +3268,11 @@
             const allOutfield = lineDefs.flatMap(d => groups[d.key] || []);
             const squadAvgRating = allOutfield.length
                 ? allOutfield.reduce((s, p) => s + p.rating, 0) / allOutfield.length
+                : null;
+            const attackList = groups[lineDefs[2].key] || [];
+            const attackWithPac = attackList.filter(p => p.att && typeof p.att.pac === 'number');
+            const attackPacAvg = attackWithPac.length
+                ? attackWithPac.reduce((s, p) => s + p.att.pac, 0) / attackWithPac.length
                 : null;
 
             const FACTOR_LABEL = isAr
@@ -3226,6 +3342,37 @@
                     }
                 }
 
+                // 4. Named, per-axis match-outcome risks (duels, blocks/
+                // interceptions, passing, dribbling, finishing) — the
+                // specific player behind each one, not a line-wide label.
+                (LINE_STAT_AXES[def.id] || []).forEach(axis => {
+                    const extremes = computeLineStatExtremes(list, axis.statKey);
+                    if (!extremes || extremes.worst.dev > -axis.gap) return;
+                    let msg = isAr
+                        ? axis.riskAr(extremes.worst.player.name, extremes.worst.value, extremes.avg)
+                        : axis.risk(extremes.worst.player.name, extremes.worst.value, extremes.avg);
+                    if (axis.statKey === 'dri' && typeof extremes.worst.player.skillMoves === 'number') {
+                        msg += isAr ? `، ${extremes.worst.player.skillMoves}★ مهارات` : `, ${extremes.worst.player.skillMoves}★ skill moves`;
+                    }
+                    issues.push(msg + '.');
+                });
+
+                // Defence-only: this line's slowest player against this
+                // SAME squad's own front-line pace — an honest proxy for
+                // "the kind of attacking pace he's realistically up
+                // against" since no real opponent data exists, stated as
+                // exactly that rather than as a fact about a real rival.
+                if (def.id === 'defence' && attackPacAvg != null && withAtt.length > 0) {
+                    let slowest = withAtt[0];
+                    withAtt.forEach(p => { if (p.att.pac < slowest.att.pac) slowest = p; });
+                    const gap = attackPacAvg - slowest.att.pac;
+                    if (gap >= 6) {
+                        issues.push(isAr
+                            ? `${slowest.name} (${slowest.att.pac} سرعة) أبطأ بوضوح من متوسط سرعة خط الهجوم في هذه التشكيلة نفسها (${Math.round(attackPacAvg)}) — مؤشر واقعي (وليس بيانات فعلية عن الخصم) على نوع السرعة الهجومية التي قد يواجهها، وموضع محتمل ليُلعب من خلاله أو يُتجاوز بالسرعة خلف الظهر.`
+                            : `${slowest.name} (${slowest.att.pac} PAC) is well short of this squad's own front-line average pace (${Math.round(attackPacAvg)}) — an honest proxy (not real opponent data) for the kind of attacking pace he's realistically up against, and a real risk of being played through or beaten for pace in behind.`);
+                    }
+                }
+
                 return { def, issues };
             }).filter(Boolean);
 
@@ -3280,6 +3427,15 @@
             const isAr = currentLanguage === 'ar';
             container.innerHTML = '';
 
+            // Maps this render's localized group names back to the
+            // stable ids LINE_STAT_AXES is keyed by (Goalkeeper has no
+            // entry, so it's simply skipped below — GK's att shape has
+            // no def/pas/dri/sho/pac fields for computeLineStatExtremes
+            // to compare anyway).
+            const lineId = isAr
+                ? { 'الدفاع': 'defence', 'الوسط': 'midfield', 'الهجوم': 'attack' }
+                : { Defence: 'defence', Midfield: 'midfield', Attack: 'attack' };
+
             Object.keys(groups).forEach(groupName => {
                 const list = groups[groupName];
                 if (list.length === 0) return;
@@ -3289,8 +3445,9 @@
                 const topCategory = sorted[0];
 
                 const row = document.createElement('div');
+                let html;
                 if (!topCategory) {
-                    row.innerHTML = `
+                    html = `
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-semibold text-gray-300">${groupName}</span>
                         </div>
@@ -3298,7 +3455,7 @@
                     `;
                 } else {
                     const profile = LINE_CATEGORY_PROFILE[topCategory];
-                    row.innerHTML = `
+                    html = `
                         <div class="flex items-center justify-between gap-2">
                             <span class="text-xs font-semibold text-gray-300 shrink-0">${groupName}</span>
                             <span class="text-xs font-bold text-fc-accent flex items-center gap-1.5 text-right">
@@ -3308,9 +3465,40 @@
                         <p class="text-[11px] text-gray-500 mt-0.5 leading-snug">${isAr ? profile.desc_ar : profile.desc_en}</p>
                     `;
                 }
+
+                // Named, per-axis strengths — the positive mirror of the
+                // vulnerabilities list below: for each real stat axis this
+                // line's job depends on, name whichever player stands out
+                // ABOVE the line's own average by enough to matter (same
+                // computeLineStatExtremes comparison, same gap thresholds,
+                // just reading .best instead of .worst).
+                const axes = LINE_STAT_AXES[lineId[groupName]] || [];
+                const strengths = [];
+                axes.forEach(axis => {
+                    const extremes = computeLineStatExtremes(list, axis.statKey);
+                    if (!extremes || extremes.best.dev < axis.gap) return;
+                    let msg = isAr
+                        ? axis.strengthAr(extremes.best.player.name, extremes.best.value, extremes.avg)
+                        : axis.strength(extremes.best.player.name, extremes.best.value, extremes.avg);
+                    if (axis.statKey === 'dri' && typeof extremes.best.player.skillMoves === 'number') {
+                        msg += isAr ? `، ${extremes.best.player.skillMoves}★ مهارات` : `, ${extremes.best.player.skillMoves}★ skill moves`;
+                    }
+                    strengths.push(msg + '.');
+                });
+                if (strengths.length > 0) {
+                    html += strengths.map(s => `
+                        <p class="text-[11px] text-green-400/90 leading-snug flex items-start gap-1.5 mt-1">
+                            <i class="fa-solid fa-arrow-trend-up text-[10px] mt-0.5 shrink-0"></i>
+                            <span>${s}</span>
+                        </p>
+                    `).join('');
+                }
+
+                row.innerHTML = html;
                 container.appendChild(row);
             });
         }
+
 
         // Now full-width and one card per POSITION (not just a single best
         // pick overall), each with the cheapest real upgrade available for
