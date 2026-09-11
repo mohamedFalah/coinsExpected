@@ -449,6 +449,14 @@
                             <!-- Populated by renderSquadSummary() -->
                         </div>
                     </div>
+
+                    <!-- Squad vulnerabilities — deliberately no header label,
+                         straight into the actual weaknesses (weakest
+                         identity axis, real chemistry weak links, the one
+                         line dragging behind the rest). -->
+                    <div id="squad-vulnerabilities" class="border-t border-fc-border pt-4 space-y-1.5">
+                        <!-- Populated by renderSquadSummary() -->
+                    </div>
                 </div>
             </div>
 
@@ -2800,6 +2808,76 @@
             });
 
             renderPlaystylesByLine(groups);
+            renderSquadVulnerabilities(groups);
+        }
+
+        // No section title by design — straight into the actual weaknesses.
+        // Pulls from three independent, real signals rather than one
+        // generic "your squad is weak" line: the squad's own weakest trait
+        // axis (relative to its own profile, from computeSquadIdentity),
+        // named players with real chemistry problems (out of position or
+        // below the "safe" threshold), and whichever line is genuinely
+        // dragging behind the other two, not just a token nitpick.
+        function renderSquadVulnerabilities(groups) {
+            const container = document.getElementById('squad-vulnerabilities');
+            if (!container) return;
+            const isAr = currentLanguage === 'ar';
+            const points = [];
+
+            const identity = computeSquadIdentity();
+            if (identity && identity.weakestNotable) {
+                const AXIS_RISK = {
+                    pace: { en: 'Pace is the weak link here — a patient opponent can sit deep and this squad may struggle to break them down quickly.', ar: 'السرعة هي الحلقة الأضعف هنا — يمكن لخصم صبور أن يتمركز بعمق وتجد التشكيلة صعوبة في كسر دفاعه بسرعة.' },
+                    power: { en: 'Physicality is the weak link here — direct, physical opponents can win the duels and second balls that decide tight games.', ar: 'القوة البدنية هي الحلقة الأضعف هنا — يمكن لخصم بدني ومباشر الفوز بالمواجهات والكرات الثانية الحاسمة.' },
+                    buildup: { en: 'Passing/build-up is the weak link here — this squad may struggle to progress the ball patiently and could lean too hard on individual moments.', ar: 'التمرير وبناء اللعب هما الحلقة الأضعف هنا — قد تعتمد التشكيلة كثيراً على اللحظات الفردية بدل بناء الهجمات بصبر.' },
+                    defense: { en: 'The back line is the weak link here — quick, direct opponents can exploit the space behind it.', ar: 'خط الدفاع هو الحلقة الأضعف هنا — يمكن لخصم سريع ومباشر استغلال المساحة خلفه.' }
+                }[identity.weakestAxis];
+                if (AXIS_RISK) points.push(isAr ? AXIS_RISK.ar : AXIS_RISK.en);
+            }
+
+            if (squadState.chemistry && squadState.chemistry.perSlot) {
+                const weakLinks = [];
+                Object.keys(squadState.chemistry.perSlot).forEach(idx => {
+                    const info = squadState.chemistry.perSlot[idx];
+                    const player = squadState.selectedXI[idx];
+                    if (!player) return;
+                    if (!info.inPosition || info.points < 2) weakLinks.push(player.name);
+                });
+                if (weakLinks.length > 0) {
+                    const names = weakLinks.slice(0, 3).join(isAr ? '، ' : ', ');
+                    points.push(isAr
+                        ? `كيمياء ضعيفة عند ${names} — سيؤدون دون مستواهم الفعلي رغم جودتهم الإحصائية.`
+                        : `Weak chemistry at ${names} — they'll play below their real quality on matchday, whatever the raw stats say.`);
+                }
+            }
+
+            const lineNames = isAr ? ['الهجوم', 'الوسط', 'الدفاع'] : ['Attack', 'Midfield', 'Defence'];
+            const lineAverages = lineNames.map(name => {
+                const list = groups[name];
+                if (!list || list.length === 0) return null;
+                return { name, avg: list.reduce((s, p) => s + p.rating, 0) / list.length };
+            }).filter(Boolean);
+            if (lineAverages.length === 3) {
+                const overallAvg = lineAverages.reduce((s, l) => s + l.avg, 0) / lineAverages.length;
+                const weakest = lineAverages.reduce((a, b) => (a.avg < b.avg ? a : b));
+                if (overallAvg - weakest.avg >= 3) {
+                    points.push(isAr
+                        ? `${weakest.name} أضعف بوضوح من بقية الخطوط (${Math.round(weakest.avg)} مقابل معدل ${Math.round(overallAvg)}) — نقطة الضغط المرجّحة لأي خصم.`
+                        : `${weakest.name} is noticeably behind the rest of the lines (${Math.round(weakest.avg)} vs. a ${Math.round(overallAvg)} squad average) — the likely pressure point for any opponent.`);
+                }
+            }
+
+            if (points.length === 0) {
+                container.innerHTML = `<p class="text-xs text-gray-500 italic">${isAr ? 'لا توجد نقاط ضعف واضحة حالياً في هذه التشكيلة.' : 'No clear weaknesses stand out in this squad right now.'}</p>`;
+                return;
+            }
+
+            container.innerHTML = points.map(p => `
+                <p class="text-xs text-gray-400 leading-snug flex items-start gap-1.5">
+                    <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
+                    <span>${p}</span>
+                </p>
+            `).join('');
         }
 
         // A real "how will this line feel" read, not a repeat of chips
