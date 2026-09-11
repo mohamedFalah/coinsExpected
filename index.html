@@ -408,6 +408,13 @@
                         </div>
                     </div>
 
+                    <!-- Quality by Line — no title, folded in directly under
+                         Budget as a compact 3-number row (same visual
+                         weight/placement as Budget above it). -->
+                    <div id="group-breakdown" class="grid grid-cols-3 gap-2 text-center border-t border-fc-border pt-3">
+                        <!-- Populated by renderSquadSummary() -->
+                    </div>
+
                     <div id="squad-identity" class="border-t border-fc-border pt-4">
                         <!-- Populated by renderSquadSummary(): a quick,
                              relative read on this squad's dominant trait
@@ -417,14 +424,6 @@
                     <div class="border-t border-fc-border pt-4 space-y-2.5">
                         <span data-i18n="playstylesByLine" class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles by Line</span>
                         <div id="playstyles-by-line" class="space-y-2">
-                            <!-- Populated by renderSquadSummary() -->
-                        </div>
-                    </div>
-
-                    <div class="border-t border-fc-border pt-4 space-y-3">
-                        <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Quality by Line</span>
-                        <div class="border-t border-fc-border/40"></div>
-                        <div id="group-breakdown" class="grid grid-cols-3 gap-2 text-center">
                             <!-- Populated by renderSquadSummary() -->
                         </div>
                     </div>
@@ -2665,8 +2664,8 @@
                 const cell = document.createElement('div');
                 cell.innerHTML = `
                     <div class="text-[11px] text-gray-500 uppercase tracking-wide font-bold">${shortName}</div>
-                    <div class="text-2xl font-black text-white leading-tight mt-1">${avgRtg}</div>
-                    <div class="text-sm font-bold text-gray-400 mt-0.5">${avgMetaText}</div>
+                    <div class="text-lg font-black text-white leading-tight mt-0.5">${avgRtg}</div>
+                    <div class="text-xs font-bold text-gray-400">${avgMetaText}</div>
                 `;
                 breakdownContainer.appendChild(cell);
             });
