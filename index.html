@@ -2633,12 +2633,27 @@
             renderPlaystylesByLine(groups);
         }
 
-        // Aggregates the distinct PlayStyles present across each line
-        // (Attack/Midfield/Defence/GK) so the reader gets a real sense of
-        // "this back line is full of Anticipate/Block" at a glance, instead
-        // of having to open every single player's modal to piece it
-        // together. A trait shows as gold (+) if ANY player in that line
-        // carries the upgraded version, gray otherwise.
+        // A real "how will this line feel" read, not a repeat of chips
+        // already visible on every player card. Weighs each line's actual
+        // PlayStyles into categories (PlayStyle+ counts double — it's the
+        // more impactful version), picks the category this line leans into
+        // hardest, and explains what that concretely means in a match —
+        // not just that the traits exist.
+        function computeLineCategoryWeights(list) {
+            const weights = {};
+            list.forEach(p => {
+                (Array.isArray(p.playstylesPlus) ? p.playstylesPlus : []).forEach(n => {
+                    const c = PLAYSTYLE_CATEGORY[n];
+                    if (c) weights[c] = (weights[c] || 0) + 2;
+                });
+                (Array.isArray(p.playstyles) ? p.playstyles : []).forEach(n => {
+                    const c = PLAYSTYLE_CATEGORY[n];
+                    if (c) weights[c] = (weights[c] || 0) + 1;
+                });
+            });
+            return weights;
+        }
+
         function renderPlaystylesByLine(groups) {
             const container = document.getElementById('playstyles-by-line');
             if (!container) return;
@@ -2649,25 +2664,28 @@
                 const list = groups[groupName];
                 if (list.length === 0) return;
 
-                const traitIsPlus = new Map(); // name -> true if upgraded for anyone in this line
-                list.forEach(p => {
-                    (Array.isArray(p.playstylesPlus) ? p.playstylesPlus : []).forEach(n => traitIsPlus.set(n, true));
-                    (Array.isArray(p.playstyles) ? p.playstyles : []).forEach(n => { if (!traitIsPlus.has(n)) traitIsPlus.set(n, false); });
-                });
+                const weights = computeLineCategoryWeights(list);
+                const sorted = Object.keys(weights).sort((a, b) => weights[b] - weights[a]);
+                const topCategory = sorted[0];
 
                 const row = document.createElement('div');
-                if (traitIsPlus.size === 0) {
+                if (!topCategory) {
                     row.innerHTML = `
-                        <div class="text-[10px] text-gray-500 uppercase tracking-wide">${groupName}</div>
-                        <p class="text-[11px] text-gray-600 italic mt-0.5">${isAr ? 'لا سمات بارزة في هذا الخط' : 'No notable traits in this line'}</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold text-gray-300">${groupName}</span>
+                        </div>
+                        <p class="text-[11px] text-gray-600 italic mt-0.5">${isAr ? 'لا سمات بارزة — أداء هذا الخط يعتمد على الإحصائيات فقط.' : "No standout traits — this line's output is purely stat-driven."}</p>
                     `;
                 } else {
-                    const chips = Array.from(traitIsPlus.entries())
-                        .map(([name, isPlus]) => playstyleChipHtml(name, isPlus, 'text-[10px] px-1.5 py-0.5'))
-                        .join('');
+                    const profile = LINE_CATEGORY_PROFILE[topCategory];
                     row.innerHTML = `
-                        <div class="text-[10px] text-gray-500 uppercase tracking-wide">${groupName}</div>
-                        <div class="flex flex-wrap gap-1 mt-0.5">${chips}</div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-semibold text-gray-300 shrink-0">${groupName}</span>
+                            <span class="text-xs font-bold text-fc-accent flex items-center gap-1.5 text-right">
+                                <i class="fa-solid ${profile.icon} text-[11px]"></i>${isAr ? profile.ar : profile.en}
+                            </span>
+                        </div>
+                        <p class="text-[11px] text-gray-500 mt-0.5 leading-snug">${isAr ? profile.desc_ar : profile.desc_en}</p>
                     `;
                 }
                 container.appendChild(row);
@@ -3614,10 +3632,12 @@
                 : `Only showing the attributes that actually matter for the ${effectivePos} position.`;
 
             // "Why" text: lead with meta vs raw-rating reasoning as before,
-            // then fold in a REAL playstyle-specific clause — naming the
-            // actual traits and what having them in that category means for
-            // how the card plays — instead of a content-free "carries N
-            // traits" line that reads the same for every player.
+            // then fold in a real gameplay explanation of what their
+            // PlayStyles actually DO on the pitch — not a repeat of the
+            // trait names (those are already shown as chips right below
+            // this section), and not a formulaic "X suggests Y" repeated
+            // per category. Pick the ONE category with the most weight
+            // (PlayStyle+ counts double) and explain that specifically.
             function buildPlaystyleClause(plusNames, baseNames) {
                 if (plusNames.length === 0 && baseNames.length === 0) {
                     return currentLanguage === 'ar'
@@ -3625,18 +3645,15 @@
                         : ' No PlayStyle data is available for this card, so the pick was based on meta rating/attributes only.';
                 }
                 const isAr = currentLanguage === 'ar';
-                const named = [
-                    ...plusNames.map(n => (isAr ? `${n}+` : `${n}+`)),
-                    ...baseNames
-                ].join(isAr ? '، ' : ', ');
-                const allNames = [...plusNames, ...baseNames];
-                const categories = [...new Set(allNames.map(n => PLAYSTYLE_CATEGORY[n]).filter(Boolean))];
-                const blurbText = categories.slice(0, 2)
-                    .map(c => isAr ? PLAYSTYLE_CATEGORY_BLURB[c].ar : PLAYSTYLE_CATEGORY_BLURB[c].en)
-                    .join(isAr ? ' و' : ' and ');
+                const weights = {};
+                plusNames.forEach(n => { const c = PLAYSTYLE_CATEGORY[n]; if (c) weights[c] = (weights[c] || 0) + 2; });
+                baseNames.forEach(n => { const c = PLAYSTYLE_CATEGORY[n]; if (c) weights[c] = (weights[c] || 0) + 1; });
+                const topCategory = Object.keys(weights).sort((a, b) => weights[b] - weights[a])[0];
+                if (!topCategory) return '';
+                const profile = LINE_CATEGORY_PROFILE[topCategory];
                 return isAr
-                    ? ` كما يحمل ${named} — ما يجعله ${blurbText}.`
-                    : ` Also carries ${named} — making them ${blurbText}.`;
+                    ? ` هذا ينعكس فعلياً في المباراة: ${profile.desc_ar}`
+                    : ` This actually shows up on the pitch: ${profile.desc_en}`;
             }
             const styleClauseAr = buildPlaystyleClause(psPlus, psBase);
             const styleClauseEn = styleClauseAr;
@@ -4234,23 +4251,49 @@
             'Rush Out': 'Goalkeeper', 'Far Reach': 'Goalkeeper', 'Deflector': 'Goalkeeper'
         };
 
-        // One-sentence payoff per category — what having a trait in that
-        // category actually means for how the card plays, beyond its raw
-        // stat number.
-        const PLAYSTYLE_CATEGORY_BLURB = {
-            Finishing: { en: 'sharper in front of goal than the raw shooting stat alone suggests', ar: 'أكثر خطورة أمام المرمى مما يوحي به رقم التسديد وحده' },
-            Passing: { en: 'more incisive in possession than the raw passing stat alone suggests', ar: 'أكثر تأثيراً في صناعة اللعب مما يوحي به رقم التمرير وحده' },
-            Defending: { en: 'more reliable defensively than the raw defending stat alone suggests', ar: 'أكثر ثباتاً دفاعياً مما يوحي به رقم الدفاع وحده' },
-            'Ball Control': { en: 'more comfortable under pressure on the ball than the raw dribbling stat alone suggests', ar: 'أكثر ثباتاً بالكرة تحت الضغط مما توحي به المراوغة وحدها' },
-            Physical: { en: 'more of a physical handful than the raw physical stat alone suggests', ar: 'أصعب بدنياً على الخصم مما يوحي به الرقم البدني وحده' },
-            Goalkeeper: { en: 'sharper in specific goalkeeping situations than the raw attributes alone suggest', ar: 'أكثر تميزاً في مواقف حراسة محددة مما توحي به الخصائص وحدها' }
+        // One profile per category — a real headline + concrete in-game
+        // explanation of what having traits in that category actually DOES,
+        // shared by the "Why This Pick" clause (single player) and the
+        // Squad Summary PlayStyles-by-line feel summary (a whole line).
+        // Deliberately describes real match behavior ("expect X") rather
+        // than a repeated "raw stat suggests" comparison for every category.
+        const LINE_CATEGORY_PROFILE = {
+            Finishing: {
+                icon: 'fa-bullseye', en: 'Clinical in the final third', ar: 'حاسم في الثلث الأخير',
+                desc_en: 'expect chances converted from tight angles and half-chances beyond what a plain shooting number would predict.',
+                desc_ar: 'يُتوقع تحويل فرص من زوايا ضيقة ونصف فرص أكثر مما توحي به أرقام التسديد وحدها.'
+            },
+            Passing: {
+                icon: 'fa-route', en: 'Progressive in possession', ar: 'تقدمي في الاستحواذ',
+                desc_en: 'expect line-breaking passes and sharper buildup than the raw passing stat alone would produce.',
+                desc_ar: 'يُتوقع تمريرات كاسرة للخطوط وبناء لعب أكثر حدة مما يوحي به رقم التمرير وحده.'
+            },
+            Defending: {
+                icon: 'fa-shield-halved', en: 'Proactive defensively', ar: 'استباقي دفاعياً',
+                desc_en: 'expect passing lanes cut off and tackles timed a step ahead, not just stats reacting after the fact.',
+                desc_ar: 'يُتوقع قطع خطوط التمرير وتوقيت التدخلات بخطوة مسبقة، لا مجرد رد فعل إحصائي.'
+            },
+            'Ball Control': {
+                icon: 'fa-wand-sparkles', en: 'Comfortable under pressure', ar: 'مرتاح تحت الضغط',
+                desc_en: 'expect the ball kept cleanly under pressure and smooth turns away from challenges.',
+                desc_ar: 'يُتوقع الحفاظ على الكرة بثبات تحت الضغط والالتفاف بسلاسة عن المنافسين.'
+            },
+            Physical: {
+                icon: 'fa-dumbbell', en: 'Physically dominant', ar: 'مهيمن بدنياً',
+                desc_en: 'expect duels won consistently and opposing pressure shrugged off with ease.',
+                desc_ar: 'يُتوقع الفوز بالمواجهات البدنية بثبات وتجاوز ضغط الخصم بسهولة.'
+            },
+            Goalkeeper: {
+                icon: 'fa-hand', en: 'Sharp in the details', ar: 'دقيق في التفاصيل',
+                desc_en: 'expect sharper reactions on crosses, 1v1s, and long distribution than the raw attributes alone imply.',
+                desc_ar: 'يُتوقع ردود فعل أدق في العرضيات والمواجهات الفردية والتوزيع الطويل مما توحي به الخصائص وحدها.'
+            }
         };
 
         // Single source of truth for a PlayStyle chip's markup — used by the
-        // player modal, the Meta Analyst panel, and the Squad Summary
-        // by-line breakdown, so all three always render identically.
-        // PlayStyle+ (the upgraded, more impactful version) is gold, base
-        // PlayStyle is gray — matching the game's own color convention.
+        // player modal and the Meta Analyst panel, so both always render
+        // identically. PlayStyle+ (the upgraded, more impactful version) is
+        // gold, base PlayStyle is gray — matching the game's own convention.
         function playstyleChipHtml(name, isPlus, size) {
             const icon = PLAYSTYLE_ICONS[name] || 'fa-star';
             const sizeClass = size || 'text-[11px] px-2 py-1';
