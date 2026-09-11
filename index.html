@@ -348,8 +348,11 @@
                  plain gap. Reverted; the leftover space below the shorter
                  column is an accepted trade-off for now. -->
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                <!-- Left 3 Cols: Football Pitch -->
-                <div class="lg:col-span-3 bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                <!-- Left 3 Cols: Football Pitch + Next Best Upgrade below it
+                     (wrapped together so Next Best Upgrade sits under the
+                     pitch specifically, not spanning under the sidebar too). -->
+                <div class="lg:col-span-3 space-y-6">
+                <div class="bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                     <!-- Pseudo-3D half-pitch background (trapezoid, not a
                          real 3D transform — see .pitch-3d comment). -->
                     <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
@@ -382,6 +385,21 @@
                     <div id="pitch-container" dir="ltr" class="relative z-10 flex flex-col justify-between gap-3 py-6 px-4 min-h-[600px]">
                         <!-- Populated by renderFootballPitch() -->
                     </div>
+                </div>
+
+                <!-- Next Best Upgrade — sits directly under the pitch only
+                     (not spanning under the sidebar), one compact card per
+                     position that has an affordable upgrade available,
+                     minimal wording. -->
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-3">
+                    <div class="flex items-center gap-2 text-fc-accent">
+                        <i class="fa-solid fa-arrow-trend-up"></i>
+                        <h3 data-i18n="nextBestUpgrade" class="font-extrabold text-sm text-white">NEXT BEST UPGRADE</h3>
+                    </div>
+                    <div id="next-upgrade-content" class="text-xs text-gray-300">
+                        <p data-i18n="optimizeFirst" class="italic text-gray-400">Optimize a squad first to calculate the highest-impact player upgrade.</p>
+                    </div>
+                </div>
                 </div>
 
                 <!-- Right 1 Col: Squad Overview -->
@@ -457,20 +475,6 @@
                     <div id="squad-vulnerabilities" class="border-t border-fc-border pt-4 space-y-1.5">
                         <!-- Populated by renderSquadSummary() -->
                     </div>
-                </div>
-            </div>
-
-            <!-- Next Best Upgrade — moved below the full squad (was
-                 cramped into the narrow sidebar as a single suggestion).
-                 Now full-width, one compact card per position that has an
-                 affordable upgrade available, minimal wording. -->
-            <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-3">
-                <div class="flex items-center gap-2 text-fc-accent">
-                    <i class="fa-solid fa-arrow-trend-up"></i>
-                    <h3 data-i18n="nextBestUpgrade" class="font-extrabold text-sm text-white">NEXT BEST UPGRADE</h3>
-                </div>
-                <div id="next-upgrade-content" class="text-xs text-gray-300">
-                    <p data-i18n="optimizeFirst" class="italic text-gray-400">Optimize a squad first to calculate the highest-impact player upgrade.</p>
                 </div>
             </div>
         </div>
