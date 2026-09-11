@@ -130,9 +130,16 @@
 
             <!-- Header Budget Widget, Language Switcher & Config Gear Button -->
             <div class="flex items-center space-x-3 rtl:space-x-reverse">
-                <div class="hidden sm:flex flex-col text-right rtl:text-left">
-                    <span data-i18n="activeBudget" class="text-xs text-gray-400">Active Budget</span>
-                    <span id="header-budget-display" class="text-sm font-bold text-fc-gold">0 Coins</span>
+                <!-- Bounded chip (icon + stacked label/value) instead of
+                     loose floating text — a growing number now only grows
+                     within this chip's own width instead of visually
+                     drifting into the rest of the header. -->
+                <div class="hidden sm:flex items-center gap-2 bg-fc-dark border border-fc-border rounded-xl px-3 py-2">
+                    <i class="fa-solid fa-coins text-fc-gold text-sm shrink-0"></i>
+                    <div class="flex flex-col leading-tight">
+                        <span data-i18n="activeBudget" class="text-[9px] text-gray-500 uppercase tracking-wide">Active Budget</span>
+                        <span id="header-budget-display" class="text-sm font-black text-fc-gold whitespace-nowrap" title="0 Coins">0</span>
+                    </div>
                 </div>
                 <!-- Language Selector -->
                 <select id="language-selector" onchange="changeLanguage(this.value)" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
@@ -196,40 +203,55 @@
                             </div>
                         </div>
 
-                        <!-- Configuration Overview Badge -->
-                        <div class="bg-fc-dark/60 rounded-xl p-4 border border-fc-border/60 flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                                <span data-i18n="cfgPackCost" class="text-xs text-gray-400 block">Pack Cost Config</span>
-                                <span class="text-sm font-bold text-white"><span id="cfg-pack-cost-display">100</span> <span data-i18n="ptsPerPack">FC Points / Pack</span></span>
+                        <!-- Current Configuration — one bordered card with a
+                             clear header and divided columns, instead of a
+                             loose flex-wrap row of label/value pairs that
+                             read as stray settings info. -->
+                        <div class="bg-fc-dark/60 rounded-xl border border-fc-border/60 overflow-hidden">
+                            <div class="px-4 py-2.5 border-b border-fc-border/60 flex items-center justify-between">
+                                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="currentConfig">Current Configuration</span>
+                                <button onclick="openSettingsModal()" class="text-xs font-bold text-fc-accent hover:underline flex items-center gap-1 shrink-0">
+                                    <i class="fa-solid fa-sliders"></i>
+                                    <span data-i18n="editConfig">Edit Config</span>
+                                </button>
                             </div>
-                            <div>
-                                <span data-i18n="cfgQsRange" class="text-xs text-gray-400 block">Quick-Sell Range</span>
-                                <span class="text-sm font-bold text-white"><span id="cfg-min-display">1,200</span> - <span id="cfg-max-display">1,400</span> <span data-i18n="coinsWord">Coins</span></span>
+                            <div class="grid grid-cols-3 divide-x divide-fc-border/60 rtl:divide-x-reverse">
+                                <div class="p-3 text-center">
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wide" data-i18n="cfgPackCost">Pack Cost Config</div>
+                                    <div class="text-sm font-bold text-white mt-1"><span id="cfg-pack-cost-display">100</span> <span data-i18n="ptsShort">Pts</span></div>
+                                </div>
+                                <div class="p-3 text-center">
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wide" data-i18n="cfgQsRange">Quick-Sell Range</div>
+                                    <div class="text-sm font-bold text-white mt-1"><span id="cfg-min-display">1,200</span>-<span id="cfg-max-display">1,400</span></div>
+                                </div>
+                                <div class="p-3 text-center">
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wide" data-i18n="cfgExpReturnShort">Expected/Pack</div>
+                                    <div class="text-sm font-bold text-fc-gold mt-1"><span id="cfg-expected-display">1,300</span></div>
+                                </div>
                             </div>
-                            <div>
-                                <span data-i18n="cfgExpReturn" class="text-xs text-gray-400 block">Expected Return</span>
-                                <span class="text-sm font-bold text-fc-gold"><span id="cfg-expected-display">1,300</span> <span data-i18n="coinsPerPack">Coins / Pack</span></span>
-                            </div>
-                            <button onclick="openSettingsModal()" class="text-xs font-bold text-fc-accent hover:underline flex items-center space-x-1 rtl:space-x-reverse">
-                                <i class="fa-solid fa-sliders"></i>
-                                <span data-i18n="editConfig">Edit Config</span>
-                            </button>
                         </div>
                     </div>
 
                     <!-- Right Column: Results & Transfer Trigger -->
                     <div class="bg-fc-dark rounded-2xl border border-fc-border p-6 flex flex-col justify-between shadow-lg">
-                        <div class="space-y-6">
-                            <div class="flex items-center justify-between border-b border-fc-border pb-4">
-                                <span data-i18n="packsPurchasable" class="text-sm font-bold text-gray-400">Packs Purchasable</span>
-                                <span id="calc-packs-count" class="text-2xl font-black text-white">0</span>
-                            </div>
-                            <div class="flex items-center justify-between border-b border-fc-border pb-4">
-                                <span data-i18n="remainingPts" class="text-sm font-bold text-gray-400">Remaining FC Points</span>
-                                <span id="calc-remaining-pts" class="text-lg font-bold text-gray-300">0</span>
+                        <div class="space-y-5">
+                            <!-- Purchase summary — its own shaded card,
+                                 separated from the coin projections below,
+                                 so the two different kinds of numbers
+                                 (how many packs vs. what you get back)
+                                 don't blur into one long list. -->
+                            <div class="bg-fc-card/40 rounded-xl p-4 grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wide" data-i18n="packsPurchasable">Packs Purchasable</div>
+                                    <div id="calc-packs-count" class="text-2xl font-black text-white mt-1">0</div>
+                                </div>
+                                <div>
+                                    <div class="text-[10px] text-gray-500 uppercase tracking-wide" data-i18n="remainingPts">Remaining FC Points</div>
+                                    <div id="calc-remaining-pts" class="text-2xl font-black text-gray-300 mt-1">0</div>
+                                </div>
                             </div>
 
-                            <div class="space-y-3 pt-2">
+                            <div class="space-y-3">
                                 <span data-i18n="coinReturnProj" class="text-xs font-bold uppercase tracking-wider text-gray-400">Coin Return Projections</span>
                                 <div class="flex items-center justify-between text-sm">
                                     <span data-i18n="minReturn" class="text-gray-400">Minimum Return</span>
@@ -631,11 +653,14 @@
                 calcDesc: "Calculate your exact expected coin returns from purchasing Premium Gold Packs and quick-selling all received items. Modify pack costs or quick-sell bounds anytime via settings.",
                 selectPresetPts: "Select Preset FC Points Package",
                 enterCustomPts: "Or Enter Custom FC Points",
+                currentConfig: "Current Configuration",
                 cfgPackCost: "Pack Cost Config",
+                ptsShort: "Pts",
                 ptsPerPack: "FC Points / Pack",
                 cfgQsRange: "Quick-Sell Range",
                 coinsWord: "Coins",
                 cfgExpReturn: "Expected Return",
+                cfgExpReturnShort: "Expected/Pack",
                 coinsPerPack: "Coins / Pack",
                 editConfig: "Edit Config",
                 packsPurchasable: "Packs Purchasable",
@@ -711,11 +736,14 @@
                 calcDesc: "احسب عائدات الكوينز المتوقعة بدقة من شراء باكجات الجولد المميزة والبيع السريع لجميع العناصر. يمكنك تعديل تكلفة الباكجات أو حدود البيع السريع في أي وقت.",
                 selectPresetPts: "اختر حزمة نقاط FC الجاهزة",
                 enterCustomPts: "أو أدخل نقاط FC مخصصة",
+                currentConfig: "الإعدادات الحالية",
                 cfgPackCost: "تلفة الباكج",
+                ptsShort: "نقطة",
                 ptsPerPack: "نقطة FC / باكج",
                 cfgQsRange: "نطاق البيع السريع",
                 coinsWord: "كوينز",
                 cfgExpReturn: "العائد المتوقع",
+                cfgExpReturnShort: "المتوقع/باكج",
                 coinsPerPack: "كوينز / باكج",
                 editConfig: "تعديل الإعدادات",
                 packsPurchasable: "الباكجات القابلة للشراء",
@@ -1019,6 +1047,16 @@
             }
         };
 
+        // Keeps the header budget chip a stable width regardless of how
+        // large the number gets (a raw "3,924,700 Coins" string was the
+        // messy case the header redesign below is specifically for) — the
+        // exact full value is still available via the title tooltip.
+        function formatCompactCoins(value) {
+            if (value >= 1000000) return (value / 1000000).toFixed(2) + 'M';
+            if (value >= 100000) return Math.round(value / 1000) + 'K';
+            return value.toLocaleString();
+        }
+
         window.calculatePackReturns = function() {
             const packsCount = Math.floor(currentSelectedPoints / appConfig.packCost);
             const remainingPts = currentSelectedPoints % (packsCount > 0 ? (currentSelectedPoints / packsCount) : appConfig.packCost);
@@ -1052,7 +1090,10 @@
             if (cfgMin) cfgMin.innerText = appConfig.qsMin.toLocaleString();
             if (cfgMax) cfgMax.innerText = appConfig.qsMax.toLocaleString();
             if (cfgExp) cfgExp.innerText = appConfig.qsExpected.toLocaleString();
-            if (headerBudget) headerBudget.innerText = expectedCoins.toLocaleString() + ' ' + coinLabel;
+            if (headerBudget) {
+                headerBudget.innerText = formatCompactCoins(expectedCoins);
+                headerBudget.title = expectedCoins.toLocaleString() + ' ' + coinLabel;
+            }
         };
 
         window.transferCoinsToSquadBuilder = function() {
