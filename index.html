@@ -2426,7 +2426,16 @@
             const usedRowKeys = Object.keys(rows).map(Number).sort((a, b) => a - b);
             const totalRows = usedRowKeys.length;
 
-            container.className = "relative z-10 flex flex-col justify-between gap-3 py-6 px-4 min-h-[600px]";
+            // Fixed-width cards inside percentage-based padding is what
+            // broke on phones: a 4-5 card defensive/midfield line at the
+            // desktop-tuned inset simply doesn't fit a ~380-420px screen —
+            // the last card(s) get pushed off-screen with no visual cue
+            // that anything's missing. Use a much tighter inset budget on
+            // narrow viewports, sized for how little room there actually is.
+            const isNarrowViewport = window.innerWidth < 640;
+            container.className = isNarrowViewport
+                ? "relative z-10 flex flex-col justify-between gap-2 py-4 px-1 min-h-[520px] overflow-x-auto"
+                : "relative z-10 flex flex-col justify-between gap-3 py-6 px-4 min-h-[600px]";
 
             usedRowKeys.forEach((rowNum, i) => {
                 const rowItems = rows[rowNum];
@@ -2442,10 +2451,15 @@
                 // the same generous "stay off the narrow trapezoid edge"
                 // padding a lone striker gets, or it overflows the grass on
                 // both sides (fixed-width cards don't shrink). Scale the
-                // inset down as the row gets more crowded.
+                // inset down as the row gets more crowded, and use a much
+                // smaller cap/buffer on narrow viewports where there's
+                // barely enough width for the cards themselves, let alone
+                // generous padding.
                 const itemCount = rowItems.length;
                 const densityFactor = Math.min(1, 3 / itemCount);
-                const rowInset = Math.min(24, Math.max(2, (grassInset + 5) * densityFactor));
+                const rowInset = isNarrowViewport
+                    ? Math.min(8, Math.max(1, (grassInset + 2) * densityFactor * 0.4))
+                    : Math.min(24, Math.max(2, (grassInset + 5) * densityFactor));
 
                 const rowDiv = document.createElement('div');
                 // justify-evenly (not a fixed pixel gap) so the whitespace
@@ -2469,7 +2483,7 @@
                     // color) so the role reads as one connected unit with
                     // the card instead of a faint line of text easy to miss.
                     const wrapper = document.createElement('div');
-                    wrapper.className = `w-28 sm:w-32 cursor-pointer player-card-glow transition-all relative group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
+                    wrapper.className = `w-20 sm:w-28 lg:w-32 shrink-0 cursor-pointer player-card-glow transition-all relative group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
 
                     if (player) {
                         const lockTitle = isLocked
@@ -2492,10 +2506,10 @@
                             return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
                         }).join('');
                         wrapper.innerHTML = `
-                            <div class="bg-fc-card/95 group-hover:bg-fc-cardHover border border-b-0 ${borderClasses} rounded-t-xl p-2.5 text-center flex flex-col items-center relative transition-all">
+                            <div class="bg-fc-card/95 group-hover:bg-fc-cardHover border border-b-0 ${borderClasses} rounded-t-xl p-1.5 sm:p-2.5 text-center flex flex-col items-center relative transition-all">
                                 <div class="absolute top-1.5 left-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
                                 <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
-                                <img src="${player.photo}" alt="${player.name}" class="w-12 h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
+                                <img src="${player.photo}" alt="${player.name}" class="w-9 h-9 sm:w-12 sm:h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                                 <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
                                 <div class="flex items-center justify-center gap-0.5 mt-1" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
                                 <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
@@ -2693,9 +2707,9 @@
 
             container.innerHTML = `
                 ${pill(isAr ? 'التشكيلة' : 'Formation', squadState.formation)}
-                <div class="w-px h-4 bg-fc-border shrink-0"></div>
+                <div class="hidden sm:block w-px h-4 bg-fc-border shrink-0"></div>
                 ${pill(isAr ? 'أسلوب البناء' : 'Build-Up', tactics.buildUpLabel)}
-                <div class="w-px h-4 bg-fc-border shrink-0"></div>
+                <div class="hidden sm:block w-px h-4 bg-fc-border shrink-0"></div>
                 ${pill(isAr ? 'الدفاع' : 'Defense', `${tactics.approachLabel} · ${tactics.lineHeight}`)}
                 <p class="text-[11px] text-gray-500 leading-snug basis-full mt-0.5">${tactics.buildUpWhy} ${tactics.approachWhy}</p>
             `;
@@ -5082,6 +5096,19 @@
             if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-not-allowed'); }
         };
 
+
+        // Re-render the pitch on resize/orientation change — the layout
+        // branches on window.innerWidth at render time (see
+        // isNarrowViewport above) to fit fixed-width cards into whatever
+        // screen width is actually available, so it needs to recompute
+        // when that width changes, not just on the next squad edit.
+        let resizeRenderTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeRenderTimer);
+            resizeRenderTimer = setTimeout(() => {
+                if (squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0) renderFootballPitch();
+            }, 200);
+        });
 
         window.addEventListener('DOMContentLoaded', () => {
             window.renderPresetPoints();
