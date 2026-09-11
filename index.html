@@ -421,9 +421,10 @@
                         </div>
                     </div>
 
-                    <div class="border-t border-fc-border pt-4 space-y-2">
+                    <div class="border-t border-fc-border pt-4 space-y-3">
                         <span data-i18n="posGroupQuality" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Quality by Line</span>
-                        <div id="group-breakdown" class="space-y-1">
+                        <div class="border-t border-fc-border/40"></div>
+                        <div id="group-breakdown" class="grid grid-cols-3 gap-2 text-center">
                             <!-- Populated by renderSquadSummary() -->
                         </div>
                     </div>
@@ -2646,26 +2647,28 @@
             const breakdownContainer = document.getElementById('group-breakdown');
             if (!breakdownContainer) return;
             breakdownContainer.innerHTML = '';
-            Object.keys(groups).forEach(groupName => {
-                const list = groups[groupName];
-                if (list.length === 0) return;
+            // Outfield lines only — Attack/Midfield/Defence, no Goalkeeper
+            // and no player-count clutter, matching the compact
+            // big-number-over-small-number layout requested.
+            const lineOrder = currentLanguage === 'ar'
+                ? [['الهجوم', 'هجوم'], ['الوسط', 'وسط'], ['الدفاع', 'دفاع']]
+                : [['Attack', 'ATT'], ['Midfield', 'MID'], ['Defence', 'DEF']];
+            lineOrder.forEach(([fullName, shortName]) => {
+                const list = groups[fullName];
+                if (!list || list.length === 0) return;
                 const avgRtg = Math.round(list.reduce((acc, curr) => acc + curr.rating, 0) / list.length);
                 const metaVals = list.filter(p => typeof p.meta === 'number' && !isNaN(p.meta));
                 const avgMetaText = metaVals.length > 0
-                    ? ` · MR ${(metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)}`
-                    : '';
+                    ? (metaVals.reduce((acc, curr) => acc + curr.meta, 0) / metaVals.length).toFixed(1)
+                    : '--';
 
-                // Minimized to one plain line per group (label left, stats
-                // right, no boxed cell) — same info, far less vertical
-                // space. "whitespace-nowrap" on the value keeps it from
-                // ever wrapping into and colliding with the label.
-                const row = document.createElement('div');
-                row.className = "flex items-center justify-between text-xs gap-2";
-                row.innerHTML = `
-                    <span class="text-gray-400 shrink-0">${groupName}</span>
-                    <span class="font-bold text-white whitespace-nowrap">${avgRtg} OVR · ${list.length}p${avgMetaText}</span>
+                const cell = document.createElement('div');
+                cell.innerHTML = `
+                    <div class="text-[11px] text-gray-500 uppercase tracking-wide font-bold">${shortName}</div>
+                    <div class="text-2xl font-black text-white leading-tight mt-1">${avgRtg}</div>
+                    <div class="text-sm font-bold text-gray-400 mt-0.5">${avgMetaText}</div>
                 `;
-                breakdownContainer.appendChild(row);
+                breakdownContainer.appendChild(cell);
             });
 
             renderPlaystylesByLine(groups);
@@ -2787,14 +2790,15 @@
                         const ovrTag = ovrDelta > 0
                             ? `<span class="text-[10px] font-black text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded shrink-0">+${ovrDelta} OVR</span>`
                             : `<span class="text-[10px] font-black text-fc-accent bg-fc-accent/10 px-1.5 py-0.5 rounded shrink-0">+${r.metaDiff.toFixed(1)} MR</span>`;
-                        // A colored LEFT ACCENT STRIPE (not a full colored
-                        // outline, which read as a harsh box) signals how
-                        // big a spend this is relative to what's actually
-                        // left in the budget — an easy win vs. a real
-                        // stretch, at a glance, without doing math.
+                        // A colored LEFT ACCENT STRIPE signals how big a
+                        // spend this is — but only as a positive signal
+                        // (green = easy win, gold = moderate). No red/alarm
+                        // color for the expensive tier; it just falls back
+                        // to a neutral accent instead of looking like a
+                        // warning.
                         const spendRatio = remainingBudget > 0 ? r.costDiff / remainingBudget : 1;
-                        const tierAccent = spendRatio > 0.5 ? 'border-l-red-500/70' : spendRatio > 0.15 ? 'border-l-fc-gold/70' : 'border-l-green-500/70';
-                        const costColor = spendRatio > 0.5 ? 'text-red-400' : spendRatio > 0.15 ? 'text-fc-gold' : 'text-green-400';
+                        const tierAccent = spendRatio > 0.5 ? 'border-l-fc-border' : spendRatio > 0.15 ? 'border-l-fc-gold/70' : 'border-l-green-500/70';
+                        const costColor = spendRatio > 0.5 ? 'text-gray-300' : spendRatio > 0.15 ? 'text-fc-gold' : 'text-green-400';
                         // The single cheapest upgrade (already sorted first)
                         // gets a "Best Value" flag — one clear standout pick
                         // instead of every card competing for attention
