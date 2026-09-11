@@ -314,7 +314,7 @@
                         <option value="">— No Manager —</option>
                     </select>
 
-                    <div class="flex items-center gap-2.5 ml-auto">
+                    <div class="flex items-center flex-wrap gap-2.5 ml-auto">
                         <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-xs shadow-lg shadow-fc-accent/25 transition-all flex items-center gap-1.5 whitespace-nowrap">
                             <i class="fa-solid fa-wand-magic-sparkles"></i>
                             <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
@@ -329,12 +329,18 @@
                     </div>
                 </div>
 
-                <div class="px-4 py-3 border-t border-fc-border flex flex-wrap items-center gap-x-6 gap-y-1.5">
-                    <div class="flex items-center gap-2 text-gray-400 shrink-0">
+                <!-- Header (label) is its own full-width line above the
+                     content, not a flex-wrap item competing for space next
+                     to the tactic pills — at in-between screen widths that
+                     side-by-side arrangement let the label wrap away from
+                     the content it was supposed to be heading, ending up
+                     stranded next to the "why" paragraph instead. -->
+                <div class="px-4 py-3 border-t border-fc-border space-y-2">
+                    <div class="flex items-center gap-2 text-gray-400">
                         <i class="fa-solid fa-clipboard-list text-xs"></i>
                         <span class="font-bold text-xs uppercase tracking-wide" data-i18n="suggestedTactics">Suggested Tactics</span>
                     </div>
-                    <div id="tactics-content" class="flex flex-wrap items-center gap-x-6 gap-y-1.5 flex-1 min-w-0">
+                    <div id="tactics-content" class="flex flex-wrap items-center gap-x-6 gap-y-1.5">
                         <!-- Populated by renderTacticsSummary() -->
                     </div>
                 </div>
