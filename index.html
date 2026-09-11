@@ -290,7 +290,7 @@
                 <div class="px-4 py-3 flex flex-wrap items-center gap-2.5">
                     <div class="flex items-center gap-1.5 bg-fc-dark border border-fc-border rounded-xl pl-3 pr-1.5 py-1.5" title="Squad Budget (Coins)">
                         <i class="fa-solid fa-coins text-fc-gold text-xs shrink-0"></i>
-                        <input type="number" id="squad-budget-input" value="200000" step="5000" min="5000" max="50000000"
+                        <input type="number" id="squad-budget-input" value="0" step="5000" min="0" max="50000000"
                             class="bg-transparent w-24 sm:w-28 text-sm font-black text-fc-gold focus:outline-none text-left"
                             onchange="updateBudgetFromInput(this.value)">
                         <button onclick="syncBudgetFromCalculator()" class="shrink-0 text-[11px] bg-fc-card hover:bg-fc-cardHover border border-fc-border px-2 py-1.5 rounded-lg text-fc-accent font-bold whitespace-nowrap" title="Use Expected Calculator Coins" data-i18n="syncCalc">
@@ -609,6 +609,34 @@
         </div>
     </div>
 
+    <!-- Add Player Modal (Manual Build Mode) -->
+    <div id="add-player-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeAddPlayerModal()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full max-h-[85vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <button onclick="closeAddPlayerModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-4">
+                <div>
+                    <span id="add-player-slot-label" class="text-xs font-bold text-fc-accent uppercase tracking-wider">Position</span>
+                    <h3 class="text-lg font-extrabold text-white mt-1" data-i18n="addPlayerTitle">Add a Player</h3>
+                </div>
+
+                <div id="add-player-suggestions"></div>
+
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="searchAnyPlayer">Search Any Player</span>
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none"></i>
+                        <input type="text" id="add-player-search-input" placeholder="Type a player name..."
+                            oninput="window.searchAddPlayerCandidates(this.value)"
+                            class="w-full bg-fc-dark border border-fc-border rounded-xl pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 text-sm text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div id="add-player-results" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings / Config Modal -->
     <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
         <div class="bg-fc-card border border-fc-border rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
@@ -713,6 +741,8 @@
                 posGroupQuality: "Quality by Line",
                 playstylesByLine: "PlayStyles by Line",
                 suggestedTactics: "Suggested Tactics",
+                addPlayerTitle: "Add a Player",
+                searchAnyPlayer: "Search Any Player",
                 nextBestUpgrade: "NEXT BEST UPGRADE",
                 optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
                 dataArch: "DATA ARCHITECTURE",
@@ -796,6 +826,8 @@
                 posGroupQuality: "الجودة حسب الخط",
                 playstylesByLine: "أنماط اللعب حسب الخط",
                 suggestedTactics: "التكتيك المقترح",
+                addPlayerTitle: "إضافة لاعب",
+                searchAnyPlayer: "ابحث عن أي لاعب",
                 nextBestUpgrade: "الترقية التالية المقترحة",
                 optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
                 dataArch: "هندسة البيانات",
@@ -889,7 +921,7 @@
         let expectedCoinsResult = 28600;
 
         let squadState = {
-            budget: 200000,
+            budget: 0,
             formation: '4-3-3',
             selectedXI: {},
             alternatives: {},
@@ -1256,7 +1288,13 @@
             let currentSpent = Object.values(newXI).filter(Boolean).reduce((sum, p) => sum + p.price, 0);
             const newlyPicked = [];
 
-            order.forEach((slotIdx, i) => {
+            // In Manual Build Mode (budget = 0) we don't auto-fill the
+            // gaps with an optimizer pick — any slot that couldn't be
+            // matched to a retained player just stays empty for the user
+            // to fill themselves via the empty-slot search, same as a
+            // fresh Manual Build squad.
+            if (squadState.budget > 0) {
+                order.forEach((slotIdx, i) => {
                 const slot = newSlots[slotIdx];
                 const candidates = candidateMap[slotIdx];
                 const remaining = order.slice(i + 1);
@@ -1292,15 +1330,21 @@
                     currentSpent += chosen.price;
                     newlyPicked.push({ slot, player: chosen });
                 }
-            });
+                });
+            }
 
             squadState.selectedXI = newXI;
             squadState.totalCost = currentSpent;
 
             // Same chemistry-fix + leftover-budget-reinvestment passes the
-            // main build runs, so an adjusted squad ends up just as sound.
-            improveSquadChemistry();
-            spendLeftoverBudget();
+            // main build runs, so an adjusted squad ends up just as sound —
+            // skipped in Manual Build Mode since there's no budget to
+            // reinvest and no automatic swapping should happen behind the
+            // user's back.
+            if (squadState.budget > 0) {
+                improveSquadChemistry();
+                spendLeftoverBudget();
+            }
 
             let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
             Object.values(squadState.selectedXI).forEach(p => {
@@ -1313,6 +1357,7 @@
             squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
             squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
             squadState.chemistry = calculateSquadChemistry();
+            checkManualSquadCompletion();
 
             squadState.explanationLog = [];
             const isAr = currentLanguage === 'ar';
@@ -1823,7 +1868,48 @@
             return { assigned, usedSlot, usedPlayerIds };
         }
 
+        // Manual Build Mode: budget is 0, so there's no optimizer to run.
+        // Starts the pitch empty (locked players excepted) and lets the
+        // user fill each slot themselves via the empty-slot search (see
+        // openAddPlayerModal below). Every other feature — chemistry,
+        // tactics, Next Best Upgrade, the player modal's alternatives —
+        // already reads off squadState.selectedXI rather than assuming
+        // runSquadOptimizer built it, so they pick up naturally as slots
+        // fill in, and checkManualSquadCompletion() below hands control
+        // back to normal budget-aware behavior once the XI is complete.
+        function initializeManualBuildSquad() {
+            const slots = formationSlots[squadState.formation];
+            const isAr = currentLanguage === 'ar';
+
+            const lockedPlacement = placeLockedPlayers(slots);
+            squadState.selectedXI = { ...lockedPlacement.assigned };
+            squadState.alternatives = {};
+            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + p.price, 0);
+            squadState.history = new Set();
+            squadState.exhausted = false;
+
+            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) { totalRating += p.rating; count++; if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; } }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
+
+            squadState.explanationLog = [isAr
+                ? 'الميزانية صفر — تم تفعيل وضع البناء اليدوي. اضغط على أي مكان فارغ في الملعب لاختيار لاعب بنفسك.'
+                : "Budget is zero — Manual Build mode is on. Tap any empty slot on the pitch to pick a player yourself."];
+
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+        }
+
         window.runSquadOptimizer = function() {
+            if (squadState.budget <= 0) {
+                initializeManualBuildSquad();
+                return;
+            }
             const slots = formationSlots[squadState.formation];
             const budget = squadState.budget;
             
@@ -2126,6 +2212,18 @@
         }
 
         window.regenerateSquad = function() {
+            // Manual Build Mode (budget = 0): nothing to randomize — every
+            // pick was deliberate. Regenerating here would just silently
+            // throw away hand-picked players, so this is a no-op with a
+            // log line explaining why, instead of quietly overwriting the
+            // squad the user built themselves.
+            if (squadState.budget <= 0) {
+                squadState.explanationLog = [currentLanguage === 'ar'
+                    ? 'التشكيلة يدوية (ميزانية صفر) — لا يوجد ما يُعاد توليده. عيّن ميزانية لاستخدام إعادة التوليد.'
+                    : 'This squad is manually built (budget = 0) — there\'s nothing to regenerate. Set a budget to use Regenerate Squad.'];
+                openExplanationModal();
+                return;
+            }
             if (squadState.exhausted) return;
             if (!fc27Database || fc27Database.length === 0) return;
 
@@ -2278,6 +2376,146 @@
         // list) and get an immediate, honest verdict against whoever
         // currently holds this exact slot — real position match, real meta
         // delta, real price delta — not a generic "good/bad" guess.
+        // ===================================================================
+        // MANUAL BUILD MODE — Add Player modal (budget = 0)
+        // ===================================================================
+        let addPlayerSlotIdx = null;
+
+        window.openAddPlayerModal = function(slotIdx) {
+            addPlayerSlotIdx = slotIdx;
+            const modal = document.getElementById('add-player-modal');
+            const slots = formationSlots[squadState.formation];
+            const slot = slots[slotIdx];
+            if (!modal || !slot) return;
+
+            document.getElementById('add-player-slot-label').innerText = slot.label;
+            const searchInput = document.getElementById('add-player-search-input');
+            if (searchInput) searchInput.value = '';
+            document.getElementById('add-player-results').innerHTML = '';
+
+            renderAddPlayerSuggestions(slotIdx);
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closeAddPlayerModal = function() {
+            const modal = document.getElementById('add-player-modal');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+            addPlayerSlotIdx = null;
+        };
+
+        // Shared card markup for both the suggestions list and search
+        // results — one "Add" action either way.
+        function addPlayerCardHtml(player, chemPoints) {
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+            const metaTag = typeof player.meta === 'number' ? ` · MR ${player.meta.toFixed(1)}` : '';
+            const chemNote = typeof chemPoints === 'number'
+                ? `<span class="text-[10px] font-bold ${chemPoints >= 2 ? 'text-green-400' : chemPoints === 1 ? 'text-fc-gold' : 'text-gray-500'}">${chemPoints}/3 ${isAr ? 'كيمياء' : 'chem'}</span>`
+                : '';
+            return `
+                <button onclick="window.addPlayerToSlot('${player.id}')" class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border rounded-xl p-2.5 text-left rtl:text-right transition-all">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <img src="${player.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                        <div class="min-w-0">
+                            <div class="text-xs font-bold text-white truncate">${player.name}</div>
+                            <div class="text-[10px] text-gray-400">${player.rating} OVR${metaTag} · ${player.price.toLocaleString()}${coinLabel} · ${player.pos}</div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                        ${chemNote}
+                        <span class="text-[10px] font-bold text-fc-dark bg-fc-accent px-2 py-1 rounded-lg">${isAr ? 'إضافة' : 'Add'}</span>
+                    </div>
+                </button>
+            `;
+        }
+
+        // Only shown once at least one player already exists elsewhere in
+        // the squad — the first pick has nothing to link chemistry with, so
+        // there's nothing meaningful to suggest yet. Ranked by real
+        // resulting chemistry at this exact slot first, then meta/rating —
+        // not by price, since Manual Build Mode has no budget ceiling.
+        function renderAddPlayerSuggestions(slotIdx) {
+            const container = document.getElementById('add-player-suggestions');
+            if (!container) return;
+            const isAr = currentLanguage === 'ar';
+            const slot = formationSlots[squadState.formation][slotIdx];
+            const existingCount = Object.values(squadState.selectedXI).filter(Boolean).length;
+            if (existingCount === 0) { container.innerHTML = ''; return; }
+
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+            const eligible = fc27Database.filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(p.id));
+            const scored = eligible.map(p => ({ player: p, chem: getResultingChemPoints(slotIdx, p) }));
+            scored.sort((a, b) => (b.chem - a.chem) || (getMetaValue(b.player) - getMetaValue(a.player)));
+            const top = scored.slice(0, 3);
+
+            container.innerHTML = top.length > 0 ? `
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'مقترحات تناسب تشكيلتك' : 'Suggested for Your Squad'}</span>
+                    <div class="space-y-2">${top.map(s => addPlayerCardHtml(s.player, s.chem)).join('')}</div>
+                </div>
+            ` : '';
+        }
+
+        window.searchAddPlayerCandidates = function(query) {
+            const resultsContainer = document.getElementById('add-player-results');
+            if (!resultsContainer || addPlayerSlotIdx === null) return;
+            const q = query.trim().toLowerCase();
+            if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
+
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+            const matches = fc27Database.filter(p => p.name.toLowerCase().includes(q) && !usedIds.has(p.id)).slice(0, 8);
+            if (matches.length === 0) {
+                resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
+                return;
+            }
+            resultsContainer.innerHTML = matches.map(p => addPlayerCardHtml(p, getResultingChemPoints(addPlayerSlotIdx, p))).join('');
+        };
+
+        // Once every slot in the formation has a player, Manual Build Mode
+        // is done — backfill squadState.budget to what was actually spent
+        // (plus headroom) so every budget-aware feature that was silently
+        // disabled at budget=0 (Next Best Upgrade, the player modal's
+        // Alternatives list) turns on normally from here, instead of the
+        // squad staying permanently capped at a literal 0 coin budget.
+        function checkManualSquadCompletion() {
+            const slots = formationSlots[squadState.formation];
+            const filled = slots.every((slot, idx) => !!squadState.selectedXI[idx]);
+            if (filled && squadState.budget <= 0) {
+                squadState.budget = squadState.totalCost + 50000;
+                const budgetInput = document.getElementById('squad-budget-input');
+                if (budgetInput) budgetInput.value = squadState.budget;
+                computeSlotAlternatives();
+                squadState.history = new Set([computeSquadSignature(squadState.selectedXI)]);
+                squadState.exhausted = false;
+            }
+        }
+
+        window.addPlayerToSlot = function(playerId) {
+            if (addPlayerSlotIdx === null) return;
+            const player = fc27Database.find(p => p.id === playerId);
+            if (!player) return;
+
+            squadState.selectedXI[addPlayerSlotIdx] = player;
+            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + (p ? p.price : 0), 0);
+
+            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) { totalRating += p.rating; count++; if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; } }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
+
+            checkManualSquadCompletion();
+
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+            window.closeAddPlayerModal();
+        };
+
         window.searchReplacementPlayers = function(query) {
             const resultsContainer = document.getElementById('player-search-results');
             if (!resultsContainer) return;
@@ -2537,13 +2775,15 @@
                         `;
                         wrapper.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
                     } else {
-                        const emptyTxt = currentLanguage === 'ar' ? 'مكان فارغ' : 'Empty Slot';
+                        const emptyTxt = currentLanguage === 'ar' ? 'اضغط لإضافة لاعب' : 'Tap to Add Player';
                         wrapper.innerHTML = `
-                            <div class="bg-fc-card/95 border ${borderClasses} rounded-xl p-2.5 text-center">
-                                <div class="text-xs text-gray-500 font-bold py-6">${emptyTxt}</div>
-                                <div class="text-[10px] text-gray-400">${item.slot.label}</div>
+                            <div class="bg-fc-card/95 hover:bg-fc-cardHover border border-dashed ${borderClasses} rounded-xl p-2.5 text-center transition-all">
+                                <i class="fa-solid fa-circle-plus text-gray-500 text-lg mt-3"></i>
+                                <div class="text-[10px] text-gray-500 font-bold mt-2">${emptyTxt}</div>
+                                <div class="text-[10px] text-gray-400 mt-1">${item.slot.label}</div>
                             </div>
                         `;
+                        wrapper.onclick = () => window.openAddPlayerModal(item.idx);
                     }
                     rowDiv.appendChild(wrapper);
                 });
