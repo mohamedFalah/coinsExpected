@@ -3848,12 +3848,14 @@
                 : `Only showing the attributes that actually matter for the ${effectivePos} position.`;
 
             // "Why" text: lead with meta vs raw-rating reasoning as before,
-            // then fold in a real gameplay explanation of what their
-            // PlayStyles actually DO on the pitch — not a repeat of the
-            // trait names (those are already shown as chips right below
-            // this section), and not a formulaic "X suggests Y" repeated
-            // per category. Pick the ONE category with the most weight
-            // (PlayStyle+ counts double) and explain that specifically.
+            // then fold in a per-TRAIT gameplay explanation — not a
+            // category-level one. Category text ("Defending traits make
+            // them more reliable") reads identically for a player with
+            // Anticipate and a player with Slide Tackle, even though those
+            // are completely different skills — which is exactly why it
+            // felt repetitive across similar players. Naming the specific
+            // trait's real effect gives two close players genuinely
+            // different, comparable text.
             function buildPlaystyleClause(plusNames, baseNames) {
                 if (plusNames.length === 0 && baseNames.length === 0) {
                     return currentLanguage === 'ar'
@@ -3861,15 +3863,17 @@
                         : ' No PlayStyle data is available for this card, so the pick was based on meta rating/attributes only.';
                 }
                 const isAr = currentLanguage === 'ar';
-                const weights = {};
-                plusNames.forEach(n => { const c = PLAYSTYLE_CATEGORY[n]; if (c) weights[c] = (weights[c] || 0) + 2; });
-                baseNames.forEach(n => { const c = PLAYSTYLE_CATEGORY[n]; if (c) weights[c] = (weights[c] || 0) + 1; });
-                const topCategory = Object.keys(weights).sort((a, b) => weights[b] - weights[a])[0];
-                if (!topCategory) return '';
-                const profile = LINE_CATEGORY_PROFILE[topCategory];
-                return isAr
-                    ? ` هذا ينعكس فعلياً في المباراة: ${profile.desc_ar}`
-                    : ` This actually shows up on the pitch: ${profile.desc_en}`;
+                // PlayStyle+ (the upgraded, more impactful version) is
+                // featured first — it's the more meaningful signal for this
+                // specific player. Only fall back to base traits if there's
+                // no + version to draw from.
+                const featured = (plusNames.length > 0 ? plusNames : baseNames).slice(0, 2);
+                const sentences = featured
+                    .map(name => PLAYSTYLE_EXPLAIN[name] ? (isAr ? PLAYSTYLE_EXPLAIN[name].ar : PLAYSTYLE_EXPLAIN[name].en) : null)
+                    .filter(Boolean);
+                if (sentences.length === 0) return '';
+                const lead = isAr ? 'ما ينعكس فعلياً على أرض الملعب: ' : 'What actually shows up on the pitch: ';
+                return ' ' + lead + sentences.join(isAr ? '؛ كما ' : '; also, ') + '.';
             }
             const styleClauseAr = buildPlaystyleClause(psPlus, psBase);
             const styleClauseEn = styleClauseAr;
@@ -4488,6 +4492,51 @@
             'Bruiser': 'Physical', 'Enforcer': 'Physical',
             'Far Throw': 'Goalkeeper', 'Footwork': 'Goalkeeper', 'Cross Claimer': 'Goalkeeper',
             'Rush Out': 'Goalkeeper', 'Far Reach': 'Goalkeeper', 'Deflector': 'Goalkeeper'
+        };
+
+        // One SPECIFIC gameplay explanation per individual trait — not a
+        // category bucket. This is what "Why This Pick" draws from: two
+        // players who both have a "Defending" trait but one has Anticipate
+        // and the other has Slide Tackle are doing genuinely different
+        // things on the pitch, and the text should say so, not collapse
+        // them into the same "more reliable defensively" sentence.
+        const PLAYSTYLE_EXPLAIN = {
+            'Finesse Shot': { en: 'curls shots into the far corner from outside the box rather than blasting straight at the keeper', ar: 'يقوّس تسديداته نحو الزاوية البعيدة من خارج المنطقة بدلاً من التسديد المباشر نحو الحارس' },
+            'Chip Shot': { en: 'lifts the ball calmly over an advancing keeper instead of shooting through them', ar: 'يرفع الكرة بهدوء فوق الحارس المتقدم بدلاً من التسديد مباشرة نحوه' },
+            'Power Shot': { en: 'unleashes flat, driven strikes with real pace behind them, especially from distance', ar: 'يطلق تسديدات مسطحة وقوية من مسافات بعيدة' },
+            'Dead Ball': { en: 'is genuinely dangerous from direct free kicks and corners', ar: 'خطير فعلياً في الركلات الحرة المباشرة والركنيات' },
+            'Precision Header': { en: 'directs headers with real accuracy rather than just aiming at goal', ar: 'يوجّه ضرباته الرأسية بدقة حقيقية بدلاً من مجرد التصويب نحو المرمى' },
+            'Acrobatic': { en: 'finishes well from awkward body positions — volleys, bicycle kicks, off-balance strikes', ar: 'ينهي الهجمات جيداً من أوضاع جسدية صعبة — الطلقات الهوائية والمقصات وضربات عدم التوازن' },
+            'Low Driven Shot': { en: 'keeps shots flat and skidding along the ground, hard for keepers to react to', ar: 'يبقي تسديداته منخفضة ومنزلقة على الأرض، يصعب على الحراس التعامل معها' },
+            'Gamechanger': { en: "keeps their sharpness and impact up as the match wears on, instead of fading late", ar: 'يحافظ على حدّته وتأثيره مع تقدم المباراة بدلاً من التراجع في وقت متأخر' },
+            'Incisive Pass': { en: "threads the ball through tight defensive gaps a normal passer wouldn't spot", ar: 'يمرر الكرة عبر ثغرات دفاعية ضيقة لا يلاحظها المُمرر العادي' },
+            'Pinged Pass': { en: 'switches play with fast, driven long passes rather than slow lofted ones', ar: 'ينقل اللعب بتمريرات طويلة وسريعة بدلاً من التمريرات العالية البطيئة' },
+            'Long Ball Pass': { en: 'reliably finds teammates with raking cross-field or long diagonal passes', ar: 'يصل بشكل موثوق لزملائه بتمريرات قطرية طويلة أو عابرة للملعب' },
+            'Tiki Taka': { en: 'keeps possession moving with quick, tight one-touch combinations', ar: 'يحافظ على حركة الاستحواذ عبر تمريرات سريعة من لمسة واحدة' },
+            'Whipped Pass': { en: 'delivers crosses and passes with heavy curl and pace, harder to defend', ar: 'يقدّم العرضيات والتمريرات بانحناء وسرعة قوية، يصعب الدفاع عنها' },
+            'Inventive': { en: 'attempts the unexpected pass — no-look, backheel, disguised — that breaks defensive shape', ar: 'يجرّب التمريرة غير المتوقعة — دون نظر أو بكعب القدم أو مموّهة — لكسر التنظيم الدفاعي' },
+            'Jockey': { en: 'stays balanced while backpedaling, delaying attackers instead of diving into a tackle', ar: 'يحافظ على توازنه أثناء التراجع، ويؤخر المهاجمين بدلاً من الاندفاع في التدخل' },
+            'Block': { en: 'gets a body or foot in the way of shots and crosses more reliably than raw stats suggest', ar: 'يعترض التسديدات والعرضيات بجسده أو قدمه بموثوقية أعلى مما توحي به الأرقام' },
+            'Intercept': { en: 'reads passing lanes and steps in front of the ball before it arrives', ar: 'يقرأ خطوط التمرير ويعترض الكرة قبل وصولها' },
+            'Anticipate': { en: 'senses where danger is developing a beat before it actually happens', ar: 'يستشعر مكان الخطر قبل حدوثه بلحظة' },
+            'Slide Tackle': { en: 'wins the ball cleanly in sliding challenges rather than just committing to them', ar: 'يكسب الكرة بنظافة في التدخلات المنزلقة بدلاً من مجرد الاندفاع فيها' },
+            'Aerial Fortress': { en: 'dominates in the air defensively, winning headers under real physical pressure', ar: 'يهيمن جوياً دفاعياً، ويفوز بالكرات الرأسية تحت ضغط بدني حقيقي' },
+            'Technical': { en: 'controls difficult passes cleanly even under tight marking', ar: 'يتحكم بالتمريرات الصعبة بنظافة حتى تحت مراقبة لصيقة' },
+            'Rapid': { en: 'keeps full speed while dribbling instead of slowing down to control the ball', ar: 'يحافظ على سرعته القصوى أثناء المراوغة بدلاً من التباطؤ للتحكم بالكرة' },
+            'First Touch': { en: 'settles difficult balls in one motion instead of needing an extra touch', ar: 'يستقبل الكرات الصعبة بلمسة واحدة دون الحاجة للمسة إضافية' },
+            'Trickster': { en: 'pulls off skill moves with real success instead of just attempting them', ar: 'ينفّذ حركات المهارة بنجاح حقيقي بدلاً من مجرد المحاولة' },
+            'Press Proven': { en: 'stays composed and keeps the ball even when pressed immediately after receiving it', ar: 'يحافظ على هدوئه والاحتفاظ بالكرة حتى عند الضغط عليه فور استلامها' },
+            'Quick Step': { en: 'explodes into a sprint from a standing start faster than raw pace alone suggests', ar: 'ينطلق بسرعة من وضع ثابت أسرع مما توحي به السرعة الخام وحدها' },
+            'Relentless': { en: 'keeps up work rate and sharpness deep into matches without fatigue setting in', ar: 'يحافظ على معدل عمله وحدّته حتى أواخر المباراة دون أن يتأثر بالإرهاق' },
+            'Long Throw': { en: 'can reach the box directly from long throw-ins, like an extra set piece', ar: 'يصل مباشرة إلى منطقة الجزاء من رميات التماس الطويلة، كأنها ركلة ثابتة إضافية' },
+            'Bruiser': { en: 'wins physical duels through sheer strength rather than pure aggression', ar: 'يفوز بالمواجهات البدنية بقوته الجسدية الخالصة لا بالعدوانية فقط' },
+            'Enforcer': { en: 'shields the ball and holds off challengers using body strength', ar: 'يحمي الكرة ويصدّ المنافسين مستخدماً قوته الجسدية' },
+            'Far Throw': { en: 'launches accurate throws far up the pitch to start quick counters', ar: 'يطلق رميات دقيقة بعيدة المدى لبدء هجمات مرتدة سريعة' },
+            'Footwork': { en: 'handles the ball at their feet more like an outfield sweeper than a traditional keeper', ar: 'يتعامل مع الكرة بقدميه أشبه بلاعب كاسح من لاعبي الميدان لا حارس تقليدي' },
+            'Cross Claimer': { en: 'comes and claims crosses confidently instead of staying rooted on the line', ar: 'يخرج ويمسك العرضيات بثقة بدلاً من البقاء ثابتاً على خط المرمى' },
+            'Rush Out': { en: 'reads through-balls early and rushes out to clear danger before it arrives', ar: 'يقرأ الكرات المخترقة مبكراً ويندفع لإبعاد الخطر قبل وصوله' },
+            'Far Reach': { en: 'gets across the goal to reach shots that look out of range', ar: 'يتحرك عبر المرمى للوصول إلى تسديدات تبدو خارج مداه' },
+            'Deflector': { en: 'gets a strong hand to shots that look destined for goal, parrying them away', ar: 'يصل بيد قوية إلى تسديدات تبدو متجهة للمرمى ليبعدها' }
         };
 
         // One profile per category — a real headline + concrete in-game
