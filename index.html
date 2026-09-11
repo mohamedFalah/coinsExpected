@@ -357,7 +357,15 @@
                 </div>
 
                 <!-- Right 1 Col: Squad Overview -->
-                <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
+                <!-- self-stretch: the pitch card is much taller than this
+                     card's own content, and with the grid's items-start
+                     (needed to keep the pitch's own sizing correct — see
+                     .pitch-3d), a shorter sidebar card just left a big
+                     borderless void of bare page background beneath it.
+                     Stretching this card to match keeps its content
+                     top-aligned but gives it a real bottom edge instead of
+                     dissolving into empty space. -->
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-4 self-stretch flex flex-col">
                     <div class="space-y-3 border-b border-fc-border pb-4">
                         <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
                         <!-- Equal-width stat cells (same pattern as Budget and
@@ -2761,7 +2769,7 @@
                     }
                 });
                 if (best) {
-                    rows.push({ slotLabel: slot.label, current: currentPlayer, upgrade: best.upgrade, costDiff: best.costDiff });
+                    rows.push({ slotLabel: slot.label, current: currentPlayer, upgrade: best.upgrade, costDiff: best.costDiff, metaDiff: best.metaDiff });
                 }
             });
 
@@ -2778,12 +2786,36 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
                     ${rows.map(r => {
                         const upgradeMeta = typeof r.upgrade.meta === 'number' ? ` · MR ${r.upgrade.meta.toFixed(1)}` : '';
+                        const ovrDelta = r.upgrade.rating - r.current.rating;
+                        const ovrTag = ovrDelta > 0
+                            ? `<span class="text-[10px] font-black text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded shrink-0">+${ovrDelta} OVR</span>`
+                            : `<span class="text-[10px] font-black text-fc-accent bg-fc-accent/10 px-1.5 py-0.5 rounded shrink-0">+${r.metaDiff.toFixed(1)} MR</span>`;
+                        // Border/accent color signals how big a spend this
+                        // is relative to what's actually left in the
+                        // budget — a glance tells you which upgrades are
+                        // easy wins vs. a real stretch, without doing math.
+                        const spendRatio = remainingBudget > 0 ? r.costDiff / remainingBudget : 1;
+                        const tierBorder = spendRatio > 0.5 ? 'border-red-500/40' : spendRatio > 0.15 ? 'border-fc-gold/40' : 'border-green-500/40';
+                        const costColor = spendRatio > 0.5 ? 'text-red-400' : spendRatio > 0.15 ? 'text-fc-gold' : 'text-green-400';
                         return `
-                            <div class="bg-fc-dark/40 rounded-lg p-2.5">
-                                <div class="text-[10px] text-gray-500 uppercase tracking-wide truncate">${r.slotLabel}</div>
-                                <div class="text-[11px] text-gray-500 mt-1 truncate">${r.current.name} (${r.current.rating})</div>
-                                <div class="text-xs text-white font-bold mt-0.5 truncate">→ ${r.upgrade.name} (${r.upgrade.rating}${upgradeMeta})</div>
-                                <div class="text-xs font-black text-fc-gold mt-1">+${r.costDiff.toLocaleString()}${coinLabel}</div>
+                            <div class="bg-fc-dark/40 border ${tierBorder} rounded-lg p-2.5">
+                                <div class="flex items-center justify-between gap-1.5 mb-2">
+                                    <span class="text-[10px] text-gray-500 uppercase tracking-wide truncate">${r.slotLabel}</span>
+                                    ${ovrTag}
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <img src="${r.current.photo}" alt="" class="w-8 h-8 rounded-full object-cover border border-fc-border bg-fc-dark shrink-0" onerror="this.src='https://placehold.co/64x64/1b4d3e/ffffff?text=?'">
+                                    <i class="fa-solid fa-arrow-right text-gray-600 text-[10px] shrink-0"></i>
+                                    <img src="${r.upgrade.photo}" alt="" class="w-8 h-8 rounded-full object-cover border border-fc-accent/50 bg-fc-dark shrink-0" onerror="this.src='https://placehold.co/64x64/1b4d3e/ffffff?text=?'">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-[10px] text-gray-500 truncate">${r.current.name} (${r.current.rating})</div>
+                                        <div class="text-xs text-white font-bold truncate">${r.upgrade.name} (${r.upgrade.rating}${upgradeMeta})</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-1 mt-2 pt-2 border-t border-fc-border/40">
+                                    <i class="fa-solid fa-coins ${costColor} text-[10px]"></i>
+                                    <span class="text-sm font-black ${costColor}">+${r.costDiff.toLocaleString()}${coinLabel}</span>
+                                </div>
                             </div>
                         `;
                     }).join('')}
