@@ -398,6 +398,13 @@
                         </div>
                     </div>
 
+                    <div class="border-t border-fc-border pt-4 space-y-2.5">
+                        <span data-i18n="playstylesByLine" class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles by Line</span>
+                        <div id="playstyles-by-line" class="space-y-2">
+                            <!-- Populated by renderSquadSummary() -->
+                        </div>
+                    </div>
+
                     <div class="border-t border-fc-border pt-4 space-y-2">
                         <span data-i18n="nextBestUpgrade" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Next Best Upgrade</span>
                         <div id="next-upgrade-content" class="text-xs text-gray-300 space-y-2">
@@ -621,6 +628,7 @@
                 totalSquadCost: "Total Squad Cost",
                 remainingCoins: "Remaining Coins",
                 posGroupQuality: "Quality by Line",
+                playstylesByLine: "PlayStyles by Line",
                 suggestedTactics: "Suggested Tactics",
                 nextBestUpgrade: "NEXT BEST UPGRADE",
                 optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
@@ -697,6 +705,7 @@
                 totalSquadCost: "إجمالي تكلفة التشكيلة",
                 remainingCoins: "الكوينز المتبقية",
                 posGroupQuality: "الجودة حسب الخط",
+                playstylesByLine: "أنماط اللعب حسب الخط",
                 suggestedTactics: "التكتيك المقترح",
                 nextBestUpgrade: "الترقية التالية المقترحة",
                 optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
@@ -2620,6 +2629,49 @@
                 `;
                 breakdownContainer.appendChild(cell);
             });
+
+            renderPlaystylesByLine(groups);
+        }
+
+        // Aggregates the distinct PlayStyles present across each line
+        // (Attack/Midfield/Defence/GK) so the reader gets a real sense of
+        // "this back line is full of Anticipate/Block" at a glance, instead
+        // of having to open every single player's modal to piece it
+        // together. A trait shows as gold (+) if ANY player in that line
+        // carries the upgraded version, gray otherwise.
+        function renderPlaystylesByLine(groups) {
+            const container = document.getElementById('playstyles-by-line');
+            if (!container) return;
+            const isAr = currentLanguage === 'ar';
+            container.innerHTML = '';
+
+            Object.keys(groups).forEach(groupName => {
+                const list = groups[groupName];
+                if (list.length === 0) return;
+
+                const traitIsPlus = new Map(); // name -> true if upgraded for anyone in this line
+                list.forEach(p => {
+                    (Array.isArray(p.playstylesPlus) ? p.playstylesPlus : []).forEach(n => traitIsPlus.set(n, true));
+                    (Array.isArray(p.playstyles) ? p.playstyles : []).forEach(n => { if (!traitIsPlus.has(n)) traitIsPlus.set(n, false); });
+                });
+
+                const row = document.createElement('div');
+                if (traitIsPlus.size === 0) {
+                    row.innerHTML = `
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wide">${groupName}</div>
+                        <p class="text-[11px] text-gray-600 italic mt-0.5">${isAr ? 'لا سمات بارزة في هذا الخط' : 'No notable traits in this line'}</p>
+                    `;
+                } else {
+                    const chips = Array.from(traitIsPlus.entries())
+                        .map(([name, isPlus]) => playstyleChipHtml(name, isPlus, 'text-[10px] px-1.5 py-0.5'))
+                        .join('');
+                    row.innerHTML = `
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wide">${groupName}</div>
+                        <div class="flex flex-wrap gap-1 mt-0.5">${chips}</div>
+                    `;
+                }
+                container.appendChild(row);
+            });
         }
 
         function calculateNextBestUpgrade() {
@@ -3424,8 +3476,8 @@
 
             const playstyleBlock = hasPsTop ? `
                 <div class="flex flex-wrap gap-1.5">
-                    ${psPlusTop.map(s => `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">⚡ ${s}</span>`).join('')}
-                    ${psBaseTop.map(s => `<span class="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-fc-accent/10 text-fc-accent border border-fc-accent/30">${s}</span>`).join('')}
+                    ${psPlusTop.map(s => playstyleChipHtml(s, true, 'text-[10px] px-2 py-0.5')).join('')}
+                    ${psBaseTop.map(s => playstyleChipHtml(s, false, 'text-[10px] px-2 py-0.5')).join('')}
                 </div>
             ` : `<p class="text-[11px] text-gray-500 italic">${isAr ? 'لا تتوفر بيانات PlayStyles لهذه البطاقة.' : 'No PlayStyle data available for this card.'}</p>`;
 
@@ -3562,15 +3614,32 @@
                 : `Only showing the attributes that actually matter for the ${effectivePos} position.`;
 
             // "Why" text: lead with meta vs raw-rating reasoning as before,
-            // then fold in a playstyle-specific clause only when the card
-            // actually has playstyle data — most base gold cards don't, and
-            // we say so rather than pretending otherwise.
-            const styleClauseAr = hasPlaystyles
-                ? ` كما يمتلك هذا اللاعب ${psPlus.length > 0 ? `<span class="text-purple-300 font-semibold">${psPlus.length} PlayStyle+</span>` : ''}${psPlus.length > 0 && psBase.length > 0 ? ' و' : ''}${psBase.length > 0 ? `<span class="text-fc-accent font-semibold">${psBase.length} PlayStyle</span>` : ''} تعزز أداءه الفعلي في هذا المركز تحديداً.`
-                : ` لا تتوفر بيانات أنماط لعب (PlayStyles) لهذه البطاقة، فاعتمد الاختيار على تقييم الميتا/الخصائص فقط.`;
-            const styleClauseEn = hasPlaystyles
-                ? ` This card also carries ${psPlus.length > 0 ? `<span class="text-purple-300 font-semibold">${psPlus.length} PlayStyle+</span>` : ''}${psPlus.length > 0 && psBase.length > 0 ? ' and ' : ''}${psBase.length > 0 ? `<span class="text-fc-accent font-semibold">${psBase.length} PlayStyle</span>` : ''} trait${(psPlus.length + psBase.length) > 1 ? 's' : ''} that specifically boost real in-game performance for this role.`
-                : ` No PlayStyle data is available for this card, so the pick was based on meta rating/attributes only.`;
+            // then fold in a REAL playstyle-specific clause — naming the
+            // actual traits and what having them in that category means for
+            // how the card plays — instead of a content-free "carries N
+            // traits" line that reads the same for every player.
+            function buildPlaystyleClause(plusNames, baseNames) {
+                if (plusNames.length === 0 && baseNames.length === 0) {
+                    return currentLanguage === 'ar'
+                        ? ' لا تتوفر بيانات أنماط لعب (PlayStyles) لهذه البطاقة، فاعتمد الاختيار على تقييم الميتا/الخصائص فقط.'
+                        : ' No PlayStyle data is available for this card, so the pick was based on meta rating/attributes only.';
+                }
+                const isAr = currentLanguage === 'ar';
+                const named = [
+                    ...plusNames.map(n => (isAr ? `${n}+` : `${n}+`)),
+                    ...baseNames
+                ].join(isAr ? '، ' : ', ');
+                const allNames = [...plusNames, ...baseNames];
+                const categories = [...new Set(allNames.map(n => PLAYSTYLE_CATEGORY[n]).filter(Boolean))];
+                const blurbText = categories.slice(0, 2)
+                    .map(c => isAr ? PLAYSTYLE_CATEGORY_BLURB[c].ar : PLAYSTYLE_CATEGORY_BLURB[c].en)
+                    .join(isAr ? ' و' : ' and ');
+                return isAr
+                    ? ` كما يحمل ${named} — ما يجعله ${blurbText}.`
+                    : ` Also carries ${named} — making them ${blurbText}.`;
+            }
+            const styleClauseAr = buildPlaystyleClause(psPlus, psBase);
+            const styleClauseEn = styleClauseAr;
 
             // "Why This Pick" — a real per-player evaluation instead of a
             // fixed template. Built from three actual signals: how far
@@ -3674,8 +3743,8 @@
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles</span>
                     <div class="flex flex-wrap gap-1.5 bg-fc-dark/60 border border-fc-border/60 rounded-xl p-3">
-                        ${psPlus.map(s => `<span class="px-2 py-1 rounded-lg text-[11px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">⚡ ${s}</span>`).join('')}
-                        ${psBase.map(s => `<span class="px-2 py-1 rounded-lg text-[11px] font-bold bg-fc-accent/10 text-fc-accent border border-fc-accent/30">${s}</span>`).join('')}
+                        ${psPlus.map(s => playstyleChipHtml(s, true)).join('')}
+                        ${psBase.map(s => playstyleChipHtml(s, false)).join('')}
                     </div>
                 </div>
             ` : '';
@@ -4127,6 +4196,69 @@
             30: 'Far Throw', 31: 'Footwork', 32: 'Cross Claimer', 33: 'Rush Out',
             34: 'Far Reach', 35: 'Deflector'
         };
+
+        // One small FontAwesome icon per PlayStyle, keyed by name (not id —
+        // names are what every other part of the app already carries
+        // around). Grouped by the same 6 categories as the id table above.
+        const PLAYSTYLE_ICONS = {
+            'Finesse Shot': 'fa-bullseye', 'Chip Shot': 'fa-arrow-up-long', 'Power Shot': 'fa-bolt',
+            'Dead Ball': 'fa-crosshairs', 'Precision Header': 'fa-circle-dot', 'Acrobatic': 'fa-person-falling',
+            'Low Driven Shot': 'fa-angles-right', 'Gamechanger': 'fa-star',
+            'Incisive Pass': 'fa-route', 'Pinged Pass': 'fa-satellite-dish', 'Long Ball Pass': 'fa-paper-plane',
+            'Tiki Taka': 'fa-arrows-rotate', 'Whipped Pass': 'fa-wind', 'Inventive': 'fa-lightbulb',
+            'Jockey': 'fa-person-walking-arrow-loop-left', 'Block': 'fa-shield', 'Intercept': 'fa-hand',
+            'Anticipate': 'fa-eye', 'Slide Tackle': 'fa-shoe-prints', 'Aerial Fortress': 'fa-tower-observation',
+            'Technical': 'fa-gears', 'Rapid': 'fa-gauge-high', 'First Touch': 'fa-hand-sparkles',
+            'Trickster': 'fa-wand-sparkles', 'Press Proven': 'fa-fire',
+            'Quick Step': 'fa-person-running', 'Relentless': 'fa-battery-full', 'Long Throw': 'fa-hand-fist',
+            'Bruiser': 'fa-dumbbell', 'Enforcer': 'fa-shield-halved',
+            'Far Throw': 'fa-paper-plane', 'Footwork': 'fa-shoe-prints', 'Cross Claimer': 'fa-hand-back-fist',
+            'Rush Out': 'fa-person-running', 'Far Reach': 'fa-hand', 'Deflector': 'fa-shield'
+        };
+
+        // Which of the 6 categories each PlayStyle belongs to — used to give
+        // "Why This Pick" a real, specific claim (e.g. "sharper in front of
+        // goal") instead of a generic "carries N traits" line.
+        const PLAYSTYLE_CATEGORY = {
+            'Finesse Shot': 'Finishing', 'Chip Shot': 'Finishing', 'Power Shot': 'Finishing', 'Dead Ball': 'Finishing',
+            'Precision Header': 'Finishing', 'Acrobatic': 'Finishing', 'Low Driven Shot': 'Finishing', 'Gamechanger': 'Finishing',
+            'Incisive Pass': 'Passing', 'Pinged Pass': 'Passing', 'Long Ball Pass': 'Passing',
+            'Tiki Taka': 'Passing', 'Whipped Pass': 'Passing', 'Inventive': 'Passing',
+            'Jockey': 'Defending', 'Block': 'Defending', 'Intercept': 'Defending',
+            'Anticipate': 'Defending', 'Slide Tackle': 'Defending', 'Aerial Fortress': 'Defending',
+            'Technical': 'Ball Control', 'Rapid': 'Ball Control', 'First Touch': 'Ball Control',
+            'Trickster': 'Ball Control', 'Press Proven': 'Ball Control',
+            'Quick Step': 'Physical', 'Relentless': 'Physical', 'Long Throw': 'Physical',
+            'Bruiser': 'Physical', 'Enforcer': 'Physical',
+            'Far Throw': 'Goalkeeper', 'Footwork': 'Goalkeeper', 'Cross Claimer': 'Goalkeeper',
+            'Rush Out': 'Goalkeeper', 'Far Reach': 'Goalkeeper', 'Deflector': 'Goalkeeper'
+        };
+
+        // One-sentence payoff per category — what having a trait in that
+        // category actually means for how the card plays, beyond its raw
+        // stat number.
+        const PLAYSTYLE_CATEGORY_BLURB = {
+            Finishing: { en: 'sharper in front of goal than the raw shooting stat alone suggests', ar: 'أكثر خطورة أمام المرمى مما يوحي به رقم التسديد وحده' },
+            Passing: { en: 'more incisive in possession than the raw passing stat alone suggests', ar: 'أكثر تأثيراً في صناعة اللعب مما يوحي به رقم التمرير وحده' },
+            Defending: { en: 'more reliable defensively than the raw defending stat alone suggests', ar: 'أكثر ثباتاً دفاعياً مما يوحي به رقم الدفاع وحده' },
+            'Ball Control': { en: 'more comfortable under pressure on the ball than the raw dribbling stat alone suggests', ar: 'أكثر ثباتاً بالكرة تحت الضغط مما توحي به المراوغة وحدها' },
+            Physical: { en: 'more of a physical handful than the raw physical stat alone suggests', ar: 'أصعب بدنياً على الخصم مما يوحي به الرقم البدني وحده' },
+            Goalkeeper: { en: 'sharper in specific goalkeeping situations than the raw attributes alone suggest', ar: 'أكثر تميزاً في مواقف حراسة محددة مما توحي به الخصائص وحدها' }
+        };
+
+        // Single source of truth for a PlayStyle chip's markup — used by the
+        // player modal, the Meta Analyst panel, and the Squad Summary
+        // by-line breakdown, so all three always render identically.
+        // PlayStyle+ (the upgraded, more impactful version) is gold, base
+        // PlayStyle is gray — matching the game's own color convention.
+        function playstyleChipHtml(name, isPlus, size) {
+            const icon = PLAYSTYLE_ICONS[name] || 'fa-star';
+            const sizeClass = size || 'text-[11px] px-2 py-1';
+            const colorClass = isPlus
+                ? 'bg-fc-gold/10 text-fc-gold border-fc-gold/30'
+                : 'bg-gray-500/10 text-gray-300 border-gray-500/30';
+            return `<span class="inline-flex items-center gap-1 rounded-lg font-bold border ${sizeClass} ${colorClass}"><i class="fa-solid ${icon}"></i>${name}${isPlus ? '+' : ''}</span>`;
+        }
 
         // Turns one raw playstyle entry (shape varies: plain string, {name},
         // or a bare numeric id if EasySBC hasn't attached a label yet) into a
