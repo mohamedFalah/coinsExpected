@@ -309,9 +309,14 @@
                         <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
                     </select>
 
-                    <select id="manager-select" onchange="setSquadManager(this.value)" title="Manager (optional, +1 chem match)"
-                        class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[170px]">
-                        <option value="">— No Manager —</option>
+                    <select id="manager-nation-select" onchange="setSquadManagerField('nation', this.value)" title="Manager Nationality (optional, +1 chem match) — a manager has BOTH a nation and a league at once, set independently of this field"
+                        class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[150px]">
+                        <option value="">— No Manager Nation —</option>
+                    </select>
+
+                    <select id="manager-league-select" onchange="setSquadManagerField('league', this.value)" title="Manager League (optional, +1 chem match) — a manager has BOTH a nation and a league at once, set independently of this field"
+                        class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[150px]">
+                        <option value="">— No Manager League —</option>
                     </select>
 
                     <div class="flex items-center flex-wrap gap-2.5 ml-auto">
@@ -928,9 +933,13 @@
             totalCost: 0,
             avgRating: 0,
             // Manager gives +1 chemistry to any in-position starter sharing
-            // their exact Nation or League. null = no manager selected.
-            // { nationId, leagueId } — either can be null if only one is set.
-            manager: null,
+            // EITHER the manager's Nation or their League — a real manager
+            // has both at once (e.g. a Spanish manager coaching in the
+            // Premier League), so nationId and leagueId are independent
+            // fields that can both be set simultaneously, both null (no
+            // manager), or just one set. Always an object, never null, so
+            // every read site can access .nationId/.leagueId directly.
+            manager: { nationId: null, leagueId: null },
             explanationLog: [],
             // Regeneration tracking: every unique squad (by player-id set)
             // already generated for the current formation+budget, plus
@@ -1749,46 +1758,59 @@
             return { nations, leagues };
         }
 
+        // Two independent dropdowns — Nation and League — because a real
+        // manager holds both at once (e.g. a Spanish manager coaching in
+        // the Premier League gives Spanish players AND Premier League
+        // players the +1, at the same time, not one or the other). Each
+        // select only ever writes to its own field of squadState.manager,
+        // so choosing a league never clears an already-chosen nation and
+        // vice versa.
         function populateManagerDropdown() {
-            const select = document.getElementById('manager-select');
-            if (!select) return;
+            const nationSelect = document.getElementById('manager-nation-select');
+            const leagueSelect = document.getElementById('manager-league-select');
+            if (!nationSelect || !leagueSelect) return;
             const isAr = currentLanguage === 'ar';
             const opts = buildDynamicManagerSuggestions();
             const nationLabel = isAr ? 'دولة' : 'Nation';
             const leagueLabel = isAr ? 'دوري' : 'League';
-            const noManagerLabel = isAr ? '— بدون مدرب —' : '— No Manager —';
+            const noNationLabel = isAr ? '— بدون دولة المدرب —' : '— No Manager Nation —';
+            const noLeagueLabel = isAr ? '— بدون دوري المدرب —' : '— No Manager League —';
+            const nothingLabel = isAr ? 'لا يوجد ما يحسّنه المدرب هنا' : 'Nothing for a manager to improve here';
             const playersWord = isAr ? 'لاعبين' : 'players';
             const playerWord = isAr ? 'لاعب' : 'player';
             const impactText = (n) => `+1 ${isAr ? `لـ ${n} ${n === 1 ? playerWord : playersWord}` : `to ${n} ${n === 1 ? playerWord : playersWord}`}`;
 
-            const currentValue = squadState.manager
-                ? (squadState.manager.nationId != null ? `nation:${squadState.manager.nationId}` : `league:${squadState.manager.leagueId}`)
-                : '';
+            const mgr = squadState.manager;
+            const currentNationValue = mgr.nationId != null ? String(mgr.nationId) : '';
+            const currentLeagueValue = mgr.leagueId != null ? String(mgr.leagueId) : '';
 
-            if (opts.nations.length === 0 && opts.leagues.length === 0) {
-                select.innerHTML = `<option value="">${noManagerLabel}</option><option value="" disabled>${isAr ? 'لا يوجد ما يحسّنه المدرب — كل اللاعبين إما بأقصى كيمياء أو خارج مركزهم' : 'Nothing for a manager to improve — everyone is already maxed or out of position'}</option>`;
-                return;
-            }
-
-            select.innerHTML = `
-                <option value="">${noManagerLabel}</option>
-                ${opts.nations.length > 0 ? `<optgroup label="${nationLabel} (${isAr ? 'حسب التأثير' : 'by impact'})">
-                    ${opts.nations.map(n => `<option value="nation:${n.id}">${nationLabel} (${n.example}) — ${impactText(n.count)}</option>`).join('')}
-                </optgroup>` : ''}
-                ${opts.leagues.length > 0 ? `<optgroup label="${leagueLabel} (${isAr ? 'حسب التأثير' : 'by impact'})">
-                    ${opts.leagues.map(l => `<option value="league:${l.id}">${leagueLabel} (${l.example}) — ${impactText(l.count)}</option>`).join('')}
-                </optgroup>` : ''}
+            nationSelect.innerHTML = `
+                <option value="">${noNationLabel}</option>
+                ${opts.nations.length > 0
+                    ? opts.nations.map(n => `<option value="${n.id}">${nationLabel} (${n.example}) — ${impactText(n.count)}</option>`).join('')
+                    : `<option value="" disabled>${nothingLabel}</option>`}
             `;
-            select.value = currentValue;
+            nationSelect.value = currentNationValue;
+
+            leagueSelect.innerHTML = `
+                <option value="">${noLeagueLabel}</option>
+                ${opts.leagues.length > 0
+                    ? opts.leagues.map(l => `<option value="${l.id}">${leagueLabel} (${l.example}) — ${impactText(l.count)}</option>`).join('')
+                    : `<option value="" disabled>${nothingLabel}</option>`}
+            `;
+            leagueSelect.value = currentLeagueValue;
         }
 
-        window.setSquadManager = function(value) {
-            if (!value) {
-                squadState.manager = null;
+        // field: 'nation' or 'league' — updates only that half of the
+        // manager, leaving whatever's set on the other half untouched, so
+        // a manager's nation and league accumulate independently instead
+        // of overwriting each other.
+        window.setSquadManagerField = function(field, value) {
+            const id = value ? parseInt(value) : null;
+            if (field === 'nation') {
+                squadState.manager.nationId = id;
             } else {
-                const [type, idStr] = value.split(':');
-                const id = parseInt(idStr);
-                squadState.manager = type === 'nation' ? { nationId: id, leagueId: null } : { nationId: null, leagueId: id };
+                squadState.manager.leagueId = id;
             }
             // Manager changes chemistry math immediately — recompute and
             // re-render without a full re-optimize (budget/meta picks don't
@@ -4670,8 +4692,21 @@
                         ? { club: 'النادي', nation: 'الدولة/المنطقة', league: 'الدوري' }
                         : { club: 'Club', nation: 'Nation/Region', league: 'League' };
                     const chemColor = chemInfo.points >= 3 ? 'text-green-400' : chemInfo.points === 2 ? 'text-fc-gold' : 'text-red-400';
-                    const managerNote = squadState.manager && ((squadState.manager.nationId != null && squadState.manager.nationId === player.nationId) || (squadState.manager.leagueId != null && squadState.manager.leagueId === player.leagueId))
-                        ? `<p class="text-[11px] text-fc-accent">${currentLanguage === 'ar' ? '+1 إضافية من المدرب (مطابقة الدولة/الدوري).' : '+1 extra from the Manager (matching Nation/League).'}</p>`
+                    // A manager has a Nation AND a League at once, so check
+                    // each independently rather than treating them as
+                    // mutually exclusive — a player can match one, the
+                    // other, or (if their own nation and league happen to
+                    // equal the manager's) both, though the flat +1 doesn't
+                    // stack per the chemistry spec above.
+                    const mgrNationMatch = squadState.manager.nationId != null && squadState.manager.nationId === player.nationId;
+                    const mgrLeagueMatch = squadState.manager.leagueId != null && squadState.manager.leagueId === player.leagueId;
+                    const managerMatchLabel = mgrNationMatch && mgrLeagueMatch
+                        ? (currentLanguage === 'ar' ? 'مطابقة الدولة والدوري معاً' : 'matching both Nation and League')
+                        : mgrNationMatch
+                            ? (currentLanguage === 'ar' ? 'مطابقة دولة المدرب' : "matching the Manager's Nation")
+                            : (currentLanguage === 'ar' ? 'مطابقة دوري المدرب' : "matching the Manager's League");
+                    const managerNote = (mgrNationMatch || mgrLeagueMatch)
+                        ? `<p class="text-[11px] text-fc-accent">${currentLanguage === 'ar' ? `+1 إضافية من المدرب (${managerMatchLabel}).` : `+1 extra from the Manager (${managerMatchLabel}).`}</p>`
                         : '';
                     chemistrySection = `
                         <div class="bg-fc-dark/80 border border-fc-border rounded-xl p-3 space-y-2">
