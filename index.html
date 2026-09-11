@@ -360,10 +360,25 @@
                 <div class="bg-fc-card border border-fc-border rounded-2xl p-6 shadow-xl space-y-4">
                     <div class="space-y-3 border-b border-fc-border pb-4">
                         <h3 data-i18n="squadSummary" class="font-extrabold text-base text-white">Squad Summary</h3>
-                        <div class="flex items-center gap-4">
-                            <span id="squad-chem-badge" class="text-sm font-black text-green-400">CHEM --/33</span>
-                            <span id="squad-meta-badge" class="hidden text-sm font-black text-purple-300">MR --</span>
-                            <span id="squad-overall-badge" class="text-sm font-black text-fc-accent">OVR --</span>
+                        <!-- Equal-width stat cells (same pattern as Budget and
+                             Quality by Line below) instead of left-aligned
+                             badges that leave dead space to their right on a
+                             wide sidebar. squad-stats-row toggles between
+                             grid-cols-2/3 depending on whether Meta data is
+                             available for this squad. -->
+                        <div id="squad-stats-row" class="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                                <div class="text-[9px] text-gray-500 uppercase tracking-wide">Chem</div>
+                                <div id="squad-chem-badge" class="text-sm font-black text-green-400">--/33</div>
+                            </div>
+                            <div id="squad-meta-cell" class="hidden">
+                                <div class="text-[9px] text-gray-500 uppercase tracking-wide">Meta</div>
+                                <div id="squad-meta-badge" class="text-sm font-black text-purple-300">--</div>
+                            </div>
+                            <div>
+                                <div class="text-[9px] text-gray-500 uppercase tracking-wide">OVR</div>
+                                <div id="squad-overall-badge" class="text-sm font-black text-fc-accent">--</div>
+                            </div>
                         </div>
                     </div>
 
@@ -2568,22 +2583,26 @@
             renderTacticsSummary();
             const badge = document.getElementById('squad-overall-badge');
             const metaBadge = document.getElementById('squad-meta-badge');
+            const metaCell = document.getElementById('squad-meta-cell');
+            const statsRow = document.getElementById('squad-stats-row');
             const chemBadge = document.getElementById('squad-chem-badge');
             const sumBudget = document.getElementById('summary-budget');
             const sumCost = document.getElementById('summary-cost');
 
-            if (badge) badge.innerText = `OVR ${squadState.avgRating}`;
-            if (metaBadge) {
+            if (badge) badge.innerText = squadState.avgRating;
+            if (metaBadge && metaCell && statsRow) {
                 if (typeof squadState.avgMeta === 'number') {
-                    metaBadge.innerText = `MR ${squadState.avgMeta.toFixed(1)}`;
-                    metaBadge.classList.remove('hidden');
+                    metaBadge.innerText = squadState.avgMeta.toFixed(1);
+                    metaCell.classList.remove('hidden');
+                    statsRow.className = 'grid grid-cols-3 gap-2 text-center';
                 } else {
-                    metaBadge.classList.add('hidden');
+                    metaCell.classList.add('hidden');
+                    statsRow.className = 'grid grid-cols-2 gap-2 text-center';
                 }
             }
             if (chemBadge && squadState.chemistry) {
                 const total = squadState.chemistry.total;
-                chemBadge.innerText = `CHEM ${total}/33`;
+                chemBadge.innerText = `${total}/33`;
                 // Green if every starter hit the "2 is okay" bar, amber if
                 // some are still below 2, matching the spec's tolerance.
                 const perSlot = squadState.chemistry.perSlot;
