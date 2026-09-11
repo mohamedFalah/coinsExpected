@@ -3632,22 +3632,40 @@
         // would actually look at for that role. Deliberately excludes
         // irrelevant categories entirely (e.g. no Defending sub-stats for a
         // striker) rather than showing them at a meaningless low value.
+        // MOVEMENT_CLUSTER = the sub-stats that actually answer "how fast is
+        // this player" (acceleration + sprintSpeed, always shown adjacent —
+        // deliberately paired so the eye can compare them at a glance,
+        // since how CLOSE those two numbers are to each other is what
+        // determines the AcceleRATE feel: near-equal ~= Controlled, big
+        // sprintSpeed>acceleration gap ~= Lengthy, big acceleration>
+        // sprintSpeed gap ~= Explosive) and "how easy is he to turn / carry
+        // the ball with" (agility + balance = turning/close-control body
+        // mechanics, ballControl + dribbling = actual first-touch/take-on
+        // skill). Every one of these 6 fields lives in the same universal
+        // `inGameAttributes` object regardless of the player's position —
+        // the API just groups the 34 field NAMES by broad category in its
+        // own docs (see comment above) — so surfacing them for defenders
+        // and midfielders too is a display-curation choice, not something
+        // requiring new data. Applied to every outfield position; GK gets
+        // acceleration/sprintSpeed/agility (mobility off the line) but not
+        // ballControl/dribbling, which stay irrelevant for a keeper's role.
+        const MOVEMENT_CLUSTER = ['acceleration', 'sprintSpeed', 'agility', 'balance', 'ballControl', 'dribbling'];
         const POSITION_GRANULAR_ATTRS = {
-            GK:  ['gkDiving', 'gkHandling', 'gkKicking', 'gkPositioning', 'gkReflexes'],
-            CB:  ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            RB:  ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            LB:  ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            RWB: ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            LWB: ['defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            CM:  ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
-            CDM: ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
-            CAM: ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
-            RM:  ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
-            LM:  ['aggression', 'ballControl', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
-            ST:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys'],
-            CF:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys'],
-            RW:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys'],
-            LW:  ['acceleration', 'agility', 'balance', 'composure', 'dribbling', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'sprintSpeed', 'volleys']
+            GK:  ['gkDiving', 'gkHandling', 'gkKicking', 'gkPositioning', 'gkReflexes', 'acceleration', 'sprintSpeed', 'agility'],
+            CB:  [...MOVEMENT_CLUSTER, 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            RB:  [...MOVEMENT_CLUSTER, 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            LB:  [...MOVEMENT_CLUSTER, 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            RWB: [...MOVEMENT_CLUSTER, 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            LWB: [...MOVEMENT_CLUSTER, 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            CM:  [...MOVEMENT_CLUSTER, 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            CDM: [...MOVEMENT_CLUSTER, 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            CAM: [...MOVEMENT_CLUSTER, 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            RM:  [...MOVEMENT_CLUSTER, 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            LM:  [...MOVEMENT_CLUSTER, 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
+            ST:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys'],
+            CF:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys'],
+            RW:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys'],
+            LW:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys']
         };
 
         // Normalizes an attribute key so naming-convention differences
