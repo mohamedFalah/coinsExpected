@@ -4161,6 +4161,15 @@
             const relevantKeys = POSITION_GRANULAR_ATTRS[pos] || [];
 
             if (!detail || !detail.inGameAttributes) {
+                // Fetch failed entirely — stop every card pulsing and show
+                // a plain "N/A" rather than leaving them looking stuck.
+                relevantKeys.forEach(key => {
+                    const valEl = document.getElementById(`granular-val-${key}`);
+                    if (valEl) {
+                        valEl.classList.remove('animate-pulse');
+                        valEl.innerHTML = `<bdi>N/A</bdi>`;
+                    }
+                });
                 if (statusEl) {
                     statusEl.classList.remove('hidden');
                     statusEl.textContent = isAr ? 'تعذّر التحقق من الإحصائيات الدقيقة لهذا اللاعب.' : "Couldn't verify granular stats for this player.";
@@ -4177,7 +4186,10 @@
                 const val = getGranularValue(detail, def.candidates, def.en);
 
                 if (val === null) {
-                    if (valEl) valEl.innerHTML = `<bdi>N/A</bdi>`;
+                    if (valEl) {
+                        valEl.classList.remove('animate-pulse');
+                        valEl.innerHTML = `<bdi>N/A</bdi>`;
+                    }
                     return;
                 }
                 anyFound = true;
@@ -4187,7 +4199,7 @@
                 }
                 if (valEl) {
                     valEl.innerHTML = `<bdi>${val}</bdi>`;
-                    valEl.classList.remove('text-gray-600');
+                    valEl.classList.remove('text-gray-600', 'animate-pulse');
                     valEl.classList.add('text-white');
                 }
             });
@@ -5281,7 +5293,7 @@
                                                 <i class="fa-solid ${def.icon || 'fa-chart-simple'} text-xs w-4 text-center shrink-0"></i>
                                                 <span class="font-bold text-[11px] truncate" title="${label}">${label}</span>
                                             </div>
-                                            <div id="granular-val-${key}" class="text-2xl font-black text-gray-600 leading-none"><bdi>--</bdi></div>
+                                            <div id="granular-val-${key}" class="text-2xl font-black text-gray-600 leading-none animate-pulse"><bdi>--</bdi></div>
                                             <div class="h-1.5 rounded-full bg-black/40 overflow-hidden">
                                                 <div id="granular-bar-${key}" class="h-full rounded-full transition-all duration-700 ease-out" style="width:3%;background:#2a3b5c;"></div>
                                             </div>
