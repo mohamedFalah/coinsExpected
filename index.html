@@ -571,17 +571,6 @@
                     </div>
                 </div>
 
-                <div class="bg-fc-dark rounded-xl p-6 border border-fc-border space-y-4">
-                    <h3 data-i18n="importDbTitle" class="font-bold text-sm text-white">Import Custom FUTBIN FC 27 Database (JSON)</h3>
-                    <p data-i18n="importDbDesc" class="text-xs text-gray-400">Paste your updated player JSON or upload a data payload to instantly sync prices and player attributes.</p>
-                    <textarea id="import-json-textarea" rows="6" placeholder="Paste JSON database payload here..." class="w-full bg-fc-card border border-fc-border rounded-xl p-4 text-xs font-mono text-gray-300 focus:outline-none focus:border-fc-accent rtl:text-left"></textarea>
-                    <div class="flex justify-end">
-                        <button onclick="importDatabaseJSON()" data-i18n="importSyncBtn" class="px-6 py-2.5 rounded-xl bg-fc-accent text-fc-dark font-bold text-sm hover:bg-fc-accentHover transition-all">
-                            Import & Sync Database
-                        </button>
-                    </div>
-                </div>
-
                 <!-- ===== Live Scrape / Sync from EasySBC.io ===== -->
                 <!--
                     NOTE FOR DEVELOPERS:
@@ -605,22 +594,16 @@
                             <i class="fa-solid fa-satellite-dish text-fc-accent"></i>
                             <span data-i18n="scrapeTitle">Live Scrape / Sync from EasySBC.io</span>
                         </h3>
-                        <button onclick="toggleScrapeHelp()" data-i18n="scrapeHelpToggle" class="text-xs font-bold text-fc-accent hover:text-fc-accentHover flex items-center space-x-1 rtl:space-x-reverse">
-                            <i class="fa-solid fa-circle-question"></i>
-                            <span data-i18n="scrapeHelpToggle">How do I find the real data endpoint?</span>
-                        </button>
                     </div>
                     <p data-i18n="scrapeDesc" class="text-xs text-gray-400">Pulls live ratings, prices and attributes directly from EasySBC's own player API (found via their site's network requests) and syncs them into the database below. The full EasySBC database has 1000+ pages (~20k players) sorted by meta rating, so pick how many pages to pull — each page is about 20 players. Pages fetch concurrently (in batches), so pulling more pages doesn't mean waiting proportionally longer.</p>
 
-                    <div id="scrape-help-panel" class="hidden bg-fc-card border border-fc-border rounded-xl p-4 text-xs text-gray-300 space-y-2">
-                        <p data-i18n="scrapeHelpStep1" class="font-bold text-white">1. Open the EasySBC players page in your browser.</p>
-                        <p data-i18n="scrapeHelpStep2">2. Open DevTools (F12) → Network tab → filter by "Fetch/XHR".</p>
-                        <p data-i18n="scrapeHelpStep3">3. Reload the page and look for a request returning JSON player data.</p>
-                        <p data-i18n="scrapeHelpStep4">4. Copy that request's URL (without the page number) and paste it into the field below, then click "Scrape & Sync Now".</p>
-                    </div>
-
                     <div class="flex flex-col sm:flex-row gap-3">
-                        <div class="flex-1">
+                        <!-- API base URL is intentionally not exposed in the UI
+                             — kept in the DOM (hidden) with its working
+                             default so scrapeEasySBCPlayers() still reads
+                             it normally; only the page count is meant to
+                             be user-adjustable here. -->
+                        <div class="hidden">
                             <label data-i18n="scrapeUrlLabel" class="text-xs text-gray-500 block mb-1">API Base URL (page number is appended automatically)</label>
                             <input id="scrape-url-input" type="text" value="https://api-fc27.easysbc.io/players?v2"
                                 class="w-full bg-fc-card border border-fc-border rounded-xl p-3 text-xs font-mono text-gray-300 focus:outline-none focus:border-fc-accent rtl:text-left" dir="ltr">
@@ -2215,7 +2198,11 @@
             nationSelect.innerHTML = `
                 <option value="">${noNationLabel}</option>
                 ${opts.nations.length > 0
-                    ? opts.nations.map(n => `<option value="${n.id}">${nationLabel} (${getNationName(n.id) || n.example}) — ${impactText(n.count)}</option>`).join('')
+                    ? opts.nations.map(n => {
+                        const realName = getNationName(n.id);
+                        const display = realName ? realName : `${nationLabel} (${n.example})`;
+                        return `<option value="${n.id}">${display} — ${impactText(n.count)}</option>`;
+                    }).join('')
                     : `<option value="" disabled>${nothingLabel}</option>`}
             `;
             nationSelect.value = currentNationValue;
@@ -2223,7 +2210,11 @@
             leagueSelect.innerHTML = `
                 <option value="">${noLeagueLabel}</option>
                 ${opts.leagues.length > 0
-                    ? opts.leagues.map(l => `<option value="${l.id}">${leagueLabel} (${getLeagueName(l.id) || l.example}) — ${impactText(l.count)}</option>`).join('')
+                    ? opts.leagues.map(l => {
+                        const realName = getLeagueName(l.id);
+                        const display = realName ? realName : `${leagueLabel} (${l.example})`;
+                        return `<option value="${l.id}">${display} — ${impactText(l.count)}</option>`;
+                    }).join('')
                     : `<option value="" disabled>${nothingLabel}</option>`}
             `;
             leagueSelect.value = currentLeagueValue;
