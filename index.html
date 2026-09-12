@@ -4327,6 +4327,140 @@
             }
         }
 
+        // The negative mirror of buildWhyEvaluation's positive pitch —
+        // walks every real signal this app actually has for ONE player
+        // and flags the ones that are genuinely a weakness, never a
+        // guessed one. Split cleanly into what's available from bulk
+        // data alone (runs the instant the modal opens) and what needs
+        // the per-player detail fetch (granular sub-stats, real height,
+        // body type) — called twice: once with detail=null so something
+        // useful shows immediately, then again once the fetch resolves.
+        function buildVulnerabilityPoints(player, pos, detail) {
+            const isAr = currentLanguage === 'ar';
+            const points = [];
+
+            // 1. This player's OWN weakest key attribute for the role,
+            // relative to their OTHER key attributes — self-relative,
+            // not a guessed fixed threshold. Reuses the exact same
+            // getKeyAttributesForPosition list already shown as ⭐ stars
+            // in this same modal.
+            const keys = getKeyAttributesForPosition(pos);
+            if (keys.length && player.att) {
+                const vals = keys.map(k => ({ k, v: player.att[k] })).filter(o => typeof o.v === 'number');
+                if (vals.length >= 2) {
+                    const worst = vals.reduce((a, b) => (b.v < a.v ? b : a));
+                    const best = vals.reduce((a, b) => (b.v > a.v ? b : a));
+                    if (best.v - worst.v >= 8) {
+                        const wLabel = ATTRIBUTE_LABELS[worst.k] ? (isAr ? ATTRIBUTE_LABELS[worst.k].ar : ATTRIBUTE_LABELS[worst.k].en) : worst.k.toUpperCase();
+                        const bLabel = ATTRIBUTE_LABELS[best.k] ? (isAr ? ATTRIBUTE_LABELS[best.k].ar : ATTRIBUTE_LABELS[best.k].en) : best.k.toUpperCase();
+                        points.push(isAr
+                            ? `${wLabel} (${worst.v}) هي أضعف خاصية رئيسية له في هذا المركز — بعيدة عن ${bLabel} (${best.v}) الخاصة به نفسه.`
+                            : `${wLabel} (${worst.v}) is their weakest key attribute for this role — well behind their own ${bLabel} (${best.v}).`);
+                    }
+                }
+            }
+
+            // 2. Overall position fit vs. the database-wide average for
+            // the role — the exact same POSITION_FIT_BASELINE the squad
+            // optimizer itself uses to rank candidates.
+            const fitScore = computeKeyAttrFitScore(player, pos);
+            const baseline = POSITION_FIT_BASELINE[pos];
+            if (fitScore != null && baseline) {
+                const gap = baseline - fitScore;
+                if (gap >= 4) {
+                    points.push(isAr
+                        ? `ملاءمته لمركز ${pos} (${fitScore.toFixed(1)}) أقل من متوسط قاعدة البيانات لهذا المركز (${baseline.toFixed(1)}) — أضعف إحصائياً من الخيار النموذجي.`
+                        : `Their fit for ${pos} (${fitScore.toFixed(1)}) sits below the database-wide average for the role (${baseline.toFixed(1)}) — a statistically weaker fit than the typical option.`);
+                }
+            }
+
+            // 3. Weak foot.
+            if (typeof player.weakFoot === 'number' && player.weakFoot <= 2) {
+                points.push(isAr
+                    ? `القدم الضعيفة ${player.weakFoot}★ فقط — يعتمد بشدة على قدمه المفضلة، ويمكن دفعه بسهولة نحو جانبه الأضعف.`
+                    : `Weak foot is only ${player.weakFoot}★ — heavily reliant on their strong foot, and easy to show onto their weaker side.`);
+            }
+
+            // 4. Skill moves.
+            if (typeof player.skillMoves === 'number' && player.skillMoves <= 2) {
+                points.push(isAr
+                    ? `مهارات المراوغة ${player.skillMoves}★ فقط — خيارات محدودة في المساحات الضيقة، وأسهل لانتزاع الكرة منه.`
+                    : `Only ${player.skillMoves}★ skill moves — a limited close-control repertoire, making them easier to dispossess in tight 1v1s.`);
+            }
+
+            // 5. No PlayStyles at all.
+            const psPlus = Array.isArray(player.playstylesPlus) ? player.playstylesPlus : [];
+            const psBase = Array.isArray(player.playstyles) ? player.playstyles : [];
+            if (psPlus.length === 0 && psBase.length === 0) {
+                points.push(isAr
+                    ? 'لا توجد أي PlayStyles — لا يملك أي تعزيزات موقفية، وأداؤه يعتمد بالكامل على الإحصائيات الأساسية.'
+                    : 'No PlayStyles at all — no situational boosts to lean on, output is entirely down to the base stats.');
+            }
+
+            // From here on, needs the real per-player detail fetch.
+            if (detail) {
+                // 6. Genuinely low granular in-game sub-stats for this
+                // exact position — real EA attribute numbers, not an
+                // estimate. 60/45 are the same kind of real, meaningful
+                // floor already used elsewhere in this app (e.g. the
+                // Lengthy-conversion check's "Base Acceleration below
+                // 40" gate) — community-understood in-game thresholds,
+                // not an invented cutoff.
+                const relevantKeys = POSITION_GRANULAR_ATTRS[pos] || [];
+                relevantKeys.forEach(key => {
+                    const def = GRANULAR_ATTR_DEFS[key];
+                    if (!def) return;
+                    const val = getGranularValue(detail, def.candidates, def.en);
+                    if (val === null || val >= 60) return;
+                    const label = isAr ? def.ar : def.en;
+                    const severity = val < 45 ? (isAr ? 'ضعيفة جداً' : 'very low') : (isAr ? 'ضعيفة' : 'low');
+                    points.push(isAr
+                        ? `${label} ${severity} (${val}) — رقم حقيقي من داخل اللعبة، وليس تقديراً.`
+                        : `${label} is ${severity} (${val}) — a real in-game number, not an estimate.`);
+                });
+
+                // 7. Height, only for positions where it plausibly costs
+                // them something specific (aerial/physical duels) — not
+                // applied blindly to every position.
+                if (typeof detail.height === 'number' && ['CB', 'ST', 'CF', 'GK'].includes(pos) && detail.height < 178) {
+                    points.push(isAr
+                        ? `الطول ${detail.height} سم قصير نسبياً لمركز ${pos} — قد يواجه صعوبة في المواجهات الهوائية والبدنية أمام لاعبين أطول.`
+                        : `At ${detail.height}cm, they're on the short side for a ${pos} — likely to struggle in aerial and physical duels against taller opponents.`);
+                }
+
+                // 8. Body Type's own real trade-off — reuses the exact
+                // same verified label/feel text already shown in the
+                // Physical Profile section, surfaced here too since it's
+                // genuinely part of what this specific card struggles
+                // with, not a duplicate opinion.
+                const bodyTypeProfile = detail.bodyTypeId != null ? BODY_TYPE_PROFILE[detail.bodyTypeId] : null;
+                if (bodyTypeProfile) {
+                    points.push(isAr
+                        ? `نمط الجسم (${bodyTypeProfile.label.ar}): ${bodyTypeProfile.feel.ar}`
+                        : `Body Type (${bodyTypeProfile.label.en}): ${bodyTypeProfile.feel.en}`);
+                }
+            }
+
+            return points;
+        }
+
+        function renderVulnerabilityReport(player, pos, detail) {
+            const container = document.getElementById('vulnerability-report');
+            if (!container) return;
+            const isAr = currentLanguage === 'ar';
+            const points = buildVulnerabilityPoints(player, pos, detail);
+            if (points.length === 0) {
+                container.innerHTML = `<p class="text-xs text-gray-500 italic">${isAr ? 'لا توجد نقاط ضعف واضحة تستحق الذكر لهذه البطاقة.' : 'No clear weaknesses stand out for this card.'}</p>`;
+                return;
+            }
+            container.innerHTML = points.map(p => `
+                <p class="text-xs text-gray-300 leading-snug flex items-start gap-1.5">
+                    <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
+                    <span>${p}</span>
+                </p>
+            `).join('');
+        }
+
         function loadPlayerDeepDive(player, effectivePos) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
@@ -4342,6 +4476,11 @@
                 // legitimately be null for GKs) — the granular attribute
                 // breakdown should still render whenever we have detail.
                 renderGranularAttrs(effectivePos, detail);
+                // Same reasoning for the vulnerability report — it should
+                // pick up the detail-dependent points (granular attrs,
+                // real height, body type) regardless of what happens with
+                // AcceleRATE below.
+                renderVulnerabilityReport(player, effectivePos, detail);
 
                 if (!detail) {
                     // Fetch failed — say so plainly rather than leaving a
@@ -5211,41 +5350,38 @@
                 </div>
             ` : '';
 
-            // Chemistry breakdown for this exact slot (uses the live
-            // squadState.chemistry computed after the last build/swap).
+            // Chemistry, shown compact and INLINE with the header
+            // (name/rating line) instead of as its own boxed section
+            // further down — visible at a glance without scrolling into
+            // the right column, with Search/Alternatives taking over
+            // that now-freed top slot. Same underlying data as before
+            // (points, per-source breakdown, manager note), just
+            // condensed to one line with small diamonds instead of a
+            // bordered box with a 3-cell grid.
             const chemInfo = (typeof slotIdx === 'number' && squadState.chemistry) ? squadState.chemistry.perSlot[slotIdx] : null;
-            const chemTitle = currentLanguage === 'ar' ? 'الكيمياء' : 'Chemistry';
-            let chemistrySection = '';
+            const chemLabel = currentLanguage === 'ar' ? 'كيمياء' : 'Chem';
+            let chemHeaderHtml = '';
             if (chemInfo) {
-                const dot = (filled, danger) => `<span class="inline-block w-2.5 h-2.5 rotate-45 border" style="${filled ? 'background-color:#4ade80;border-color:#4ade80;' : danger ? 'border-color:#ef4444;' : 'border-color:#6b7280;'}"></span>`;
-                const diamondsBig = [0, 1, 2].map(i => dot(chemInfo.inPosition && i < chemInfo.points, !chemInfo.inPosition)).join(' ');
+                const dot = (filled, danger) => `<span class="inline-block w-2 h-2 rotate-45 border" style="${filled ? 'background-color:#4ade80;border-color:#4ade80;' : danger ? 'border-color:#ef4444;' : 'border-color:#6b7280;'}"></span>`;
+                const diamondsSmall = [0, 1, 2].map(i => dot(chemInfo.inPosition && i < chemInfo.points, !chemInfo.inPosition)).join(' ');
                 if (!chemInfo.inPosition) {
-                    chemistrySection = `
-                        <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-3 space-y-1.5">
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-red-400 uppercase tracking-wider">${chemTitle}: 0/3</span>
-                                <div class="flex gap-1">${diamondsBig}</div>
-                            </div>
-                            <p class="text-[11px] text-red-300">${currentLanguage === 'ar' ? 'اللاعب خارج مركزه المفضل — لا كيمياء ولا مساهمة في الأندية/الدول/الدوريات لبقية التشكيلة.' : "Player is outside their preferred position — locked at 0 chemistry, and doesn't contribute to club/nation/league counts for the rest of the squad either."}</p>
+                    chemHeaderHtml = `
+                        <div class="flex items-center gap-2 mt-1.5 text-[11px]">
+                            <span class="font-bold text-red-400 uppercase tracking-wide">${chemLabel} 0/3</span>
+                            <div class="flex gap-0.5">${diamondsSmall}</div>
+                            <span class="text-red-300/80">${currentLanguage === 'ar' ? 'خارج المركز — لا كيمياء' : 'Out of position — 0 chemistry'}</span>
                         </div>
                     `;
                 } else if (chemInfo.isIcon || chemInfo.isHero) {
-                    chemistrySection = `
-                        <div class="bg-fc-dark/80 border border-fc-border rounded-xl p-3 space-y-1.5">
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-green-400 uppercase tracking-wider">${chemTitle}: 3/3</span>
-                                <div class="flex gap-1">${diamondsBig}</div>
-                            </div>
-                            <p class="text-[11px] text-gray-400">${chemInfo.isIcon
-                                ? (currentLanguage === 'ar' ? 'بطاقة أيقونة — كيمياء ثابتة 3، وتساهم +2 لدولتها و+1 لكل دوري موجود في التشكيلة.' : 'Icon card — auto-locked at 3, and contributes +2 to their Nation and +1 to every league present in the XI.')
-                                : (currentLanguage === 'ar' ? 'بطاقة بطل — كيمياء ثابتة 3، وتساهم +2 لدوريها و+1 لدولتها.' : "Hero card — auto-locked at 3, and contributes +2 to their League and +1 to their Nation.")}</p>
+                    chemHeaderHtml = `
+                        <div class="flex items-center gap-2 mt-1.5 text-[11px]">
+                            <span class="font-bold text-green-400 uppercase tracking-wide">${chemLabel} 3/3</span>
+                            <div class="flex gap-0.5">${diamondsSmall}</div>
+                            <span class="text-gray-500">${chemInfo.isIcon ? (currentLanguage === 'ar' ? 'أيقونة — قفل تلقائي' : 'Icon — auto-locked') : (currentLanguage === 'ar' ? 'بطل — قفل تلقائي' : 'Hero — auto-locked')}</span>
                         </div>
                     `;
                 } else {
                     const b = chemInfo.breakdown;
-                    const rowLbl = currentLanguage === 'ar'
-                        ? { club: 'النادي', nation: 'الدولة/المنطقة', league: 'الدوري' }
-                        : { club: 'Club', nation: 'Nation/Region', league: 'League' };
                     const chemColor = chemInfo.points >= 3 ? 'text-green-400' : chemInfo.points === 2 ? 'text-fc-gold' : 'text-red-400';
                     // A manager has a Nation AND a League at once, so check
                     // each independently rather than treating them as
@@ -5255,26 +5391,17 @@
                     // stack per the chemistry spec above.
                     const mgrNationMatch = squadState.manager.nationId != null && squadState.manager.nationId === player.nationId;
                     const mgrLeagueMatch = squadState.manager.leagueId != null && squadState.manager.leagueId === player.leagueId;
-                    const managerMatchLabel = mgrNationMatch && mgrLeagueMatch
-                        ? (currentLanguage === 'ar' ? 'مطابقة الدولة والدوري معاً' : 'matching both Nation and League')
-                        : mgrNationMatch
-                            ? (currentLanguage === 'ar' ? 'مطابقة دولة المدرب' : "matching the Manager's Nation")
-                            : (currentLanguage === 'ar' ? 'مطابقة دوري المدرب' : "matching the Manager's League");
-                    const managerNote = (mgrNationMatch || mgrLeagueMatch)
-                        ? `<p class="text-[11px] text-fc-accent">${currentLanguage === 'ar' ? `+1 إضافية من المدرب (${managerMatchLabel}).` : `+1 extra from the Manager (${managerMatchLabel}).`}</p>`
+                    const mgrNote = (mgrNationMatch || mgrLeagueMatch)
+                        ? ` <span class="text-fc-accent font-semibold">+1 ${currentLanguage === 'ar' ? 'من المدرب' : 'Manager'}</span>`
                         : '';
-                    chemistrySection = `
-                        <div class="bg-fc-dark/80 border border-fc-border rounded-xl p-3 space-y-2">
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold ${chemColor} uppercase tracking-wider">${chemTitle}: ${chemInfo.points}/3</span>
-                                <div class="flex gap-1">${diamondsBig}</div>
-                            </div>
-                            <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                                <div class="bg-fc-card/60 rounded-lg p-1.5"><span class="text-gray-400 block">${rowLbl.club}</span><span class="font-bold text-white">${b.clubCount} → +${b.cPts}</span></div>
-                                <div class="bg-fc-card/60 rounded-lg p-1.5"><span class="text-gray-400 block">${rowLbl.nation}</span><span class="font-bold text-white">${b.nationCount} → +${b.nPts}</span></div>
-                                <div class="bg-fc-card/60 rounded-lg p-1.5"><span class="text-gray-400 block">${rowLbl.league}</span><span class="font-bold text-white">${b.leagueCount} → +${b.lPts}</span></div>
-                            </div>
-                            ${managerNote}
+                    const clubLbl = currentLanguage === 'ar' ? 'نادي' : 'Club';
+                    const nationLbl = currentLanguage === 'ar' ? 'دولة' : 'Ntn';
+                    const leagueLbl = currentLanguage === 'ar' ? 'دوري' : 'Lge';
+                    chemHeaderHtml = `
+                        <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[11px]">
+                            <span class="font-bold ${chemColor} uppercase tracking-wide">${chemLabel} ${chemInfo.points}/3</span>
+                            <div class="flex gap-0.5">${diamondsSmall}</div>
+                            <span class="text-gray-500">${clubLbl} ${b.clubCount}→+${b.cPts} · ${nationLbl} ${b.nationCount}→+${b.nPts} · ${leagueLbl} ${b.leagueCount}→+${b.lPts}${mgrNote}</span>
                         </div>
                     `;
                 }
@@ -5286,6 +5413,22 @@
             const accelBadge = player.pos !== 'GK'
                 ? `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border bg-fc-dark text-gray-500 border-fc-border animate-pulse" style="direction:ltr;unicode-bidi:isolate;">⚡ ${currentLanguage === 'ar' ? 'جارٍ التحقق' : 'checking'}…</span>`
                 : '';
+
+            // Vulnerability report — rendered with whatever's available
+            // from bulk data right now; loadPlayerDeepDive re-renders the
+            // #vulnerability-report container once the real per-player
+            // detail resolves, adding the granular/height/body-type
+            // points that need it (see buildVulnerabilityPoints above).
+            const vulnTitle = currentLanguage === 'ar' ? 'نقاط الضعف' : 'Vulnerabilities';
+            const initialVulnPoints = buildVulnerabilityPoints(player, effectivePos, null);
+            const initialVulnHtml = initialVulnPoints.length === 0
+                ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نقاط ضعف واضحة تستحق الذكر لهذه البطاقة.' : 'No clear weaknesses stand out for this card.'}</p>`
+                : initialVulnPoints.map(p => `
+                    <p class="text-xs text-gray-300 leading-snug flex items-start gap-1.5">
+                        <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
+                        <span>${p}</span>
+                    </p>
+                `).join('');
 
             content.innerHTML = `
                 <div class="space-y-5">
@@ -5306,6 +5449,7 @@
                         </div>
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
+                        ${chemHeaderHtml}
                     </div>
                 </div>
 
@@ -5389,12 +5533,19 @@
                         </div>
                     </div>
 
-                    <!-- RIGHT: squad-context info — chemistry, playstyles,
-                         why-this-player reasoning, Meta Analyst, alternatives.
-                         Rendered next to the left column instead of stacked
-                         underneath it, so the modal scrolls far less. -->
+                    <!-- RIGHT: squad-context info. Chemistry now lives in
+                         the header (compact, inline with name/rating), so
+                         Search/Alternatives — the things you actually act
+                         on — take over that top slot instead. Why-This-
+                         Player and the new Vulnerabilities panel sit
+                         together as the two "read before deciding" write-
+                         ups, followed by the Meta Analyst. Rendered next
+                         to the left column instead of stacked underneath
+                         it, so the modal scrolls far less. -->
                     <div class="space-y-5">
-                        ${chemistrySection}
+                        ${searchSection}
+
+                        ${alternativesSection}
 
                         ${playstylesSection}
 
@@ -5404,11 +5555,12 @@
                             ${focusProfileHtml}
                         </div>
 
+                        <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1.5">
+                            <span class="text-xs font-bold text-red-400 uppercase tracking-wider">${vulnTitle}</span>
+                            <div id="vulnerability-report" class="space-y-1.5">${initialVulnHtml}</div>
+                        </div>
+
                         <div id="analyst-panel"></div>
-
-                        ${searchSection}
-
-                        ${alternativesSection}
                     </div>
                 </div>
                 </div>
