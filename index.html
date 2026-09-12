@@ -1490,6 +1490,120 @@
             }}
         };
 
+        // Height/Build → how much that specific combination leans
+        // toward physical/aerial duels vs. tight turning and close
+        // control, on a small -2..+2 scale per axis. This is what turns
+        // the generic BODY_TYPE_PROFILE description into a REAL verdict
+        // for one specific player in one specific role, instead of the
+        // same static paragraph everywhere the body type comes up.
+        const BODY_TYPE_ROLE_IMPACT = {
+            1: { duel: -1, agility: 1 },  // Average & Lean
+            2: { duel: 0,  agility: 0 },  // Average & Normal
+            3: { duel: 1,  agility: -1 }, // Average & Stocky
+            4: { duel: 1,  agility: -1 }, // Tall & Lean
+            5: { duel: 2,  agility: -1 }, // Tall & Normal
+            6: { duel: 2,  agility: -2 }, // Tall & Stocky
+            7: { duel: -2, agility: 2 },  // Short & Lean
+            8: { duel: -1, agility: 1 },  // Short & Normal
+            9: { duel: 0,  agility: 1 }   // Short & Stocky
+        };
+
+        // How much a given position's job depends on physical/aerial
+        // duels vs. tight turning/close control — the other half of the
+        // comparison. For ST/CF specifically, the weighting comes from
+        // THIS player's own SHO vs. PAC+DRI balance (a stat-first "target
+        // man" vs. "dribbler" read) rather than a fixed assumption, since
+        // strikers vary the most in what their actual game depends on —
+        // exactly the "related to his stats" angle asked for. Returns
+        // null for GK (no clean duel/agility model for keepers here).
+        function getRoleDuelAgilityWeights(pos, player) {
+            switch (pos) {
+                case 'CB': return { duel: 0.8, agility: 0.2 };
+                case 'LB': case 'RB': case 'LWB': case 'RWB': return { duel: 0.4, agility: 0.6 };
+                case 'CDM': return { duel: 0.6, agility: 0.4 };
+                case 'CM': return { duel: 0.4, agility: 0.6 };
+                case 'CAM': case 'LM': case 'RM': return { duel: 0.25, agility: 0.75 };
+                case 'LW': case 'RW': return { duel: 0.2, agility: 0.8 };
+                case 'ST': case 'CF': {
+                    const sho = (player.att && typeof player.att.sho === 'number') ? player.att.sho : 70;
+                    const paceDri = player.att ? (((player.att.pac || 70) + (player.att.dri || 70)) / 2) : 70;
+                    const diff = sho - paceDri;
+                    const duelWeight = Math.min(0.75, Math.max(0.25, 0.5 + diff / 40));
+                    return { duel: duelWeight, agility: 1 - duelWeight };
+                }
+                default: return null;
+            }
+        }
+
+        // The real verdict: does THIS body type genuinely help or hurt
+        // THIS player in THIS role — not a generic description. Returns
+        // { positive, negative } (bilingual objects or null) — a body
+        // type can legitimately be BOTH (e.g. Tall & Stocky at CB: helps
+        // aerially, costs turning speed), so both are computed and each
+        // caller (Why-This-Pick / Vulnerabilities) only pulls the half
+        // relevant to it. Unmapped body types (no real label) return
+        // nothing rather than a guess.
+        function evaluateBodyTypeForRole(bodyTypeId, pos, player) {
+            const profile = BODY_TYPE_PROFILE[bodyTypeId];
+            if (!profile) return { positive: null, negative: null };
+            const isAr = currentLanguage === 'ar';
+            const label = isAr ? profile.label.ar : profile.label.en;
+
+            if (bodyTypeId === 13) {
+                // Unique — always a plus for on-the-ball feel, regardless
+                // of position, per the same reasoning as its
+                // BODY_TYPE_PROFILE entry.
+                return {
+                    positive: {
+                        en: `Their Unique body type means bespoke, individually motion-captured animations rather than a shared generic model — a real edge in close control for a ${pos}, on top of whatever their stats already say.`,
+                        ar: `نمط جسمه الفريد يعني حركات مُلتقطة خصيصاً له بدلاً من نموذج عام مشترك — ميزة حقيقية في التحكم بالكرة لمركز ${pos}، إضافة لما تقوله إحصائياته أصلاً.`
+                    },
+                    negative: null
+                };
+            }
+
+            const impact = BODY_TYPE_ROLE_IMPACT[bodyTypeId];
+            const weights = getRoleDuelAgilityWeights(pos, player);
+            if (!impact || !weights) return { positive: null, negative: null };
+
+            const fit = impact.duel * weights.duel + impact.agility * weights.agility;
+            const THRESHOLD = 0.6;
+            const duelLeaning = weights.duel > weights.agility;
+
+            if (fit >= THRESHOLD) {
+                return {
+                    positive: {
+                        en: `${label} genuinely suits a ${pos} — this role leans on ${duelLeaning ? 'physical/aerial duels' : 'tight turning and close control'} more than most, exactly where this build helps.`,
+                        ar: `${label} يناسب فعلاً مركز ${pos} — هذا الدور يعتمد على ${duelLeaning ? 'المواجهات البدنية والهوائية' : 'الدوران المحكم والتحكم بالكرة'} أكثر من غيره، وهو بالضبط ما تدعمه هذه البنية.`
+                    },
+                    negative: null
+                };
+            }
+            if (fit <= -THRESHOLD) {
+                return {
+                    positive: null,
+                    negative: {
+                        en: `${label} is a real mismatch for a ${pos} — this role leans on ${duelLeaning ? 'physical/aerial duels' : 'tight turning and close control'} more than most, which is exactly what this build trades away.`,
+                        ar: `${label} غير مناسب فعلاً لمركز ${pos} — هذا الدور يعتمد على ${duelLeaning ? 'المواجهات البدنية والهوائية' : 'الدوران المحكم والتحكم بالكرة'} أكثر من غيره، وهو ما تتنازل عنه هذه البنية بالتحديد.`
+                    }
+                };
+            }
+            // A genuine, roughly-even trade-off (both axes real and
+            // pulling in opposite directions) is still worth stating as
+            // a mild positive — the player gets a real, named asset for
+            // their role even if it comes with a real, named cost.
+            if (Math.abs(impact.duel) >= 1 && Math.abs(impact.agility) >= 1 && Math.sign(impact.duel) !== Math.sign(impact.agility)) {
+                return {
+                    positive: {
+                        en: `${label} is a genuine trade-off for a ${pos}: ${impact.duel > 0 ? 'an asset in physical/aerial duels' : 'nimble in tight turning'}, at the cost of ${impact.duel > 0 ? 'close control' : 'physical presence'} — roughly even for this specific role.`,
+                        ar: `${label} مقايضة حقيقية لمركز ${pos}: ${impact.duel > 0 ? 'إضافة في المواجهات البدنية والهوائية' : 'رشاقة في الدوران المحكم'}، مقابل ${impact.duel > 0 ? 'التحكم بالكرة' : 'الحضور البدني'} — محصلة شبه متعادلة لهذا الدور تحديداً.`
+                    },
+                    negative: null
+                };
+            }
+            return { positive: null, negative: null };
+        }
+
         const ATTRIBUTE_LABELS = {
             pac: { en: 'Pace', ar: 'السرعة' },
             sho: { en: 'Shooting', ar: 'التسديد' },
@@ -4428,16 +4542,15 @@
                         : `At ${detail.height}cm, they're on the short side for a ${pos} — likely to struggle in aerial and physical duels against taller opponents.`);
                 }
 
-                // 8. Body Type's own real trade-off — reuses the exact
-                // same verified label/feel text already shown in the
-                // Physical Profile section, surfaced here too since it's
-                // genuinely part of what this specific card struggles
-                // with, not a duplicate opinion.
-                const bodyTypeProfile = detail.bodyTypeId != null ? BODY_TYPE_PROFILE[detail.bodyTypeId] : null;
-                if (bodyTypeProfile) {
-                    points.push(isAr
-                        ? `نمط الجسم (${bodyTypeProfile.label.ar}): ${bodyTypeProfile.feel.ar}`
-                        : `Body Type (${bodyTypeProfile.label.en}): ${bodyTypeProfile.feel.en}`);
+                // 8. Body Type's REAL verdict for this specific player in
+                // this specific role — only shown when it's a genuine
+                // mismatch (evaluateBodyTypeForRole), not the same
+                // generic description regardless of position/stats.
+                if (detail.bodyTypeId != null) {
+                    const verdict = evaluateBodyTypeForRole(detail.bodyTypeId, pos, player);
+                    if (verdict.negative) {
+                        points.push(isAr ? verdict.negative.ar : verdict.negative.en);
+                    }
                 }
             }
 
@@ -4498,6 +4611,18 @@
                 // skipped entirely) — they're independent biographical
                 // fields, not part of the pace classification.
                 renderPhysicalProfile(detail, isAr);
+
+                // The REAL "does this body type help him here" verdict —
+                // only fills in when it's a genuine asset for this exact
+                // player/role (evaluateBodyTypeForRole); left empty
+                // otherwise rather than forcing a generic note.
+                const bodyTypeNoteEl = document.getElementById('bodytype-whypick-note');
+                if (bodyTypeNoteEl) {
+                    const verdict = detail.bodyTypeId != null ? evaluateBodyTypeForRole(detail.bodyTypeId, effectivePos, player) : null;
+                    bodyTypeNoteEl.innerHTML = (verdict && verdict.positive)
+                        ? (isAr ? verdict.positive.ar : verdict.positive.en)
+                        : '';
+                }
 
                 const verified = computeVerifiedAccelerateType(detail);
 
@@ -5381,7 +5506,6 @@
                         </div>
                     `;
                 } else {
-                    const b = chemInfo.breakdown;
                     const chemColor = chemInfo.points >= 3 ? 'text-green-400' : chemInfo.points === 2 ? 'text-fc-gold' : 'text-red-400';
                     // A manager has a Nation AND a League at once, so check
                     // each independently rather than treating them as
@@ -5392,16 +5516,13 @@
                     const mgrNationMatch = squadState.manager.nationId != null && squadState.manager.nationId === player.nationId;
                     const mgrLeagueMatch = squadState.manager.leagueId != null && squadState.manager.leagueId === player.leagueId;
                     const mgrNote = (mgrNationMatch || mgrLeagueMatch)
-                        ? ` <span class="text-fc-accent font-semibold">+1 ${currentLanguage === 'ar' ? 'من المدرب' : 'Manager'}</span>`
+                        ? `<span class="text-fc-accent font-semibold">+1 ${currentLanguage === 'ar' ? 'من المدرب' : 'Manager'}</span>`
                         : '';
-                    const clubLbl = currentLanguage === 'ar' ? 'نادي' : 'Club';
-                    const nationLbl = currentLanguage === 'ar' ? 'دولة' : 'Ntn';
-                    const leagueLbl = currentLanguage === 'ar' ? 'دوري' : 'Lge';
                     chemHeaderHtml = `
                         <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[11px]">
                             <span class="font-bold ${chemColor} uppercase tracking-wide">${chemLabel} ${chemInfo.points}/3</span>
                             <div class="flex gap-0.5">${diamondsSmall}</div>
-                            <span class="text-gray-500">${clubLbl} ${b.clubCount}→+${b.cPts} · ${nationLbl} ${b.nationCount}→+${b.nPts} · ${leagueLbl} ${b.leagueCount}→+${b.lPts}${mgrNote}</span>
+                            ${mgrNote}
                         </div>
                     `;
                 }
@@ -5552,6 +5673,7 @@
                         <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
                             <span class="text-xs font-bold text-fc-accent uppercase tracking-wider">${whyText}</span>
                             <p class="text-xs text-gray-300">${whyDesc}</p>
+                            <div id="bodytype-whypick-note" class="text-xs text-gray-300"></div>
                             ${focusProfileHtml}
                         </div>
 
