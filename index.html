@@ -1268,14 +1268,26 @@
             squadState.budget = expectedCoinsResult;
             const squadInput = document.getElementById('squad-budget-input');
             if (squadInput) squadInput.value = expectedCoinsResult;
-            window.runSquadOptimizer();
+            // Same as typing a budget in by hand — this just fills in a
+            // number, it doesn't promise to build anything (unlike the
+            // Calculator page's "BUILD MY SQUAD..." button, which does
+            // and should keep doing so). Wait for an explicit Optimize
+            // click like every other setting now does.
+            updateBuildFilterControlsState();
+            markSettingsPending();
         };
 
         window.updateBudgetFromInput = function(val) {
             const num = parseInt(val);
             if (!isNaN(num) && num >= 0) {
                 squadState.budget = num;
-                window.runSquadOptimizer();
+                // No auto-rebuild — typing a budget and clicking elsewhere
+                // should only unlock the League/Playstyle selectors (now
+                // that there's a real budget to build against), not
+                // immediately generate a squad. Optimize is the one
+                // explicit action that actually builds anything now.
+                updateBuildFilterControlsState();
+                markSettingsPending();
             }
         };
 
