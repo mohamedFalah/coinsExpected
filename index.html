@@ -1524,12 +1524,85 @@
             }
         }
 
+        // A single number summarizing how well a candidate's OWN
+        // attributes suit a position's real job — reuses the exact same
+        // key-attribute list (and priority order) already shown to the
+        // user as the ⭐ stars in the modal, so this isn't a second,
+        // inconsistent opinion about what a position needs. The first-
+        // listed attribute (the most important one per that existing
+        // order) is weighted 3x, the second 2x, the third 1x.
+        function computeKeyAttrFitScore(player, pos) {
+            const keys = getKeyAttributesForPosition(pos);
+            if (!keys.length || !player.att) return null;
+            const weights = [3, 2, 1];
+            let weightedSum = 0, weightTotal = 0;
+            keys.forEach((k, i) => {
+                const w = weights[i] || 1;
+                const v = player.att[k];
+                if (typeof v === 'number') { weightedSum += v * w; weightTotal += w; }
+            });
+            return weightTotal > 0 ? weightedSum / weightTotal : null;
+        }
+
+        // Per-position baseline for "what does a typical fit look like"
+        // — the average key-attribute fit score across every real/alt-
+        // eligible candidate for that position in the WHOLE database,
+        // computed once whenever the database (re)loads rather than
+        // per-optimizer-pass. A global, stable baseline (not one scoped
+        // to whichever candidates happen to be affordable at a given
+        // moment) so the same player's fit rating doesn't shift between
+        // an initial squad build, a swap suggestion, and an upgrade
+        // check — calculatePlayerScore is called from many different
+        // places (initial fill, retained-player refit, alternatives,
+        // next-best-upgrade...) and all of them should judge fit against
+        // the same yardstick.
+        let POSITION_FIT_BASELINE = {};
+        function computePositionFitBaselines() {
+            const positions = ['GK', 'CB', 'RB', 'LB', 'RWB', 'LWB', 'CDM', 'CM', 'CAM', 'RM', 'LM', 'RW', 'LW', 'ST', 'CF'];
+            const baseline = {};
+            positions.forEach(pos => {
+                const candidates = fc27Database.filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+                const scores = candidates.map(p => computeKeyAttrFitScore(p, pos)).filter(s => s != null);
+                baseline[pos] = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+            });
+            POSITION_FIT_BASELINE = baseline;
+        }
+
         function calculatePlayerScore(player, targetPos) {
             const hasMeta = typeof player.meta === 'number' && !isNaN(player.meta);
             // Scale so meta rating (which runs higher than OVR, often 80-95+)
             // and raw rating land in a comparable range for the position-fit
             // bonuses/penalties below.
             let base = hasMeta ? player.meta * 10 : player.rating * 10;
+
+            // Meta rating alone doesn't know it's being evaluated for THIS
+            // slot — EasySBC computes it per their own "meta role", which
+            // can be a completely different job than the position we're
+            // actually filling (e.g. a technically-eligible alt-position
+            // RM whose meta number reflects a deep-lying playmaker role,
+            // not what an actual RM needs: real pace and dribbling). This
+            // nudges the meta-derived score by how the candidate's OWN
+            // key attributes for THIS position compare to the database-
+            // wide average fit for it (POSITION_FIT_BASELINE) — combining
+            // both discussed approaches:
+            //   - multiplicative (dampened to 0.90-1.08x) so a real meta
+            //     gap can never be flipped by fit alone — meta stays the
+            //     dominant signal, per your call to keep it that way;
+            //   - a small additive fit term on top, so two candidates
+            //     close in meta resolve toward whichever one actually
+            //     suits the position's job (fit as tiebreaker).
+            // Skipped when there's no meta (falls through to the hand-
+            // tuned attribute weighting below instead) or no baseline yet
+            // (empty database, or a position with no known key attrs).
+            if (hasMeta) {
+                const fitScore = computeKeyAttrFitScore(player, targetPos);
+                const poolFitAvg = POSITION_FIT_BASELINE[targetPos];
+                if (fitScore != null && poolFitAvg) {
+                    const fitRatio = fitScore / poolFitAvg;
+                    const fitMultiplier = Math.min(1.08, Math.max(0.90, fitRatio));
+                    base = base * fitMultiplier + fitScore * 0.3;
+                }
+            }
 
             if (player.pos === targetPos) {
                 base += 50;
@@ -5411,6 +5484,7 @@
                 const parsed = JSON.parse(txt);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     fc27Database = parsed;
+                    computePositionFitBaselines();
                     window.updateDatabaseStats();
                     populateManagerDropdown();
                     window.runSquadOptimizer();
@@ -5805,6 +5879,7 @@
             if (collected.length > 0) {
                 const normalized = collected.map(mapEasySbcPlayer);
                 fc27Database = normalized;
+                computePositionFitBaselines();
                 window.updateDatabaseStats();
                 populateManagerDropdown();
                 window.runSquadOptimizer();
