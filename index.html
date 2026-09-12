@@ -1274,6 +1274,10 @@
             // and should keep doing so). Wait for an explicit Optimize
             // click like every other setting now does.
             updateBuildFilterControlsState();
+            // A different budget means a different set of affordable
+            // combinations — old "already seen" tracking no longer applies.
+            squadState.exhausted = false;
+            squadState.history = new Set();
             markSettingsPending();
         };
 
@@ -1287,6 +1291,10 @@
                 // immediately generate a squad. Optimize is the one
                 // explicit action that actually builds anything now.
                 updateBuildFilterControlsState();
+                // Same reasoning as above — a new budget invalidates the
+                // old uniqueness history for Regenerate.
+                squadState.exhausted = false;
+                squadState.history = new Set();
                 markSettingsPending();
             }
         };
@@ -2999,6 +3007,14 @@
         window.setLeagueFilter = function(value) {
             squadState.leagueFilter = value || null;
             computePositionFitBaselines();
+            // The search space just changed size — a league-filtered pool
+            // has far fewer possible combinations than the full database,
+            // so Regenerate's "already seen" tracking from BEFORE this
+            // change is meaningless now (and was making it exhaust much
+            // faster, or even silently no-op if it was already stuck
+            // exhausted from an earlier, unrelated search).
+            squadState.exhausted = false;
+            squadState.history = new Set();
             markSettingsPending();
         };
 
@@ -3006,6 +3022,12 @@
         // the candidate pool — nothing to precompute, just wait for Optimize.
         window.setPlaystyleTarget = function(value) {
             squadState.playstyleTarget = value || null;
+            // Same reasoning as setLeagueFilter — a different playstyle
+            // bias can reorder scores enough that Regenerate's old
+            // uniqueness history no longer reflects what's actually
+            // achievable in this new scoring landscape.
+            squadState.exhausted = false;
+            squadState.history = new Set();
             markSettingsPending();
         };
 
