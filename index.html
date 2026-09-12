@@ -137,6 +137,21 @@
         [lang="ar"] .icon-label-row {
             flex-direction: row-reverse;
         }
+        /* Section header labels (e.g. "Physical Profile", "Key Attributes",
+           "Search for a Replacement") are plain inline <span>s — with no
+           width of their own beyond their text, "text-align" on the span
+           itself does nothing; what actually decided their position was
+           where an inline box starts in its container's line box, which
+           under our fixed dir="ltr" is always the left. unicode-bidi:
+           plaintext (above) fixes PARAGRAPH text that has room to be
+           aligned within its own box — it can't fix a short label that
+           IS its own box. Making these block-level lets text-align:right
+           actually move them to the right edge of their card, matching
+           the rest of the (already-mirrored) panel around them. */
+        [lang="ar"] [class*="uppercase tracking-wider"] {
+            display: block;
+            text-align: right;
+        }
     </style>
 </head>
 <body class="bg-fc-dark text-gray-100 font-sans min-h-screen selection:bg-fc-accent selection:text-fc-dark">
@@ -217,8 +232,7 @@
         <div id="view-calculator" class="space-y-8">
             <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl">
                 <div id="calc-header-block" class="max-w-3xl">
-                    <span data-i18n="step12" class="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-fc-accent border border-blue-500/20">STEP 1 & 2</span>
-                    <h2 data-i18n="calcTitle" class="text-2xl md:text-3xl font-extrabold mt-3 mb-2">FC Points & Premium Gold Pack Calculator</h2>
+                    <h2 data-i18n="calcTitle" class="text-2xl md:text-3xl font-extrabold mb-2">FC Points & Premium Gold Pack Calculator</h2>
                     <p data-i18n="calcDesc" class="text-gray-400 text-sm md:text-base">
                         Calculate your exact expected coin returns from purchasing Premium Gold Packs and quick-selling all received items. Modify pack costs or quick-sell bounds anytime via settings.
                     </p>
@@ -5348,7 +5362,7 @@
 
                     <!-- Question 2: how good is THIS player's number -->
                     <div class="bg-fc-card/60 rounded-lg p-3 space-y-2 border border-fc-border/60">
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between ${isAr ? 'flex-row-reverse' : ''}">
                             <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wide">${isAr ? 'مكانة هذا اللاعب' : "This Player's Standing"}</span>
                             <span class="text-sm font-black text-fc-accent">${evalMetaValue.toFixed(1)} MR</span>
                         </div>
@@ -5367,7 +5381,7 @@
 
                     <!-- Question 3: re-rank by a different priority -->
                     <div class="space-y-2">
-                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wide">${isAr ? 'أعد الترتيب حسب ما يهمك' : 'Re-rank by what matters to you'}</span>
+                        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wide ${isAr ? 'block text-right' : ''}">${isAr ? 'أعد الترتيب حسب ما يهمك' : 'Re-rank by what matters to you'}</span>
                         <div class="flex flex-wrap gap-1.5">${focusButtons}</div>
                     </div>
 
@@ -5388,7 +5402,7 @@
                             </div>
 
                             <div class="space-y-1">
-                                <span class="text-[11px] font-bold text-gray-400">PlayStyles</span>
+                                <span class="text-[11px] font-bold text-gray-400 ${isAr ? 'block text-right' : ''}">${isAr ? 'أنماط اللعب' : 'PlayStyles'}</span>
                                 ${playstyleBlock}
                             </div>
 
@@ -5606,7 +5620,7 @@
 
             const playstylesSection = hasPlaystyles ? `
                 <div class="space-y-2">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles</span>
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'أنماط اللعب' : 'PlayStyles'}</span>
                     <div class="flex flex-wrap gap-1.5 bg-fc-dark/60 border border-fc-border/60 rounded-xl p-3">
                         ${psPlus.map(s => playstyleChipHtml(s, true)).join('')}
                         ${psBase.map(s => playstyleChipHtml(s, false)).join('')}
@@ -5747,6 +5761,22 @@
                     </p>
                 `).join('');
 
+            const ratingLbl = currentLanguage === 'ar' ? 'التقييم' : 'Rating';
+            const metaLbl = currentLanguage === 'ar' ? 'ميتا' : 'Meta';
+            // Built as ONE fully-localized string per language rather than
+            // translating only some fragments (Meta/Price) while leaving
+            // English scaffolding ("Rating:", the "|" separators) mixed
+            // directly into an Arabic sentence — that partial translation
+            // is exactly what was scrambling this line, since the bidi
+            // algorithm has no clean isolated boundaries between the
+            // Arabic labels and the leftover English/punctuation. Each
+            // "label: value" cluster is wrapped in its own <bdi> so the
+            // pipe separators between them render in a stable position
+            // regardless of which script is on either side.
+            const statsLine = currentLanguage === 'ar'
+                ? `<bdi>${ratingLbl}: <span class="text-fc-gold font-bold">${player.rating}</span> OVR</bdi>${hasMeta ? ` <bdi>| ${metaLbl}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span></bdi>` : ''} <bdi>| ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()}</span> ${coinLbl}</bdi>`
+                : `${ratingLbl}: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span>`;
+
             content.innerHTML = `
                 <div class="space-y-5">
                 <div class="flex items-center space-x-4 rtl:space-x-reverse border-b border-fc-border pb-4">
@@ -5765,7 +5795,7 @@
                             <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30" style="direction:ltr;unicode-bidi:isolate;">${player.pos}</span>${accelBadge}
                         </div>
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
-                        <p class="text-xs text-gray-400">Rating: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span></p>
+                        <p class="text-xs text-gray-400">${statsLine}</p>
                         ${chemHeaderHtml}
                     </div>
                 </div>
