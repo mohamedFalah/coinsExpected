@@ -1692,6 +1692,91 @@
             return { positive: null, negative: null };
         }
 
+        // Reverse-engineered the same way as BODY_TYPE_PROFILE — by
+        // scanning the loaded database for a real example player at each
+        // ID and resolving the nation/league from that. NOT exhaustive:
+        // only IDs actually seen in a loaded database session are here,
+        // so any ID missing below is simply one that hasn't come up yet,
+        // not a confirmed gap. English names only for now — translating
+        // ~150 country/league names to Arabic accurately is a separate,
+        // larger job; getNationName/getLeagueName fall back to a plain
+        // "#id" label (never a guessed name) when an ID isn't in here.
+        //
+        // A handful of leagues legitimately map to TWO different IDs for
+        // the same real-world name (e.g. Eredivisie at both 10 and 2274,
+        // La Liga at both 53 and 54, MLS at both 39 and 322, Serie A at
+        // both 31 and 66) — recorded as reported rather than assumed to
+        // be a mistake, since EA's own data occasionally splits a league
+        // across two internal IDs (separate men's/women's entries, or a
+        // legacy vs. current-season license). Not merged or "corrected".
+        const NATION_NAMES = {
+            1: 'Albania', 3: 'Armenia', 4: 'Austria', 5: 'Azerbaijan', 7: 'Belgium',
+            8: 'Bosnia and Herzegovina', 9: 'Bulgaria', 10: 'Croatia', 11: 'Cyprus',
+            12: 'Czech Republic', 13: 'Denmark', 14: 'England', 15: 'Montenegro',
+            17: 'Finland', 18: 'France', 19: 'North Macedonia', 20: 'Georgia',
+            21: 'Germany', 22: 'Greece', 23: 'Hungary', 24: 'Iceland',
+            25: 'Republic of Ireland', 26: 'Israel', 27: 'Italy', 28: 'Latvia',
+            30: 'Lithuania', 31: 'Luxembourg', 32: 'Malta', 33: 'Moldova',
+            34: 'Netherlands', 35: 'Northern Ireland', 36: 'Norway', 37: 'Poland',
+            38: 'Portugal', 39: 'Romania', 40: 'Russia', 42: 'Scotland',
+            43: 'Slovakia', 44: 'Slovenia', 45: 'Spain', 46: 'Sweden',
+            47: 'Switzerland', 48: 'Turkey', 49: 'Ukraine', 50: 'Wales',
+            51: 'Serbia', 52: 'Argentina', 53: 'Bolivia', 54: 'Brazil',
+            55: 'Chile', 56: 'Colombia', 57: 'Ecuador', 58: 'Paraguay',
+            59: 'Peru', 60: 'Uruguay', 61: 'Venezuela', 63: 'Antigua and Barbuda',
+            70: 'Canada', 72: 'Costa Rica', 76: 'El Salvador', 77: 'Grenada',
+            80: 'Haiti', 81: 'Honduras', 82: 'Jamaica', 83: 'Mexico',
+            85: 'Curaçao', 87: 'Panama', 89: 'Saint Kitts and Nevis',
+            92: 'Suriname', 93: 'Trinidad and Tobago', 95: 'United States',
+            97: 'Algeria', 98: 'Angola', 99: 'Benin', 101: 'Burkina Faso',
+            102: 'Burundi', 103: 'Cameroon', 104: 'Cape Verde',
+            105: 'Central African Republic', 107: 'Congo', 108: 'Ivory Coast',
+            110: 'DR Congo', 111: 'Egypt', 112: 'Equatorial Guinea', 113: 'Eritrea',
+            115: 'Gabon', 116: 'Gambia', 117: 'Ghana', 118: 'Guinea',
+            119: 'Guinea-Bissau', 120: 'Kenya', 122: 'Liberia', 123: 'Libya',
+            124: 'Madagascar', 125: 'Malawi', 126: 'Mali', 127: 'Mauritania',
+            129: 'Morocco', 130: 'Mozambique', 132: 'Niger', 133: 'Nigeria',
+            136: 'Senegal', 138: 'Sierra Leone', 140: 'South Africa',
+            143: 'Tanzania', 144: 'Togo', 145: 'Tunisia', 147: 'Zambia',
+            148: 'Zimbabwe', 155: 'China', 158: 'Hong Kong', 160: 'Indonesia',
+            163: 'Japan', 164: 'Jordan', 167: 'South Korea', 179: 'Pakistan',
+            181: 'Philippines', 183: 'Saudi Arabia', 186: 'Syria', 188: 'Thailand',
+            190: 'United Arab Emirates', 191: 'Uzbekistan', 195: 'Australia',
+            198: 'New Zealand', 204: 'Vanuatu', 207: 'Curaçao', 208: 'Estonia',
+            213: 'Hong Kong', 214: 'Comoros', 215: 'Madagascar', 219: 'Kosovo'
+        };
+        const LEAGUE_NAMES = {
+            1: 'Danish Superliga', 4: 'Belgian Pro League', 10: 'Eredivisie',
+            13: 'Premier League', 14: 'Eliteserien', 16: 'Ligue 1',
+            17: 'Championnat National', 19: 'Bundesliga', 20: '3. Liga',
+            31: 'Serie A', 32: 'Serie B', 39: 'MLS', 41: 'Eliteserien',
+            50: 'Scottish Premiership', 53: 'La Liga', 54: 'La Liga',
+            56: 'Eliteserien', 60: 'EFL League One', 61: 'A-League Men',
+            63: 'Saudi Pro League', 65: 'EFL League Two', 66: 'Serie A',
+            68: 'Süper Lig', 80: 'Austrian Bundesliga', 83: 'K League 1',
+            189: '2. Bundesliga', 308: 'Primeira Liga', 317: 'Greek Super League',
+            319: 'Czech First League', 322: 'MLS', 330: 'Liga I',
+            332: 'Ukrainian Premier League', 341: 'Liga MX', 350: 'Saudi Pro League',
+            351: 'A-League Men', 353: 'Argentine Primera División', 1003: 'Liga MX',
+            1014: 'Segunda División', 2012: 'Chinese Super League',
+            2076: '2. Bundesliga', 2172: 'UAE Pro League',
+            2209: 'Campeonato Brasileiro Série A', 2210: 'Cypriot First Division',
+            2211: 'Nemzeti Bajnokság I', 2215: 'Frauen-Bundesliga',
+            2216: 'Liga F', 2218: 'Première Ligue', 2221: 'NWSL',
+            2222: 'Liga F', 2228: 'Campeonato Nacional Feminino',
+            2229: 'Vrouwen Eredivisie', 2230: '1. CCLW',
+            2231: 'Serie A Femminile', 2232: 'Damallsvenskan',
+            2233: "Scottish Women's Premier League", 2236: 'Serie A Femminile',
+            2244: 'USL Championship', 2267: 'Campeonato Brasileiro Série A',
+            2271: 'Thai League 1', 2274: 'Eredivisie'
+        };
+        function getNationName(id) {
+            return id != null && NATION_NAMES[id] ? NATION_NAMES[id] : null;
+        }
+        function getLeagueName(id) {
+            return id != null && LEAGUE_NAMES[id] ? LEAGUE_NAMES[id] : null;
+        }
+
         const ATTRIBUTE_LABELS = {
             pac: { en: 'Pace', ar: 'السرعة' },
             sho: { en: 'Shooting', ar: 'التسديد' },
@@ -2130,7 +2215,7 @@
             nationSelect.innerHTML = `
                 <option value="">${noNationLabel}</option>
                 ${opts.nations.length > 0
-                    ? opts.nations.map(n => `<option value="${n.id}">${nationLabel} (${n.example}) — ${impactText(n.count)}</option>`).join('')
+                    ? opts.nations.map(n => `<option value="${n.id}">${nationLabel} (${getNationName(n.id) || n.example}) — ${impactText(n.count)}</option>`).join('')
                     : `<option value="" disabled>${nothingLabel}</option>`}
             `;
             nationSelect.value = currentNationValue;
@@ -2138,7 +2223,7 @@
             leagueSelect.innerHTML = `
                 <option value="">${noLeagueLabel}</option>
                 ${opts.leagues.length > 0
-                    ? opts.leagues.map(l => `<option value="${l.id}">${leagueLabel} (${l.example}) — ${impactText(l.count)}</option>`).join('')
+                    ? opts.leagues.map(l => `<option value="${l.id}">${leagueLabel} (${getLeagueName(l.id) || l.example}) — ${impactText(l.count)}</option>`).join('')
                     : `<option value="" disabled>${nothingLabel}</option>`}
             `;
             leagueSelect.value = currentLeagueValue;
@@ -3841,11 +3926,11 @@
                             const b = info.breakdown;
                             const factors = [
                                 { key: 'club', pts: b.cPts, count: b.clubCount },
-                                { key: 'nation', pts: b.nPts, count: b.nationCount },
-                                { key: 'league', pts: b.lPts, count: b.leagueCount }
+                                { key: 'nation', pts: b.nPts, count: b.nationCount, name: getNationName(player.nationId) },
+                                { key: 'league', pts: b.lPts, count: b.leagueCount, name: getLeagueName(player.leagueId) }
                             ].sort((a, c) => a.pts - c.pts);
                             const weakest = factors[0];
-                            const wLabel = FACTOR_LABEL[weakest.key];
+                            const wLabel = weakest.name ? `${FACTOR_LABEL[weakest.key]}: ${weakest.name}` : FACTOR_LABEL[weakest.key];
                             issues.push(isAr
                                 ? `${player.name} بكيمياء ${info.points}/3 — أضعف رابط هو ${wLabel} (${weakest.count} فقط من زملائه في التشكيلة يشاركونه هذا الرابط).`
                                 : `${player.name} sits at ${info.points}/3 chemistry — the weakest link is ${wLabel} (only ${weakest.count} teammate${weakest.count === 1 ? '' : 's'} in this XI share it).`);
