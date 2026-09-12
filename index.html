@@ -300,13 +300,13 @@
 
                     <select id="formation-select" onchange="changeFormation(this.value)" title="Formation"
                         class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
-                        <option value="4-3-3">4-3-3 (Attack / Standard)</option>
-                        <option value="4-4-2">4-4-2 (Flat)</option>
-                        <option value="4-2-3-1">4-2-3-1 (Narrow)</option>
-                        <option value="4-1-2-1-2">4-1-2-1-2 (Diamond)</option>
-                        <option value="3-5-2">3-5-2 (Balanced)</option>
-                        <option value="4-5-1">4-5-1 (Defensive Wide)</option>
-                        <option value="4-4-1-1">4-4-1-1 (Flat / Support Striker)</option>
+                        <option value="4-3-3">4-3-3</option>
+                        <option value="4-4-2">4-4-2</option>
+                        <option value="4-2-3-1">4-2-3-1</option>
+                        <option value="4-1-2-1-2">4-1-2-1-2</option>
+                        <option value="3-5-2">3-5-2</option>
+                        <option value="4-5-1">4-5-1</option>
+                        <option value="4-4-1-1">4-4-1-1</option>
                     </select>
 
                     <select id="manager-nation-select" onchange="setSquadManagerField('nation', this.value)" title="Manager Nationality (optional, +1 chem match) — a manager has BOTH a nation and a league at once, set independently of this field"
@@ -322,11 +322,11 @@
                     <div class="flex items-center flex-wrap gap-2.5 ml-auto">
                         <button onclick="runSquadOptimizer()" id="optimize-btn" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 hover:from-fc-accentHover hover:to-blue-500 text-fc-dark font-black text-xs shadow-lg shadow-fc-accent/25 transition-all flex items-center gap-1.5 whitespace-nowrap">
                             <i class="fa-solid fa-wand-magic-sparkles"></i>
-                            <span data-i18n="optimizeBtn">OPTIMIZE BEST SQUAD</span>
+                            <span data-i18n="optimizeBtn">OPTIMIZE</span>
                         </button>
                         <button onclick="regenerateSquad()" id="regenerate-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Generate a different squad for the same formation & budget">
                             <i class="fa-solid fa-shuffle"></i>
-                            <span data-i18n="regenBtn">REGENERATE SQUAD</span>
+                            <span data-i18n="regenBtn">REGENERATE</span>
                         </button>
                         <button onclick="openExplanationModal()" class="p-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all shrink-0" title="How was this squad built?">
                             <i class="fa-solid fa-circle-info text-lg"></i>
@@ -733,9 +733,9 @@
                 syncCalc: "Sync Calc",
                 formationLabel: "Formation",
                 managerLabel: "Manager (optional, +1 chem match)",
-                optimizeBtn: "OPTIMIZE BEST SQUAD",
-                regenBtn: "REGENERATE SQUAD",
-                regenExhausted: "NO MORE UNIQUE SQUADS",
+                optimizeBtn: "OPTIMIZE",
+                regenBtn: "REGENERATE",
+                regenExhausted: "EXHAUSTED",
                 squadSummary: "Squad Summary",
                 availableBudget: "Available Budget",
                 totalSquadCost: "Total Squad Cost",
@@ -818,9 +818,9 @@
                 syncCalc: "مزامنة الحاسبة",
                 formationLabel: "التشكيلة",
                 managerLabel: "المدرب (اختياري، +1 كيمياء عند التطابق)",
-                optimizeBtn: "تحسين أفضل تشكيلة",
-                regenBtn: "إعادة توليد التشكيلة",
-                regenExhausted: "لا مزيد من التشكيلات الفريدة",
+                optimizeBtn: "تحسين",
+                regenBtn: "إعادة توليد",
+                regenExhausted: "انتهت التشكيلات",
                 squadSummary: "ملخص التشكيلة",
                 availableBudget: "الميزانية المتاحة",
                 totalSquadCost: "إجمالي تكلفة التشكيلة",
@@ -2068,7 +2068,7 @@
             calculateNextBestUpgrade();
         }
 
-        window.runSquadOptimizer = function() {
+        function runSquadOptimizerImpl() {
             if (squadState.budget <= 0) {
                 initializeManualBuildSquad();
                 return;
@@ -2374,7 +2374,7 @@
             return { selectedXI, totalCost: currentSpent };
         }
 
-        window.regenerateSquad = function() {
+        function regenerateSquadImpl() {
             // Manual Build Mode (budget = 0): nothing to randomize — every
             // pick was deliberate. Regenerating here would just silently
             // throw away hand-picked players, so this is a no-op with a
@@ -2456,6 +2456,72 @@
             renderSquadSummary();
             calculateNextBestUpgrade();
             updateRegenerateButtonState();
+        };
+
+        // Shows real, visible feedback that a squad build/regenerate is
+        // actually happening — both buttons disable and the one that was
+        // clicked swaps its icon for a spinner and its label for a plain
+        // "Working…" — instead of the UI just sitting frozen and then
+        // the squad silently changing with no indication anything ran.
+        // The heavy build logic runs synchronously and would otherwise
+        // block the browser from ever painting this state, so callers
+        // defer the actual work by one tick (setTimeout) after calling
+        // this, giving the browser a chance to render the spinner first.
+        function beginSquadWorking(activeBtnId, workingLabel) {
+            ['optimize-btn', 'regenerate-btn'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) { b.disabled = true; b.classList.add('opacity-70', 'cursor-wait'); }
+            });
+            const activeBtn = document.getElementById(activeBtnId);
+            if (activeBtn) {
+                const icon = activeBtn.querySelector('i');
+                const label = activeBtn.querySelector('span');
+                if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+                if (label) label.textContent = workingLabel;
+            }
+        }
+
+        // Restores both buttons to their correct final state. Doesn't
+        // restore from a snapshot (a click could change what the CORRECT
+        // end state should be — e.g. Regenerate can become exhausted
+        // mid-call) — it recomputes it: the optimize button always goes
+        // back to its fixed label, and the regenerate button defers to
+        // updateRegenerateButtonState(), the single source of truth for
+        // whether it should read "REGENERATE" or "EXHAUSTED".
+        function endSquadWorking() {
+            const optimizeBtn = document.getElementById('optimize-btn');
+            const regenBtn = document.getElementById('regenerate-btn');
+            [optimizeBtn, regenBtn].forEach(b => { if (b) b.classList.remove('opacity-70', 'cursor-wait'); });
+            if (optimizeBtn) {
+                optimizeBtn.disabled = false;
+                const icon = optimizeBtn.querySelector('i');
+                const label = optimizeBtn.querySelector('span');
+                if (icon) icon.className = 'fa-solid fa-wand-magic-sparkles';
+                if (label) { label.setAttribute('data-i18n', 'optimizeBtn'); label.textContent = i18n[currentLanguage].optimizeBtn; }
+            }
+            if (regenBtn) {
+                const icon = regenBtn.querySelector('i');
+                if (icon) icon.className = 'fa-solid fa-shuffle';
+                updateRegenerateButtonState();
+            }
+        }
+
+        window.runSquadOptimizer = function() {
+            const workingLabel = currentLanguage === 'ar' ? 'جارٍ العمل…' : 'Working…';
+            beginSquadWorking('optimize-btn', workingLabel);
+            setTimeout(() => {
+                runSquadOptimizerImpl();
+                endSquadWorking();
+            }, 20);
+        };
+
+        window.regenerateSquad = function() {
+            const workingLabel = currentLanguage === 'ar' ? 'جارٍ العمل…' : 'Working…';
+            beginSquadWorking('regenerate-btn', workingLabel);
+            setTimeout(() => {
+                regenerateSquadImpl();
+                endSquadWorking();
+            }, 20);
         };
 
         function updateRegenerateButtonState() {
