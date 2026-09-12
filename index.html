@@ -2952,15 +2952,31 @@
                     : Math.min(24, Math.max(2, (grassInset + 5) * densityFactor));
 
                 const rowDiv = document.createElement('div');
-                // justify-evenly (not a fixed pixel gap) so the whitespace
-                // between cards scales with however much room this row
-                // actually has inside its grass-safe padding — a static
-                // 12-16px gap reads as basically nothing on a wide desktop
-                // pitch, but evenly distributing the real leftover space
-                // gives clearly visible gaps at any screen size.
-                rowDiv.className = "flex justify-evenly items-start w-full";
+                // justify-CENTER, not justify-evenly. justify-evenly only
+                // behaves predictably when there's genuine positive free
+                // space to distribute — right at the edge of a row's
+                // content fitting (exactly the situation a 5-wide row on
+                // a mid-size viewport can land in), browsers can resolve
+                // the "leftover space" ambiguously, which is what was
+                // producing the asymmetric/right-leaning row instead of a
+                // real centered one. justify-content:center has no such
+                // edge case: the whole row is always treated as one
+                // centered block. The explicit gap (still percentage-
+                // based, so it keeps scaling with available room like
+                // before rather than reading as static/tiny on a wide
+                // desktop pitch) replaces evenly's job of visible spacing
+                // between cards. flex-wrap is a safety net, not the
+                // normal path — if a row's real content ever is wider
+                // than its box (which shouldn't happen given the sizing
+                // below, but zoom/DPI edge cases are exactly what caused
+                // this bug once already), wrapping to a centered second
+                // line is a far less broken failure mode than a
+                // one-sided squeeze.
+                const gapPercent = Math.min(8, Math.max(2, 12 / itemCount));
+                rowDiv.className = "flex flex-wrap justify-center items-start w-full";
                 rowDiv.style.paddingLeft = rowInset + '%';
                 rowDiv.style.paddingRight = rowInset + '%';
+                rowDiv.style.gap = gapPercent + '%';
 
                 rowItems.forEach(item => {
                     const player = item.player;
