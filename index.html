@@ -90,8 +90,9 @@
             box-shadow: 0 6px 25px 0 rgba(0, 242, 254, 0.35);
             transform: translateY(-3px);
         }
-        /* RTL support tweaks */
-        [dir="rtl"] {
+        /* Arabic gets the Cairo font regardless of layout direction — see
+           window.changeLanguage below for why dir is never flipped to rtl. */
+        [lang="ar"] {
             font-family: 'Cairo', sans-serif;
         }
     </style>
@@ -878,13 +879,19 @@
         window.changeLanguage = function(lang) {
             currentLanguage = lang;
             const htmlRoot = document.getElementById('html-root');
-            if (lang === 'ar') {
-                htmlRoot.setAttribute('dir', 'rtl');
-                htmlRoot.setAttribute('lang', 'ar');
-            } else {
-                htmlRoot.setAttribute('dir', 'ltr');
-                htmlRoot.setAttribute('lang', 'en');
-            }
+            // dir is deliberately NEVER set to 'rtl' here. Switching dir is
+            // what was causing the layout to visibly jump on every language
+            // change — it triggers the browser's native RTL mirroring
+            // (flex/inline order reversing, text-align defaults flipping,
+            // the scrollbar moving sides, all the rtl: Tailwind variants
+            // throughout this file activating at once). Arabic TEXT still
+            // renders correctly right-to-left on its own regardless of the
+            // container's dir — that's the Unicode bidi algorithm shaping
+            // the script itself, not something dir="rtl" is needed for.
+            // Keeping dir fixed at ltr means only the words change when you
+            // switch languages, never where anything on screen sits.
+            htmlRoot.setAttribute('dir', 'ltr');
+            htmlRoot.setAttribute('lang', lang === 'ar' ? 'ar' : 'en');
 
             // Translate static data-i18n attributes
             document.querySelectorAll('[data-i18n]').forEach(el => {
