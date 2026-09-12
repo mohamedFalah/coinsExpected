@@ -377,7 +377,7 @@
                     </select>
 
                     <select id="league-filter-select" onchange="window.setLeagueFilter(this.value)" disabled
-                        title="Build entirely from one big league's players — disabled until a budget is set"
+                        title="Build entirely from one big league's players — click Optimize to apply"
                         class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[160px] opacity-50 cursor-not-allowed">
                         <option value="">— No League Restriction —</option>
                         <option value="premier_league">Premier League</option>
@@ -389,7 +389,7 @@
                     </select>
 
                     <select id="playstyle-target-select" onchange="window.setPlaystyleTarget(this.value)" disabled
-                        title="Strongly bias the squad build toward one identity — disabled until a budget is set"
+                        title="Strongly bias the squad build toward one identity — click Optimize to apply"
                         class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent max-w-[170px] opacity-50 cursor-not-allowed">
                         <option value="">— No Playstyle Preference —</option>
                         <option value="pace">⚡ Speed & Transitions</option>
@@ -2955,21 +2955,34 @@
             }
         }
 
-        // League filter changes the actual candidate POOL (getActiveDatabase),
-        // so the position-fit/style baselines need recomputing before the
-        // rebuild — otherwise they'd still reflect the old, wider pool.
+        // Highlights the Optimize button when a setting has changed but
+        // hasn't been applied yet — the user asked to stop auto-rebuilding
+        // on every change, so nothing here calls runSquadOptimizer(); it's
+        // purely a visual nudge that a click is needed to apply it.
+        function markSettingsPending() {
+            const btn = document.getElementById('optimize-btn');
+            if (btn) btn.classList.add('ring-2', 'ring-fc-gold', 'animate-pulse');
+        }
+        function clearSettingsPending() {
+            const btn = document.getElementById('optimize-btn');
+            if (btn) btn.classList.remove('ring-2', 'ring-fc-gold', 'animate-pulse');
+        }
+
+        // League filter changes the actual candidate POOL (getActiveDatabase).
+        // Baselines are recomputed right away (cheap, just data prep) so
+        // they're ready the moment the user does click Optimize — but the
+        // rebuild itself waits for that click.
         window.setLeagueFilter = function(value) {
             squadState.leagueFilter = value || null;
             computePositionFitBaselines();
-            window.runSquadOptimizer();
+            markSettingsPending();
         };
 
         // Playstyle target only changes SCORING (calculatePlayerScore), not
-        // the candidate pool itself, so no baseline recompute is needed —
-        // just rebuild.
+        // the candidate pool — nothing to precompute, just wait for Optimize.
         window.setPlaystyleTarget = function(value) {
             squadState.playstyleTarget = value || null;
-            window.runSquadOptimizer();
+            markSettingsPending();
         };
 
         function endSquadWorking() {
@@ -2989,6 +3002,7 @@
                 updateRegenerateButtonState();
             }
             updateBuildFilterControlsState();
+            clearSettingsPending();
         }
 
         window.runSquadOptimizer = function() {
