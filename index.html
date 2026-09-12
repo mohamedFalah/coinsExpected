@@ -108,6 +108,35 @@
         [lang="ar"] * {
             unicode-bidi: plaintext;
         }
+        /* This header block is deliberately narrower than its container
+           (max-w-3xl) to keep the description paragraph's line length
+           readable — a legitimate typographic choice, not a bug. But
+           with no auto margin it anchors to the block-start edge, which
+           under the fixed dir="ltr" (see window.changeLanguage) is
+           always the LEFT — leaving a large, odd-looking empty gap on
+           the right in Arabic. Right-anchoring it only in Arabic mode
+           moves that same empty space to the left, where it reads
+           naturally instead of looking like a missing element. */
+        [lang="ar"] #calc-header-block {
+            margin-left: auto;
+            margin-right: 0;
+        }
+        /* Min/Expected/Max coin return rows: label was always the first
+           (leftmost) child with the value trailing on the right — natural
+           for LTR reading, but backwards for Arabic (you'd read the raw
+           number before knowing what it means). Reversed only for
+           Arabic so the label sits on the right, where RTL reading
+           starts, with the value trailing to the left. */
+        [lang="ar"] .coin-return-row {
+            flex-direction: row-reverse;
+        }
+        /* Shared "icon then short label" header pattern used across several
+           static (non-JS-templated) section headers — same mirroring as
+           the JS-rendered icon+text rows elsewhere, just applied via a
+           class since this markup isn't regenerated per render. */
+        [lang="ar"] .icon-label-row {
+            flex-direction: row-reverse;
+        }
     </style>
 </head>
 <body class="bg-fc-dark text-gray-100 font-sans min-h-screen selection:bg-fc-accent selection:text-fc-dark">
@@ -187,7 +216,7 @@
         <!-- ================= VIEW 1: PACK CALCULATOR ================= -->
         <div id="view-calculator" class="space-y-8">
             <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl">
-                <div class="max-w-3xl">
+                <div id="calc-header-block" class="max-w-3xl">
                     <span data-i18n="step12" class="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-fc-accent border border-blue-500/20">STEP 1 & 2</span>
                     <h2 data-i18n="calcTitle" class="text-2xl md:text-3xl font-extrabold mt-3 mb-2">FC Points & Premium Gold Pack Calculator</h2>
                     <p data-i18n="calcDesc" class="text-gray-400 text-sm md:text-base">
@@ -267,15 +296,15 @@
 
                             <div class="space-y-3">
                                 <span data-i18n="coinReturnProj" class="text-xs font-bold uppercase tracking-wider text-gray-400">Coin Return Projections</span>
-                                <div class="flex items-center justify-between text-sm">
+                                <div class="flex items-center justify-between text-sm coin-return-row">
                                     <span data-i18n="minReturn" class="text-gray-400">Minimum Return</span>
                                     <span id="calc-min-coins" class="font-bold text-gray-300">0 Coins</span>
                                 </div>
-                                <div class="flex items-center justify-between text-sm bg-fc-card p-3 rounded-xl border border-fc-accent/30">
+                                <div class="flex items-center justify-between text-sm bg-fc-card p-3 rounded-xl border border-fc-accent/30 coin-return-row">
                                     <span data-i18n="expectedCoins" class="font-bold text-white">Expected Coins (Primary)</span>
                                     <span id="calc-expected-coins" class="text-lg font-extrabold text-fc-gold">0 Coins</span>
                                 </div>
-                                <div class="flex items-center justify-between text-sm">
+                                <div class="flex items-center justify-between text-sm coin-return-row">
                                     <span data-i18n="maxReturn" class="text-gray-400">Maximum Return</span>
                                     <span id="calc-max-coins" class="font-bold text-gray-300">0 Coins</span>
                                 </div>
@@ -358,7 +387,7 @@
                      the content it was supposed to be heading, ending up
                      stranded next to the "why" paragraph instead. -->
                 <div class="px-4 py-3 border-t border-fc-border space-y-2">
-                    <div class="flex items-center gap-2 text-gray-400">
+                    <div class="flex items-center gap-2 text-gray-400 icon-label-row">
                         <i class="fa-solid fa-clipboard-list text-xs"></i>
                         <span class="font-bold text-xs uppercase tracking-wide" data-i18n="suggestedTactics">Suggested Tactics</span>
                     </div>
@@ -3472,7 +3501,7 @@
 
             const isAr = currentLanguage === 'ar';
             const pill = (label, value) => `
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-1.5 shrink-0 ${isAr ? 'flex-row-reverse' : ''}">
                     <span class="text-[11px] text-gray-400">${label}</span>
                     <span class="text-sm font-black text-white">${value}</span>
                 </div>
@@ -3503,7 +3532,7 @@
             // around it, instead of a separate bordered widget.
             container.innerHTML = `
                 <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'أسلوب اللعب' : 'Playstyle'}</span>
-                <div class="flex items-center gap-2 mt-1.5">
+                <div class="flex items-center gap-2 mt-1.5 ${isAr ? 'flex-row-reverse justify-end' : ''}">
                     <i class="fa-solid ${identity.icon} text-fc-accent text-xs shrink-0"></i>
                     <span class="text-gray-200 font-semibold text-sm leading-snug">${identity.headline}</span>
                 </div>
@@ -5797,7 +5826,7 @@
                                     const label = currentLanguage === 'ar' ? def.ar : def.en;
                                     const cardHtml = `
                                         <div class="bg-fc-dark/70 border border-fc-border rounded-2xl p-3 flex flex-col gap-1.5">
-                                            <div class="flex items-center gap-1.5 text-gray-400">
+                                            <div class="flex items-center gap-1.5 text-gray-400 icon-label-row">
                                                 <i class="fa-solid ${def.icon || 'fa-chart-simple'} text-xs w-4 text-center shrink-0"></i>
                                                 <span class="font-bold text-[11px] truncate" title="${label}">${label}</span>
                                             </div>
