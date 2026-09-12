@@ -2220,7 +2220,7 @@
                     const priceCeiling = currentPlayer.price + leftover;
                     const currentAdjScore = calculatePlayerScore(currentPlayer, slot.pos) * chemistryMultiplier(idx, currentPlayer);
 
-                    fc27Database.forEach(cand => {
+                    getActiveDatabase().forEach(cand => {
                         if (cand.id === currentPlayer.id) return;
                         if (usedIds.has(cand.id)) return;
                         if (!(cand.pos === slot.pos || (cand.alt && cand.alt.includes(slot.pos)))) return;
@@ -2432,6 +2432,18 @@
                 .sort((a, b) => (getMetaValue(b) - getMetaValue(a)) || (b.rating - a.rating));
 
             lockedPlayers.forEach(player => {
+                // A locked player from outside the active league filter
+                // would break "strictly from that league" the same way the
+                // position-fit bug did earlier — auto-unlock them instead
+                // of silently letting a lock override the filter.
+                if (squadState.leagueFilter && LEAGUE_FILTER_GROUPS[squadState.leagueFilter]) {
+                    const allowedIds = LEAGUE_FILTER_GROUPS[squadState.leagueFilter].ids;
+                    if (player.leagueId == null || !allowedIds.includes(player.leagueId)) {
+                        squadState.lockedIds.delete(player.id);
+                        unlockedPlayers.push(player);
+                        return;
+                    }
+                }
                 let bestIdx = -1, bestFit = 2; // only 0 (exact) or 1 (own alt) are ever acceptable
                 slots.forEach((slot, idx) => {
                     if (usedSlot.has(idx)) return;
