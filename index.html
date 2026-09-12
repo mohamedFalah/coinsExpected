@@ -3884,11 +3884,11 @@
                 if (issues.length === 0) return '';
                 return `
                     <div class="space-y-1">
-                        <div class="flex items-center gap-1.5 text-[11px] font-bold text-gray-300 uppercase tracking-wide">
+                        <div class="flex items-center gap-1.5 text-[11px] font-bold text-gray-300 uppercase tracking-wide ${isAr ? 'flex-row-reverse justify-end' : ''}">
                             <i class="fa-solid ${def.icon} text-[10px]"></i>${def.label}
                         </div>
                         ${issues.map(p => `
-                            <p class="text-xs text-gray-400 leading-snug flex items-start gap-1.5 pl-1">
+                            <p class="text-xs text-gray-400 leading-snug flex items-start gap-1.5 pl-1 ${isAr ? 'flex-row-reverse' : ''}">
                                 <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
                                 <span>${p}</span>
                             </p>
@@ -3985,7 +3985,7 @@
                 });
                 if (strengths.length > 0) {
                     html += strengths.map(s => `
-                        <p class="text-[11px] text-green-400/90 leading-snug flex items-start gap-1.5 mt-1">
+                        <p class="text-[11px] text-green-400/90 leading-snug flex items-start gap-1.5 mt-1 ${isAr ? 'flex-row-reverse' : ''}">
                             <i class="fa-solid fa-arrow-trend-up text-[10px] mt-0.5 shrink-0"></i>
                             <span>${s}</span>
                         </p>
@@ -4734,7 +4734,7 @@
                 return;
             }
             container.innerHTML = points.map(p => `
-                <p class="text-xs text-gray-300 leading-snug flex items-start gap-1.5">
+                <p class="text-xs text-gray-300 leading-snug flex items-start gap-1.5 ${isAr ? 'flex-row-reverse' : ''}">
                     <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
                     <span>${p}</span>
                 </p>
@@ -5658,7 +5658,7 @@
                 const diamondsSmall = [0, 1, 2].map(i => dot(chemInfo.inPosition && i < chemInfo.points, !chemInfo.inPosition)).join(' ');
                 if (!chemInfo.inPosition) {
                     chemHeaderHtml = `
-                        <div class="flex items-center gap-2 mt-1.5 text-[11px]">
+                        <div class="flex items-center gap-2 mt-1.5 text-[11px] ${currentLanguage === 'ar' ? 'flex-row-reverse justify-end' : ''}">
                             <span class="font-bold text-red-400 uppercase tracking-wide">${chemLabel} 0/3</span>
                             <div class="flex gap-0.5">${diamondsSmall}</div>
                             <span class="text-red-300/80">${currentLanguage === 'ar' ? 'خارج المركز — لا كيمياء' : 'Out of position — 0 chemistry'}</span>
@@ -5666,7 +5666,7 @@
                     `;
                 } else if (chemInfo.isIcon || chemInfo.isHero) {
                     chemHeaderHtml = `
-                        <div class="flex items-center gap-2 mt-1.5 text-[11px]">
+                        <div class="flex items-center gap-2 mt-1.5 text-[11px] ${currentLanguage === 'ar' ? 'flex-row-reverse justify-end' : ''}">
                             <span class="font-bold text-green-400 uppercase tracking-wide">${chemLabel} 3/3</span>
                             <div class="flex gap-0.5">${diamondsSmall}</div>
                             <span class="text-gray-500">${chemInfo.isIcon ? (currentLanguage === 'ar' ? 'أيقونة — قفل تلقائي' : 'Icon — auto-locked') : (currentLanguage === 'ar' ? 'بطل — قفل تلقائي' : 'Hero — auto-locked')}</span>
@@ -5686,7 +5686,7 @@
                         ? `<span class="text-fc-accent font-semibold">+1 ${currentLanguage === 'ar' ? 'من المدرب' : 'Manager'}</span>`
                         : '';
                     chemHeaderHtml = `
-                        <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[11px]">
+                        <div class="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[11px] ${currentLanguage === 'ar' ? 'flex-row-reverse justify-end' : ''}">
                             <span class="font-bold ${chemColor} uppercase tracking-wide">${chemLabel} ${chemInfo.points}/3</span>
                             <div class="flex gap-0.5">${diamondsSmall}</div>
                             ${mgrNote}
@@ -5712,7 +5712,7 @@
             const initialVulnHtml = initialVulnPoints.length === 0
                 ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نقاط ضعف واضحة تستحق الذكر لهذه البطاقة.' : 'No clear weaknesses stand out for this card.'}</p>`
                 : initialVulnPoints.map(p => `
-                    <p class="text-xs text-gray-300 leading-snug flex items-start gap-1.5">
+                    <p class="text-xs text-gray-300 leading-snug flex items-start gap-1.5 ${currentLanguage === 'ar' ? 'flex-row-reverse' : ''}">
                         <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
                         <span>${p}</span>
                     </p>
@@ -6232,7 +6232,8 @@
             const colorClass = isPlus
                 ? 'bg-fc-gold/10 text-fc-gold border-fc-gold/30'
                 : 'bg-gray-500/10 text-gray-300 border-gray-500/30';
-            return `<span class="inline-flex items-center gap-1 rounded-lg font-bold border ${sizeClass} ${colorClass}"><i class="fa-solid ${icon}"></i>${name}${isPlus ? '+' : ''}</span>`;
+            const orderClass = currentLanguage === 'ar' ? 'flex-row-reverse' : '';
+            return `<span class="inline-flex items-center gap-1 rounded-lg font-bold border ${sizeClass} ${colorClass} ${orderClass}"><i class="fa-solid ${icon}"></i>${name}${isPlus ? '+' : ''}</span>`;
         }
 
         // Turns one raw playstyle entry (shape varies: plain string, {name},
