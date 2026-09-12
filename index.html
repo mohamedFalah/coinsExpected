@@ -1422,6 +1422,74 @@
         // Human-readable names for the 6 broad attribute composites, used to
         // label the "Key Attributes" grid in the player modal instead of
         // raw 3-letter codes.
+        // EA FC's real body type system — reverse-engineered from live
+        // per-player card data by cross-referencing bodyTypeId against
+        // named players' actual listed builds on EasySBC, NOT guessed:
+        // Pedri=1 (Average & Lean), Nuno Mendes=2 (Average & Normal),
+        // Murillo=3 (Average & Stocky), Ryan Gravenberch=4 (Tall &
+        // Lean), Willian Pacho=5 (Tall & Normal), Bremer=6 (Tall &
+        // Stocky), Elisa Senß=7 (Short & Lean), Patri Guijarro=8 (Short
+        // & Normal), Paula Fernández=9 (Short & Stocky), Ousmane
+        // Dembélé=13 (Unique). That's a clean, systematic 3x3 grid of
+        // Height (Short/Average/Tall) x Build (Lean/Normal/Stocky) for
+        // IDs 1-9, plus a separate "Unique" tier at 13 for bespoke,
+        // individually motion-captured players. IDs 10-12 and 14 were
+        // never observed in a real card and are left unmapped rather
+        // than assumed to continue the same pattern — and 15 showed as
+        // a blank "-" on the source site for the one card that had it,
+        // so it's deliberately left unresolved too rather than labeled
+        // with a guess. Any id not in this map falls back to a plain
+        // "Type {id}" label with no gameplay-feel text, in the same
+        // "never guess, verified only" spirit as the AcceleRATE work.
+        //
+        // The "feel" text is general EA FC community/gameplay knowledge
+        // about how build affects ANIMATIONS (turning circle, close
+        // control, physical duels, aerial presence) — body type does
+        // NOT change a card's actual stat numbers, so this is presented
+        // as a qualitative feel note, not a quantified claim.
+        const BODY_TYPE_PROFILE = {
+            1: { label: { en: 'Average & Lean', ar: 'متوسط ونحيف' }, feel: {
+                en: 'A lean, average-height build — tends to turn and change direction quickly with the ball, but can be shrugged off it more easily in a physical duel than a stockier player with similar stats.',
+                ar: 'بنية نحيفة بطول متوسط — يميل للدوران وتغيير الاتجاه بسرعة مع الكرة، لكن يمكن دفعه عنها بسهولة أكبر في مواجهة بدنية مقارنة بلاعب أقوى بنية بنفس الإحصائيات.'
+            }},
+            2: { label: { en: 'Average & Normal', ar: 'متوسط وطبيعي' }, feel: {
+                en: 'An average build in every sense — no real animation trade-off either way, a genuinely neutral physical baseline.',
+                ar: 'بنية متوسطة بكل المقاييس — لا توجد مقايضة واضحة في الحركة، بل خط أساس بدني محايد فعلاً.'
+            }},
+            3: { label: { en: 'Average & Stocky', ar: 'متوسط وقوي البنية' }, feel: {
+                en: 'A stockier, average-height build — better at shielding the ball and winning physical duels than a lean player with similar stats, at the cost of a slightly less tight turning circle.',
+                ar: 'بنية أقوى بطول متوسط — أفضل في حماية الكرة والفوز بالمواجهات البدنية مقارنة بلاعب نحيف بنفس الإحصائيات، مقابل دائرة دوران أقل إحكاماً قليلاً.'
+            }},
+            4: { label: { en: 'Tall & Lean', ar: 'طويل ونحيف' }, feel: {
+                en: 'Tall and lean — good reach and presence in the air without the bulkiest frame, though tall builds in general tend to have a slightly wider turning circle at pace than shorter players.',
+                ar: 'طويل ونحيف — امتداد وحضور جيد في الكرات الهوائية دون أن يكون الأثقل بنية، رغم أن اللاعبين الطوال عموماً يميلون لدائرة دوران أوسع قليلاً أثناء السرعة مقارنة باللاعبين الأقصر.'
+            }},
+            5: { label: { en: 'Tall & Normal', ar: 'طويل وطبيعي' }, feel: {
+                en: 'Tall with a normal build — a strong physical/aerial presence, with the same slightly wider turning circle common to taller frames.',
+                ar: 'طويل ببنية طبيعية — حضور بدني وهوائي قوي، مع نفس دائرة الدوران الأوسع قليلاً الشائعة عند اللاعبين الطوال.'
+            }},
+            6: { label: { en: 'Tall & Stocky', ar: 'طويل وقوي البنية' }, feel: {
+                en: 'Tall and stocky — the most physically dominant build in duels and in the air among the nine standard builds, generally trading off the tightest close control and turning to get it.',
+                ar: 'طويل وقوي البنية — الأكثر هيمنة بدنياً في المواجهات وكرات الهواء بين الأنماط التسعة القياسية، مقابل التنازل عادة عن أكثر تحكم بالكرة ودوران إحكاماً.'
+            }},
+            7: { label: { en: 'Short & Lean', ar: 'قصير ونحيف' }, feel: {
+                en: 'Short and lean — the lowest centre of gravity of the nine standard builds, which typically means the tightest close control and quickest turns, at the clear cost of physical/aerial duels.',
+                ar: 'قصير ونحيف — أقل مركز ثقل بين الأنماط التسعة القياسية، وهو ما يعني عادة أفضل تحكم بالكرة وأسرع دوران، مقابل ضعف واضح في المواجهات البدنية والهوائية.'
+            }},
+            8: { label: { en: 'Short & Normal', ar: 'قصير وطبيعي' }, feel: {
+                en: 'Short with a normal build — quick, tight turning with the ball, but gives up size in physical and aerial duels.',
+                ar: 'قصير ببنية طبيعية — دوران سريع ومحكم مع الكرة، لكنه يفتقر للحجم في المواجهات البدنية والهوائية.'
+            }},
+            9: { label: { en: 'Short & Stocky', ar: 'قصير وقوي البنية' }, feel: {
+                en: "Short but stocky — an unusual combination that keeps a low centre of gravity for tight turning while still holding up reasonably well in a physical duel, though it won't help in the air.",
+                ar: 'قصير لكنه قوي البنية — مزيج غير معتاد يحافظ على مركز ثقل منخفض للدوران المحكم بينما يصمد بشكل معقول في المواجهة البدنية، رغم أنه لن يفيد في الكرات الهوائية.'
+            }},
+            13: { label: { en: 'Unique', ar: 'فريد' }, feel: {
+                en: 'A bespoke, individually motion-captured model rather than one of the nine shared generic builds — reserved for a small pool of standout real players. In community experience this often makes the ball feel noticeably more responsive in tight control than a generic build of similar stats, since the animations are tailored specifically to that player rather than shared across hundreds of cards.',
+                ar: 'نموذج حركة فريد مُلتقط خصيصاً لهذا اللاعب بدلاً من أحد الأنماط التسعة العامة المشتركة — مخصص لعدد محدود من اللاعبين المميزين. في تجربة المجتمع، غالباً ما يجعل هذا التحكم بالكرة يبدو أكثر استجابة وإحكاماً مقارنة بنمط عام بنفس الإحصائيات، لأن الحركات مصممة خصيصاً لهذا اللاعب.'
+            }}
+        };
+
         const ATTRIBUTE_LABELS = {
             pac: { en: 'Pace', ar: 'السرعة' },
             sho: { en: 'Shooting', ar: 'التسديد' },
@@ -4061,6 +4129,43 @@
         // upgrades the badge/movement-feel text in place once it resolves.
         // Guards against the user having switched to a different player's
         // modal before the fetch completes.
+        // Height + Body Type are plain biographical fields on the detail
+        // response — unlike AcceleRATE they don't depend on a
+        // classification succeeding, so they're rendered independently
+        // and show up even for GKs or cards where AcceleRATE itself
+        // isn't available. bodyTypeId not in BODY_TYPE_PROFILE (unmapped,
+        // or genuinely absent) falls back to a plain numbered label with
+        // no feel text — never a guessed description.
+        function renderPhysicalProfile(detail, isAr) {
+            const heightEl = document.getElementById('height-value-live');
+            const bodyTypeEl = document.getElementById('bodytype-live');
+            if (heightEl) {
+                heightEl.classList.remove('animate-pulse');
+                heightEl.innerHTML = `<bdi>${detail.height != null ? detail.height + 'cm' : '—'}</bdi>`;
+            }
+            if (bodyTypeEl) {
+                const profile = detail.bodyTypeId != null ? BODY_TYPE_PROFILE[detail.bodyTypeId] : null;
+                const label = profile
+                    ? (isAr ? profile.label.ar : profile.label.en)
+                    : (detail.bodyTypeId != null ? `${isAr ? 'نوع' : 'Type'} ${detail.bodyTypeId}` : (isAr ? 'غير متاح' : 'Not available'));
+                const feelText = profile ? (isAr ? profile.feel.ar : profile.feel.en) : '';
+                bodyTypeEl.innerHTML = `
+                    <span class="font-bold text-gray-400">${isAr ? 'نمط الجسم:' : 'Body Type:'}</span>
+                    <span class="font-bold text-white">${label}</span>
+                    ${feelText ? `<p class="text-gray-500 mt-0.5">${feelText}</p>` : ''}
+                `;
+            }
+        }
+
+        function markPhysicalProfileUnavailable(isAr) {
+            const heightEl = document.getElementById('height-value-live');
+            const bodyTypeEl = document.getElementById('bodytype-live');
+            if (heightEl) { heightEl.classList.remove('animate-pulse'); heightEl.innerHTML = '<bdi>—</bdi>'; }
+            if (bodyTypeEl) {
+                bodyTypeEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'نمط الجسم:' : 'Body Type:'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية.' : "Couldn't verify."}</span>`;
+            }
+        }
+
         function loadPlayerDeepDive(player, effectivePos) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
@@ -4084,8 +4189,15 @@
                     if (feelEl) {
                         feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
                     }
+                    markPhysicalProfileUnavailable(isAr);
                     return;
                 }
+
+                // Height/Body Type render regardless of what happens with
+                // AcceleRATE below (including GKs, where AcceleRATE is
+                // skipped entirely) — they're independent biographical
+                // fields, not part of the pace classification.
+                renderPhysicalProfile(detail, isAr);
 
                 const verified = computeVerifiedAccelerateType(detail);
 
@@ -4105,6 +4217,18 @@
                         const heightLine = isAr
                             ? `الطول: ${detail.height} سم، الوزن: ${detail.weight} كجم${detail.gender ? `، ${detail.gender === 'FEMALE' ? 'أنثى' : 'ذكر'}` : ''} — بيانات حقيقية من EasySBC.`
                             : `Height: ${detail.height}cm, Weight: ${detail.weight}kg${detail.gender ? `, ${detail.gender === 'FEMALE' ? 'Female' : 'Male'}` : ''} — real data from EasySBC.`;
+
+                        // Ties the two independent "how does this feel"
+                        // signals together — AcceleRATE (pace style) and
+                        // body type (animations/duels) — only when the
+                        // body type is one we actually have a real label
+                        // for, never guessed for an unmapped id.
+                        const bodyTypeProfile = detail.bodyTypeId != null ? BODY_TYPE_PROFILE[detail.bodyTypeId] : null;
+                        const bodyTypeCombinedNote = bodyTypeProfile
+                            ? `<p class="text-gray-500 mt-1">${isAr
+                                ? `مع بنية ${bodyTypeProfile.label.ar}، يُضاف هذا فوق إحساس ${verified.type} أعلاه — راجع «نمط الجسم» أدناه للتفاصيل الكاملة.`
+                                : `Combined with a ${bodyTypeProfile.label.en} build, this stacks on top of the ${verified.type} feel above — see "Body Type" below for the full breakdown.`}</p>`
+                            : '';
 
                         // Only relevant for players who AREN'T already Lengthy —
                         // no point suggesting a "conversion" to what they
@@ -4155,6 +4279,7 @@
                             <span class="font-bold" style="color:${verified.color}">${verified.type}</span> —
                             ${isAr ? verified.ar : verified.en}
                             <div class="text-gray-500 mt-1">${heightLine}</div>
+                            ${bodyTypeCombinedNote}
                             ${conversionHtml}
                         `;
                     }
@@ -4169,6 +4294,7 @@
                 if (feelEl) {
                     feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
                 }
+                markPhysicalProfileUnavailable(isAr);
             });
         }
 
@@ -5028,7 +5154,7 @@
                     <div class="space-y-5">
                         <div class="space-y-3">
                             <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الملف البدني' : 'Physical Profile'}</span>
-                            <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="grid grid-cols-4 gap-2 text-center">
                                 <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
                                     <span class="text-gray-400 uppercase text-[10px] tracking-wide">${weakFootLabel}</span>
                                     <span class="font-black text-fc-gold text-sm leading-none"><bdi>${weakFootValue}</bdi></span>
@@ -5041,6 +5167,14 @@
                                     <span class="text-gray-400 uppercase text-[10px] tracking-wide">${preferredFootLabel}</span>
                                     <span class="font-black text-white text-sm leading-none"><bdi>${footValue}</bdi></span>
                                 </div>
+                                <div class="bg-fc-dark p-2.5 rounded-xl border border-fc-border flex flex-col items-center justify-center gap-1">
+                                    <span class="text-gray-400 uppercase text-[10px] tracking-wide">${currentLanguage === 'ar' ? 'الطول' : 'Height'}</span>
+                                    <span id="height-value-live" class="font-black text-white text-sm leading-none animate-pulse"><bdi>…</bdi></span>
+                                </div>
+                            </div>
+                            <div id="bodytype-live" class="text-[11px] text-gray-300">
+                                <span class="font-bold text-gray-400">${currentLanguage === 'ar' ? 'نمط الجسم:' : 'Body Type:'}</span>
+                                <span class="text-gray-500 italic">${currentLanguage === 'ar' ? 'جارٍ التحقق من البيانات الفعلية…' : 'Verifying against real player data…'}</span>
                             </div>
                         </div>
 
