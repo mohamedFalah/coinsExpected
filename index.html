@@ -1783,30 +1783,47 @@
             198: 'New Zealand', 204: 'Vanuatu', 207: 'Curaçao', 208: 'Estonia',
             213: 'Hong Kong', 214: 'Comoros', 215: 'Madagascar', 219: 'Kosovo'
         };
+        // Rebuilt from EasySBC's own league-picker UI (name + logo URL
+        // pairs — the URL itself embeds the id: assets.easysbc.io/fc26/
+        // leagues/{id}.png). This corrected a real batch of wrong entries
+        // from the earlier manually-resolved data: 14, 17, 20, 61, 63, 65,
+        // 66, 189, 322, 1003, 1014, 2209, 2231, 2244, 2271, and 2274 had
+        // all been mapped to the wrong league (most notably 63 was wrongly
+        // recorded as Saudi Pro League — it's actually Greece's Super
+        // League — and 66 was wrongly recorded as Serie A — it's actually
+        // Poland's Ekstraklasa; both fed directly into LEAGUE_FILTER_GROUPS
+        // above, now fixed there too). A few ids below (1, 4, 2076, 353)
+        // aren't confirmed by this batch and are kept as the best
+        // available guess from before, not verified against this source.
         const LEAGUE_NAMES = {
             1: 'Danish Superliga', 4: 'Belgian Pro League', 10: 'Eredivisie',
-            13: 'Premier League', 14: 'Eliteserien', 16: 'Ligue 1',
-            17: 'Championnat National', 19: 'Bundesliga', 20: '3. Liga',
+            13: 'Premier League', 14: 'EFL Championship', 16: "Ligue 1",
+            17: 'Ligue 2', 19: 'Bundesliga', 20: 'Bundesliga 2',
             31: 'Serie A', 32: 'Serie B', 39: 'MLS', 41: 'Eliteserien',
-            50: 'Scottish Premiership', 53: 'La Liga', 54: 'La Liga',
-            56: 'Eliteserien', 60: 'EFL League One', 61: 'A-League Men',
-            63: 'Saudi Pro League', 65: 'EFL League Two', 66: 'Serie A',
-            68: 'Süper Lig', 80: 'Austrian Bundesliga', 83: 'K League 1',
-            189: '2. Bundesliga', 308: 'Primeira Liga', 317: 'Greek Super League',
-            319: 'Czech First League', 322: 'MLS', 330: 'Liga I',
+            50: 'Scottish Premiership', 53: 'La Liga', 54: 'La Liga Hypermotion (2nd tier)',
+            56: 'Allsvenskan', 60: 'EFL League One', 61: 'EFL League Two',
+            63: 'Greek Super League', 65: 'League of Ireland Premier Division',
+            66: 'Ekstraklasa (Poland)', 68: 'Süper Lig', 78: "Men's National Team",
+            80: 'Austrian Bundesliga', 83: 'K League 1', 189: 'Swiss Super League',
+            308: 'Primeira Liga', 317: 'Croatian First League',
+            319: 'Czech First League', 322: 'Veikkausliiga (Finland)', 330: 'Liga I (Romania)',
             332: 'Ukrainian Premier League', 341: 'Liga MX', 350: 'Saudi Pro League',
-            351: 'A-League Men', 353: 'Argentine Primera División', 1003: 'Liga MX',
-            1014: 'Segunda División', 2012: 'Chinese Super League',
-            2076: '2. Bundesliga', 2172: 'UAE Pro League',
-            2209: 'Campeonato Brasileiro Série A', 2210: 'Cypriot First Division',
-            2211: 'Nemzeti Bajnokság I', 2215: 'Frauen-Bundesliga',
-            2216: 'Liga F', 2218: 'Première Ligue', 2221: 'NWSL',
-            2222: 'Liga F', 2228: 'Campeonato Nacional Feminino',
-            2229: 'Vrouwen Eredivisie', 2230: '1. CCLW',
-            2231: 'Serie A Femminile', 2232: 'Damallsvenskan',
+            351: 'A-League', 353: 'Argentine Primera División',
+            1003: 'Copa Libertadores', 1014: 'Copa Sudamericana',
+            2012: 'Chinese Super League', 2070: 'Thai League 1',
+            2076: '2. Bundesliga', 2118: 'Icons', 2136: "Women's International Cup",
+            2149: 'Indian Super League', 2172: 'UAE Pro League',
+            2209: 'Categoría Primera A (Colombia)', 2210: 'Cypriot First Division',
+            2211: 'Nemzeti Bajnokság I (Hungary)', 2215: 'Frauen-Bundesliga',
+            2216: 'Barclays WSL', 2218: 'Première Ligue (France, women)',
+            2221: 'NWSL', 2222: 'Liga F', 2228: 'Liga Portugal Feminino',
+            2229: "Vrouwen Eredivisie", 2230: 'Czech Women\'s League',
+            2231: 'Swiss Women\'s Super League', 2232: 'Damallsvenskan',
             2233: "Scottish Women's Premier League", 2236: 'Serie A Femminile',
-            2244: 'USL Championship', 2267: 'Campeonato Brasileiro Série A',
-            2271: 'Thai League 1', 2274: 'Eredivisie'
+            2244: 'Azerbaijan Premier League', 2249: 'Chilean Primera División',
+            2265: 'Unknown', 2267: "Brazilian Women's Série A1",
+            2271: 'Thai League 1 (women)', 2272: 'Toppserien (Norway, women)',
+            2273: 'Icelandic Women\'s League', 2274: "Bulgarian Women's League"
         };
         function getNationName(id) {
             return id != null && NATION_NAMES[id] ? NATION_NAMES[id] : null;
@@ -1815,17 +1832,72 @@
             return id != null && LEAGUE_NAMES[id] ? LEAGUE_NAMES[id] : null;
         }
 
+        // ISO 3166-1 alpha-2 codes — public, standard reference data (not
+        // app-specific like the nation/league IDs above), used to derive a
+        // flag emoji for each nation algorithmically instead of hosting
+        // 131 flag images. Keyed by the SAME nation ids as NATION_NAMES.
+        const NATION_ISO2 = {
+            1:'AL',3:'AM',4:'AT',5:'AZ',7:'BE',8:'BA',9:'BG',10:'HR',11:'CY',12:'CZ',
+            13:'DK',15:'ME',17:'FI',18:'FR',19:'MK',20:'GE',21:'DE',22:'GR',23:'HU',
+            24:'IS',25:'IE',26:'IL',27:'IT',28:'LV',30:'LT',31:'LU',32:'MT',33:'MD',
+            34:'NL',35:'GB',36:'NO',37:'PL',38:'PT',39:'RO',40:'RU',43:'SK',44:'SI',
+            45:'ES',46:'SE',47:'CH',48:'TR',49:'UA',51:'RS',52:'AR',53:'BO',54:'BR',
+            55:'CL',56:'CO',57:'EC',58:'PY',59:'PE',60:'UY',61:'VE',63:'AG',70:'CA',
+            72:'CR',76:'SV',77:'GD',80:'HT',81:'HN',82:'JM',83:'MX',85:'CW',87:'PA',
+            89:'KN',92:'SR',93:'TT',95:'US',97:'DZ',98:'AO',99:'BJ',101:'BF',102:'BI',
+            103:'CM',104:'CV',105:'CF',107:'CG',108:'CI',110:'CD',111:'EG',112:'GQ',
+            113:'ER',115:'GA',116:'GM',117:'GH',118:'GN',119:'GW',120:'KE',122:'LR',
+            123:'LY',124:'MG',125:'MW',126:'ML',127:'MR',129:'MA',130:'MZ',132:'NE',
+            133:'NG',136:'SN',138:'SL',140:'ZA',143:'TZ',144:'TG',145:'TN',147:'ZM',
+            148:'ZW',155:'CN',158:'HK',160:'ID',163:'JP',164:'JO',167:'KR',179:'PK',
+            181:'PH',183:'SA',186:'SY',188:'TH',190:'AE',191:'UZ',195:'AU',198:'NZ',
+            204:'VU',207:'CW',208:'EE',213:'HK',214:'KM',215:'MG',219:'XK'
+            // 35 (Northern Ireland) falls back to GB — no widely-supported
+            // standalone flag emoji exists for it, unlike England/Scotland/
+            // Wales below, which DO have their own standardized Unicode
+            // "tag sequence" flags.
+        };
+        const NATION_SPECIAL_FLAG = {
+            14: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', // England
+            42: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', // Scotland
+            50: '🏴󠁧󠁢󠁷󠁬󠁳󠁿'  // Wales
+        };
+        function getNationFlag(nationId) {
+            if (nationId == null) return null;
+            if (NATION_SPECIAL_FLAG[nationId]) return NATION_SPECIAL_FLAG[nationId];
+            const iso2 = NATION_ISO2[nationId];
+            if (!iso2) return null;
+            return String.fromCodePoint(...iso2.split('').map(c => 127397 + c.charCodeAt(0)));
+        }
+
+        // Verified directly against EasySBC's own league-picker UI: every
+        // logo URL follows this exact pattern with the league id embedded
+        // in the path, so it works for ANY league id, not just the 60
+        // we've separately named in LEAGUE_NAMES — no lookup table needed
+        // for the image itself, just the id already on every player.
+        function getLeagueLogoUrl(leagueId) {
+            return leagueId != null ? `https://assets.easysbc.io/fc26/leagues/${leagueId}.png?scale=50` : null;
+        }
+
         // The "big leagues" hard-filter options. IDs come straight from
         // LEAGUE_NAMES above (real, user-confirmed values) — grouped
         // because a couple of these leagues legitimately span two
         // different internal IDs (see the LEAGUE_NAMES comment).
+        // League IDs verified directly against EasySBC's own league-picker
+        // UI (name + logo URL pairs, which embed the id: .../leagues/{id}.png)
+        // — this caught 3 wrong entries from the earlier manually-resolved
+        // batch: 54 is actually LaLiga Hypermotion (La Liga's 2nd division,
+        // not the top flight), 66 is Poland's Ekstraklasa (not Serie A at
+        // all), and 63 is Greece's Super League (not Saudi Pro League at
+        // all). Each of these 6 now maps to exactly one confirmed top-
+        // flight id instead of a guessed pair.
         const LEAGUE_FILTER_GROUPS = {
-            premier_league:   { ids: [13],      icon: 'fa-shield', label: { en: 'Premier League',   ar: 'الدوري الإنجليزي الممتاز' } },
-            la_liga:          { ids: [53, 54],  icon: 'fa-shield', label: { en: 'La Liga',           ar: 'الدوري الإسباني' } },
-            serie_a:          { ids: [31, 66],  icon: 'fa-shield', label: { en: 'Serie A',           ar: 'الدوري الإيطالي' } },
-            bundesliga:       { ids: [19],      icon: 'fa-shield', label: { en: 'Bundesliga',        ar: 'الدوري الألماني' } },
-            saudi_pro_league: { ids: [63, 350], icon: 'fa-shield', label: { en: 'Saudi Pro League',  ar: 'دوري روشن السعودي' } },
-            super_lig:        { ids: [68],      icon: 'fa-shield', label: { en: 'Süper Lig',         ar: 'الدوري التركي' } }
+            premier_league:   { ids: [13],  icon: 'fa-shield', label: { en: 'Premier League',   ar: 'الدوري الإنجليزي الممتاز' } },
+            la_liga:          { ids: [53],  icon: 'fa-shield', label: { en: 'La Liga',           ar: 'الدوري الإسباني' } },
+            serie_a:          { ids: [31],  icon: 'fa-shield', label: { en: 'Serie A',           ar: 'الدوري الإيطالي' } },
+            bundesliga:       { ids: [19],  icon: 'fa-shield', label: { en: 'Bundesliga',        ar: 'الدوري الألماني' } },
+            saudi_pro_league: { ids: [350], icon: 'fa-shield', label: { en: 'Saudi Pro League',  ar: 'دوري روشن السعودي' } },
+            super_lig:        { ids: [68],  icon: 'fa-shield', label: { en: 'Süper Lig',         ar: 'الدوري التركي' } }
         };
 
         // Playstyle targets — the SAME 4 axes computeSquadIdentity already
@@ -3622,6 +3694,10 @@
                                 <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
                                 <img src="${player.photo}" alt="${player.name}" class="w-9 h-9 sm:w-12 sm:h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                                 <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
+                                <div class="flex items-center justify-center gap-1 mt-0.5 h-3">
+                                    ${getNationFlag(player.nationId) ? `<span class="text-[10px] leading-none" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
+                                    ${getLeagueLogoUrl(player.leagueId) ? `<img src="${getLeagueLogoUrl(player.leagueId)}" alt="" class="w-2.5 h-2.5 object-contain" title="${getLeagueName(player.leagueId) || ''}" onerror="this.style.display='none'">` : ''}
+                                </div>
                                 <div class="flex items-center justify-center gap-0.5 mt-1" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
                                 <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
                                 <button onclick="event.stopPropagation(); window.toggleLockPlayer(${item.idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
