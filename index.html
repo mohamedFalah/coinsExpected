@@ -185,6 +185,10 @@
                     <i class="fa-solid fa-database"></i>
                     <span data-i18n="navDatabase">Database / Config</span>
                 </button>
+                <button onclick="switchTab('mysquads')" id="nav-mysquads" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-bookmark"></i>
+                    <span data-i18n="navMySquads">My Squads</span>
+                </button>
             </div>
 
             <!-- Header Budget Widget, Language Switcher & Config Gear Button -->
@@ -223,6 +227,10 @@
             <button onclick="switchTab('database')" id="mob-nav-database" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-database text-base mb-0.5"></i>
                 <span data-i18n="navDatabase">Database</span>
+            </button>
+            <button onclick="switchTab('mysquads')" id="mob-nav-mysquads" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-bookmark text-base mb-0.5"></i>
+                <span data-i18n="navMySquads">My Squads</span>
             </button>
         </div>
     </header>
@@ -412,6 +420,10 @@
                         </button>
                         <button onclick="window.undoSquad()" id="undo-squad-btn" disabled class="p-2.5 rounded-xl bg-fc-dark border border-fc-border text-gray-300 hover:text-fc-accent hover:bg-fc-cardHover transition-all shrink-0 opacity-50 cursor-not-allowed" title="Undo — back to the previous squad">
                             <i class="fa-solid fa-rotate-left text-lg"></i>
+                        </button>
+                        <button onclick="window.saveCurrentSquad()" id="save-squad-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Save this squad — find it later in My Squads">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span data-i18n="saveSquadBtn">SAVE SQUAD</span>
                         </button>
                         <button onclick="openExplanationModal()" class="p-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all shrink-0" title="How was this squad built?">
                             <i class="fa-solid fa-circle-info text-lg"></i>
@@ -661,6 +673,19 @@
             </div>
         </div>
 
+        <!-- ================= VIEW 4: MY SQUADS (SAVED, localStorage) ================= -->
+        <div id="view-mysquads" class="hidden space-y-6">
+            <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl">
+                <h2 data-i18n="mySquadsTitle" class="text-2xl md:text-3xl font-extrabold mb-2">My Squads</h2>
+                <p data-i18n="mySquadsDesc" class="text-gray-400 text-sm md:text-base">
+                    Squads you've saved from the Squad Builder, stored locally in this browser. Click a squad to open and keep editing it.
+                </p>
+            </div>
+            <div id="saved-squads-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Populated by renderSavedSquadsList() -->
+            </div>
+        </div>
+
     </main>
 
     <!-- ================= MODALS ================= -->
@@ -773,6 +798,7 @@
                 navCalculator: "Pack Calculator",
                 navSquad: "Squad Builder",
                 navDatabase: "Database / Config",
+                navMySquads: "My Squads",
                 activeBudget: "Active Budget",
                 step12: "STEP 1 & 2",
                 calcTitle: "FC Points & Premium Gold Pack Calculator",
@@ -803,6 +829,7 @@
                 managerLabel: "Manager (optional, +1 chem match)",
                 optimizeBtn: "OPTIMIZE",
                 regenBtn: "REGENERATE",
+                saveSquadBtn: "SAVE SQUAD",
                 regenExhausted: "EXHAUSTED",
                 squadSummary: "Squad Summary",
                 availableBudget: "Available Budget",
@@ -851,13 +878,23 @@
                 scrapePagesLabel: "Pages to fetch",
                 scrapeBtn: "Scrape & Sync Now",
                 scrapeLogTitle: "Scrape Log",
-                scrapeLogIdle: "— idle —"
+                scrapeLogIdle: "— idle —",
+                mySquadsTitle: "My Squads",
+                mySquadsDesc: "Squads you've saved from the Squad Builder, stored locally in this browser. Click a squad to open and keep editing it.",
+                noSquadsSaved: "No squads saved yet — build one in the Squad Builder and hit Save Squad.",
+                goToBuilderBtn: "Go to Squad Builder",
+                viewEditBtn: "View / Edit",
+                deleteSquadBtn: "Delete",
+                squadSavedToast: "Squad saved!",
+                savedOnLabel: "Saved",
+                squadPlayersLabel: "players"
             },
             ar: {
                 subtitle: "مُحسّن تشكيلة وكوينز ألتميت تيم",
                 navCalculator: "حاسبة الباكجات",
                 navSquad: "صانع التشكيلات",
                 navDatabase: "قاعدة البيانات / الإعدادات",
+                navMySquads: "تشكيلاتي",
                 activeBudget: "الميزانية الحالية",
                 step12: "الخطوة ١ و ٢",
                 calcTitle: "حاسبة نقاط FC وباكجات الجولد المميزة",
@@ -888,6 +925,7 @@
                 managerLabel: "المدرب (اختياري، +1 كيمياء عند التطابق)",
                 optimizeBtn: "تحسين",
                 regenBtn: "إعادة توليد",
+                saveSquadBtn: "حفظ التشكيلة",
                 regenExhausted: "انتهت التشكيلات",
                 squadSummary: "ملخص التشكيلة",
                 availableBudget: "الميزانية المتاحة",
@@ -936,7 +974,16 @@
                 scrapePagesLabel: "عدد الصفحات",
                 scrapeBtn: "سحب ومزامنة الآن",
                 scrapeLogTitle: "سجل السحب",
-                scrapeLogIdle: "— خامل —"
+                scrapeLogIdle: "— خامل —",
+                mySquadsTitle: "تشكيلاتي",
+                mySquadsDesc: "التشكيلات التي حفظتها من صانع التشكيلات، محفوظة محلياً في هذا المتصفح. اضغط على أي تشكيلة لفتحها والاستمرار في تعديلها.",
+                noSquadsSaved: "لا توجد تشكيلات محفوظة بعد — اصنع واحدة في صانع التشكيلات ثم اضغط حفظ التشكيلة.",
+                goToBuilderBtn: "الذهاب إلى صانع التشكيلات",
+                viewEditBtn: "عرض / تعديل",
+                deleteSquadBtn: "حذف",
+                squadSavedToast: "تم حفظ التشكيلة!",
+                savedOnLabel: "تاريخ الحفظ",
+                squadPlayersLabel: "لاعبين"
             }
         };
 
@@ -1156,7 +1203,7 @@
         };
 
         window.switchTab = function(tabId) {
-            ['calculator', 'squad', 'database'].forEach(t => {
+            ['calculator', 'squad', 'database', 'mysquads'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
                 const nav = document.getElementById(`nav-${t}`);
                 const mobNav = document.getElementById(`mob-nav-${t}`);
@@ -1170,6 +1217,13 @@
             if (targetView) targetView.classList.remove('hidden');
             if (targetNav) targetNav.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse bg-fc-accent text-fc-dark shadow-md";
             if (targetMobNav) targetMobNav.className = "flex flex-col items-center text-xs font-bold text-fc-accent";
+
+            // My Squads is a plain read from localStorage each time it's
+            // opened — cheap, and guarantees it reflects the latest save
+            // even if one happened earlier in the same session.
+            if (tabId === 'mysquads' && typeof window.renderSavedSquadsList === 'function') {
+                window.renderSavedSquadsList();
+            }
         };
 
         window.renderPresetPoints = function() {
@@ -2490,6 +2544,197 @@
             squadState.chemistry = calculateSquadChemistry();
             renderFootballPitch();
             renderSquadSummary();
+        };
+
+        // ===================================================================
+        // SAVED SQUADS (localStorage) — "My Squads" page
+        // ===================================================================
+        // Each saved squad is a full, self-contained snapshot (formation,
+        // budget, manager, and every player object in selectedXI) so
+        // loading it back never depends on the live fc27Database still
+        // containing the same players. Auto-named "Squad #N" using an
+        // ever-incrementing counter (not array length) so names stay
+        // unique even after deletions.
+        const SAVED_SQUADS_KEY = 'fc27_saved_squads';
+        const SAVED_SQUADS_COUNTER_KEY = 'fc27_saved_squads_counter';
+
+        function getSavedSquads() {
+            try {
+                const raw = localStorage.getItem(SAVED_SQUADS_KEY);
+                const list = raw ? JSON.parse(raw) : [];
+                return Array.isArray(list) ? list : [];
+            } catch (e) {
+                console.warn('Could not read saved squads from localStorage:', e);
+                return [];
+            }
+        }
+
+        function persistSavedSquads(list) {
+            try {
+                localStorage.setItem(SAVED_SQUADS_KEY, JSON.stringify(list));
+                return true;
+            } catch (e) {
+                console.warn('Could not save squads to localStorage:', e);
+                return false;
+            }
+        }
+
+        function nextSavedSquadName() {
+            let counter = 1;
+            try {
+                counter = parseInt(localStorage.getItem(SAVED_SQUADS_COUNTER_KEY) || '0', 10) + 1;
+                localStorage.setItem(SAVED_SQUADS_COUNTER_KEY, String(counter));
+            } catch (e) {
+                counter = getSavedSquads().length + 1;
+            }
+            return `Squad #${counter}`;
+        }
+
+        window.saveCurrentSquad = function() {
+            const isAr = currentLanguage === 'ar';
+            const filledCount = Object.values(squadState.selectedXI).filter(Boolean).length;
+            if (filledCount === 0) {
+                alert(isAr ? 'قم ببناء تشكيلة أولاً قبل الحفظ.' : 'Build a squad first before saving.');
+                return;
+            }
+
+            const squadToSave = {
+                id: `sq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name: nextSavedSquadName(),
+                formation: squadState.formation,
+                budget: squadState.budget,
+                totalCost: squadState.totalCost,
+                avgRating: squadState.avgRating,
+                avgMeta: squadState.avgMeta != null ? squadState.avgMeta : null,
+                chemistry: squadState.chemistry || null,
+                manager: { nationId: squadState.manager.nationId, leagueId: squadState.manager.leagueId },
+                // selectedXI keys are numeric slot indices — JSON.stringify
+                // turns them into string keys, which is fine since
+                // restoring reads them back the same way (object property
+                // access doesn't care whether the key looks numeric).
+                selectedXI: squadState.selectedXI,
+                playerCount: filledCount,
+                savedAt: new Date().toISOString()
+            };
+
+            const list = getSavedSquads();
+            list.unshift(squadToSave);
+            persistSavedSquads(list);
+
+            const btn = document.getElementById('save-squad-btn');
+            if (btn) {
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = `<i class="fa-solid fa-check"></i><span>${isAr ? 'تم الحفظ!' : 'SAVED!'}</span>`;
+                btn.disabled = true;
+                setTimeout(() => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }, 1500);
+            }
+        };
+
+        window.deleteSavedSquad = function(id, evt) {
+            if (evt) evt.stopPropagation();
+            const isAr = currentLanguage === 'ar';
+            if (!confirm(isAr ? 'حذف هذه التشكيلة نهائياً؟' : 'Delete this squad permanently?')) return;
+            const list = getSavedSquads().filter(sq => sq.id !== id);
+            persistSavedSquads(list);
+            window.renderSavedSquadsList();
+        };
+
+        window.loadSavedSquad = function(id) {
+            const list = getSavedSquads();
+            const saved = list.find(sq => sq.id === id);
+            if (!saved) return;
+
+            // Full restore of every field the render chain reads from.
+            squadState.formation = saved.formation;
+            squadState.budget = saved.budget;
+            squadState.totalCost = saved.totalCost;
+            squadState.avgRating = saved.avgRating;
+            squadState.avgMeta = saved.avgMeta;
+            squadState.manager = { nationId: saved.manager?.nationId ?? null, leagueId: saved.manager?.leagueId ?? null };
+            squadState.selectedXI = saved.selectedXI || {};
+            squadState.alternatives = {};
+            squadState.explanationLog = [];
+            squadState.lockedIds = new Set();
+            squadState.lockedPlayers = {};
+            squadState.undoStack = [];
+            squadState.history = new Set([computeSquadSignature(squadState.selectedXI)]);
+            squadState.exhausted = false;
+            squadState.chemistry = calculateSquadChemistry();
+
+            // Sync the form controls so they reflect the loaded squad
+            // instead of whatever was left over from before.
+            const formationSelect = document.getElementById('formation-select');
+            if (formationSelect) formationSelect.value = squadState.formation;
+            const budgetInput = document.getElementById('squad-budget-input');
+            if (budgetInput) budgetInput.value = squadState.budget;
+
+            computeSlotAlternatives();
+            populateManagerDropdown();
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+            updateRegenerateButtonState();
+
+            window.switchTab('squad');
+        };
+
+        window.renderSavedSquadsList = function() {
+            const grid = document.getElementById('saved-squads-grid');
+            if (!grid) return;
+            const isAr = currentLanguage === 'ar';
+            const list = getSavedSquads();
+
+            if (list.length === 0) {
+                grid.className = '';
+                grid.innerHTML = `
+                    <div class="col-span-full bg-fc-card border border-fc-border rounded-2xl p-10 text-center space-y-4">
+                        <i class="fa-regular fa-bookmark text-4xl text-gray-600"></i>
+                        <p class="text-gray-400 text-sm">${isAr ? 'لا توجد تشكيلات محفوظة بعد — اصنع واحدة في صانع التشكيلات ثم اضغط حفظ التشكيلة.' : "No squads saved yet — build one in the Squad Builder and hit Save Squad."}</p>
+                        <button onclick="window.switchTab('squad')" class="px-4 py-2.5 rounded-xl bg-fc-accent text-fc-dark font-black text-xs">
+                            ${isAr ? 'الذهاب إلى صانع التشكيلات' : 'GO TO SQUAD BUILDER'}
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4';
+            const coinLabel = isAr ? 'كوينز' : 'Coins';
+            grid.innerHTML = list.map(sq => {
+                const savedDate = new Date(sq.savedAt);
+                const dateStr = isNaN(savedDate.getTime()) ? '' : savedDate.toLocaleDateString(isAr ? 'ar' : 'en', { year: 'numeric', month: 'short', day: 'numeric' });
+                return `
+                    <div onclick="window.loadSavedSquad('${sq.id}')" class="bg-fc-card border border-fc-border rounded-2xl p-5 cursor-pointer hover:border-fc-accent/60 hover:shadow-lg hover:shadow-fc-accent/5 transition-all space-y-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <h3 class="font-black text-white text-base truncate">${sq.name}</h3>
+                            <button onclick="window.deleteSavedSquad('${sq.id}', event)" class="shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all" title="${isAr ? 'حذف' : 'Delete'}">
+                                <i class="fa-solid fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-[11px] font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${sq.formation}</span>
+                            <span class="text-[11px] font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-gray-300">${sq.playerCount}/11 ${isAr ? 'لاعبين' : 'players'}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-center border-t border-fc-border pt-3">
+                            <div>
+                                <div class="text-[10px] text-gray-500 uppercase tracking-wide">${isAr ? 'التكلفة' : 'Cost'}</div>
+                                <div class="text-sm font-black text-fc-gold">${(sq.totalCost || 0).toLocaleString()}</div>
+                            </div>
+                            <div>
+                                <div class="text-[10px] text-gray-500 uppercase tracking-wide">${isAr ? 'التقييم' : 'Avg Rating'}</div>
+                                <div class="text-sm font-black text-white">${sq.avgRating || '--'}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-gray-500 pt-1">
+                            <span>${dateStr ? (isAr ? `تاريخ الحفظ: ${dateStr}` : `Saved ${dateStr}`) : ''}</span>
+                            <span class="font-bold text-fc-accent flex items-center gap-1">${isAr ? 'عرض / تعديل' : 'View / Edit'} <i class="fa-solid fa-arrow-right rtl:rotate-180 text-[10px]"></i></span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         };
 
         // ===================================================================
