@@ -804,7 +804,29 @@
 
             <div id="view-squad-stats" class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center"></div>
 
-            <div id="view-squad-players" class="space-y-1.5"></div>
+            <!-- Read-only pitch snapshot — same trapezoid grass + markings
+                 as the Squad Builder pitch, but with plain (non-clickable)
+                 player cards: no lock/swap affordances, since this is a
+                 frozen view of a saved squad, not the live builder. -->
+            <div class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden">
+                <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
+                <div class="absolute inset-0 pointer-events-none">
+                    <div class="absolute top-0 left-[18%] right-[18%] h-px bg-white/30"></div>
+                    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-14 overflow-hidden">
+                        <div class="absolute -top-14 left-0 w-28 h-28 rounded-full border-2 border-white/30"></div>
+                    </div>
+                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                    <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                    <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                        <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                    </div>
+                    <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
+                </div>
+                <div id="view-squad-pitch" dir="ltr" class="relative z-10 flex flex-col justify-between gap-2 py-4 px-2 min-h-[420px]">
+                    <!-- Populated by viewSavedSquad() -->
+                </div>
+            </div>
 
             <div class="flex justify-end gap-3 pt-4 border-t border-fc-border">
                 <button onclick="closeViewSquadModal()" data-i18n="closeBtn" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white">Close</button>
@@ -2785,10 +2807,9 @@
             const nameEl = document.getElementById('view-squad-name');
             const metaEl = document.getElementById('view-squad-meta');
             const statsEl = document.getElementById('view-squad-stats');
-            const playersEl = document.getElementById('view-squad-players');
             const editBtn = document.getElementById('view-squad-edit-btn');
             const editLabel = document.getElementById('view-squad-edit-label');
-            if (!nameEl || !statsEl || !playersEl) return;
+            if (!nameEl || !statsEl) return;
 
             nameEl.querySelector('span').textContent = saved.name;
             const savedDate = new Date(saved.savedAt);
@@ -2796,6 +2817,7 @@
             metaEl.textContent = `${saved.formation} · ${saved.playerCount}/11 ${isAr ? 'لاعبين' : 'players'}${dateStr ? ' · ' + (isAr ? `تاريخ الحفظ: ${dateStr}` : `Saved ${dateStr}`) : ''}`;
 
             const remaining = (saved.budget || 0) - (saved.totalCost || 0);
+            const chemTotal = saved.chemistry && typeof saved.chemistry.total === 'number' ? saved.chemistry.total : null;
             const statCard = (label, value, colorClass) => `
                 <div class="bg-fc-dark rounded-xl border border-fc-border p-3">
                     <div class="text-[10px] text-gray-500 uppercase tracking-wide">${label}</div>
@@ -2806,31 +2828,10 @@
                 statCard(isAr ? 'الميزانية' : 'Budget', (saved.budget || 0).toLocaleString(), 'text-fc-gold'),
                 statCard(isAr ? 'التكلفة' : 'Cost', (saved.totalCost || 0).toLocaleString(), 'text-white'),
                 statCard(isAr ? 'المتبقي' : 'Remaining', remaining.toLocaleString(), remaining >= 0 ? 'text-emerald-400' : 'text-red-400'),
-                statCard(isAr ? 'الكيمياء' : 'Chemistry', `${saved.chemistry != null ? saved.chemistry : '--'}/33`, 'text-green-400')
+                statCard(isAr ? 'الكيمياء' : 'Chemistry', `${chemTotal != null ? chemTotal : '--'}/33`, 'text-green-400')
             ].join('');
 
-            const slots = formationSlots[saved.formation] || [];
-            playersEl.innerHTML = slots.map((slot, idx) => {
-                const p = saved.selectedXI ? saved.selectedXI[idx] : null;
-                if (!p) {
-                    return `
-                        <div class="flex items-center justify-between bg-fc-dark/60 border border-dashed border-fc-border rounded-xl px-3 py-2 text-xs text-gray-500">
-                            <span class="font-bold">${slot.label}</span>
-                            <span>${isAr ? 'مكان فارغ' : 'Empty Slot'}</span>
-                        </div>
-                    `;
-                }
-                return `
-                    <div class="flex items-center justify-between bg-fc-dark border border-fc-border rounded-xl px-3 py-2">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <span class="shrink-0 text-[11px] font-black text-fc-accent bg-fc-card border border-fc-border rounded-lg px-2 py-1 w-12 text-center">${slot.label}</span>
-                            <span class="font-bold text-white text-sm truncate">${p.name}</span>
-                            <span class="shrink-0 text-xs text-gray-400">${p.rating} ${p.pos || ''}</span>
-                        </div>
-                        <span class="shrink-0 text-xs font-bold text-fc-gold">${(p.price || 0).toLocaleString()}</span>
-                    </div>
-                `;
-            }).join('');
+            renderSnapshotPitch(saved);
 
             if (editBtn) editBtn.onclick = () => { window.loadSavedSquad(saved.id); closeViewSquadModal(); };
             if (editLabel) editLabel.textContent = isAr ? 'تعديل هذه التشكيلة' : 'Edit This Squad';
@@ -2838,6 +2839,76 @@
             const modal = document.getElementById('view-squad-modal');
             if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
         };
+
+        // Read-only pitch layout for a saved squad snapshot — mirrors
+        // renderFootballPitch()'s row-by-row document-flow layout and card
+        // look, but with no lock state, no click handlers, and no live
+        // squadState dependency (works entirely off the saved object), so
+        // opening a snapshot can never mutate the actual builder.
+        function renderSnapshotPitch(saved) {
+            const container = document.getElementById('view-squad-pitch');
+            if (!container) return;
+            const slots = formationSlots[saved.formation] || [];
+            const xi = saved.selectedXI || {};
+            const perSlotChem = (saved.chemistry && saved.chemistry.perSlot) || {};
+
+            let rows = {};
+            slots.forEach((slot, idx) => {
+                if (!rows[slot.row]) rows[slot.row] = [];
+                rows[slot.row].push({ slot, idx, player: xi[idx] });
+            });
+            const usedRowKeys = Object.keys(rows).map(Number).sort((a, b) => a - b);
+            const totalRows = usedRowKeys.length;
+
+            container.innerHTML = usedRowKeys.map((rowNum, i) => {
+                const rowItems = rows[rowNum];
+                const depth = totalRows > 1 ? i / (totalRows - 1) : 0;
+                const grassInset = 18 * (1 - depth);
+                const densityFactor = Math.min(1, 3 / rowItems.length);
+                const rowInset = Math.min(22, Math.max(2, (grassInset + 5) * densityFactor));
+
+                const cards = rowItems.map(item => {
+                    const player = item.player;
+                    if (!player) {
+                        return `
+                            <div class="w-16 sm:w-24 lg:w-28 shrink-0 flex flex-col items-center">
+                                <div class="w-full bg-fc-card/40 border border-dashed border-fc-border rounded-xl p-2 sm:p-3 text-center">
+                                    <div class="text-[9px] sm:text-[10px] font-bold text-gray-500">${item.slot.label}</div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    const chemInfo = perSlotChem[item.idx];
+                    const chemPoints = chemInfo ? chemInfo.points : 0;
+                    const chemInPos = chemInfo ? chemInfo.inPosition : true;
+                    const diamonds = [0, 1, 2].map(d => {
+                        const filled = d < chemPoints && chemInPos;
+                        const style = filled ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : 'border-color:#6b7280;');
+                        return `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${style}"></span>`;
+                    }).join('');
+                    return `
+                        <div class="w-16 sm:w-24 lg:w-28 shrink-0">
+                            <div class="bg-fc-card/95 border border-fc-border rounded-t-xl p-1.5 sm:p-2 text-center flex flex-col items-center relative">
+                                <div class="absolute top-1 left-1.5 text-[9px] font-black text-fc-gold">${player.rating}</div>
+                                <div class="absolute top-1 right-1.5 text-[9px] font-bold text-fc-accent">${player.pos}</div>
+                                <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-10 sm:h-10 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
+                                <div class="font-bold text-[10px] sm:text-xs text-white truncate w-full">${player.name}</div>
+                                <div class="flex items-center justify-center gap-1 mt-0.5">${diamonds}</div>
+                            </div>
+                            <div class="bg-fc-dark border border-t-0 border-fc-border rounded-b-xl px-1 py-1 text-center">
+                                <div class="text-[9px] sm:text-[10px] font-bold text-fc-gold truncate">${(player.price || 0).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="flex justify-evenly items-start w-full" style="padding-left:${rowInset}%;padding-right:${rowInset}%;">
+                        ${cards}
+                    </div>
+                `;
+            }).join('');
+        }
 
         window.closeViewSquadModal = function() {
             const modal = document.getElementById('view-squad-modal');
