@@ -2710,86 +2710,136 @@
                 squadState.explanationLog.push(warnText);
             }
 
-            let selectedXI = { ...lockedPlacement.assigned };
-            let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
-            let currentSpent = lockedCost;
+            // One candidate fill: poolSize=1 is the old, fully deterministic
+            // "always take the #1-scored candidate" pass; poolSize=3
+            // randomizes among the top 3 for each slot, same style as
+            // Regenerate's buildRandomizedXI. Chemistry is NOT considered
+            // here at all — same as before — because a single deterministic
+            // top-1-per-slot pick has no reason to land on players who
+            // share a club/nation/league (an independently-best XI tends to
+            // scatter across many different ones), and always taking the
+            // single best score for the CURRENT slot can also starve later
+            // slots of budget a slightly different early pick would have
+            // left them (the classic greedy-algorithm trap for a budget-
+            // constrained selection). Multiple attempts below, each fully
+            // processed through the same chemistry-fix pass, is what
+            // actually corrects for this — a single deterministic pass
+            // can't, no matter how good its own per-slot picks look.
+            function fillSlots(poolSize) {
+                let selectedXI = { ...lockedPlacement.assigned };
+                let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
+                let currentSpent = lockedCost;
+                const localLog = [];
 
-            for (let i = 0; i < sortedSlotIndices.length; i++) {
-                const slotIdx = sortedSlotIndices[i];
-                const slot = slots[slotIdx];
-                const candidates = candidateMap[slotIdx];
-                const remainingSlotIndices = sortedSlotIndices.slice(i + 1);
+                for (let i = 0; i < sortedSlotIndices.length; i++) {
+                    const slotIdx = sortedSlotIndices[i];
+                    const slot = slots[slotIdx];
+                    const candidates = candidateMap[slotIdx];
+                    const remainingSlotIndices = sortedSlotIndices.slice(i + 1);
 
-                let bestCandidate = null;
-                let bestScore = -Infinity;
-                let usedTolerance = false;
-                let unavoidableOvershoot = false;
-
-                // Pass 1: stay strictly within budget, reserving a real lower
-                // bound for whatever slots are still left to fill.
-                for (const cand of candidates) {
-                    if (usedPlayerIds.has(cand.id)) continue;
-                    const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
-                    if (currentSpent + cand.price + remainingMinCost <= budget) {
-                        const score = calculatePlayerScore(cand, slot.pos);
-                        if (score > bestScore) { bestScore = score; bestCandidate = cand; }
-                    }
-                }
-
-                // Pass 2: nothing fit strictly within budget — relax up to
-                // the 50,000 coin tolerance ceiling.
-                if (!bestCandidate) {
-                    for (const cand of candidates) {
-                        if (usedPlayerIds.has(cand.id)) continue;
-                        const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
-                        if (currentSpent + cand.price + remainingMinCost <= hardCap) {
-                            const score = calculatePlayerScore(cand, slot.pos);
-                            if (score > bestScore) { bestScore = score; bestCandidate = cand; usedTolerance = true; }
+                    const collectFitting = (cap) => {
+                        const fitting = [];
+                        for (const cand of candidates) {
+                            if (usedPlayerIds.has(cand.id)) continue;
+                            const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
+                            if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                         }
+                        return fitting;
+                    };
+
+                    let fitting = collectFitting(budget);
+                    let usedTolerance = false;
+                    if (fitting.length === 0) {
+                        fitting = collectFitting(hardCap);
+                        usedTolerance = fitting.length > 0;
+                    }
+
+                    let chosen = null, unavoidableOvershoot = false;
+                    if (fitting.length > 0) {
+                        // fitting[] preserves the descending-score order
+                        // inherited from candidateMap, so index 0 is the
+                        // single best pick — poolSize=1 always takes it
+                        // (the old deterministic behavior); poolSize=3
+                        // randomizes across the top few to explore other
+                        // combinations, same as Regenerate.
+                        const n = Math.min(poolSize, fitting.length);
+                        chosen = fitting[Math.floor(Math.random() * n)];
+                    } else {
+                        let cheapest = null;
+                        for (const cand of candidates) {
+                            if (usedPlayerIds.has(cand.id)) continue;
+                            if (!cheapest || cand.price < cheapest.price) cheapest = cand;
+                        }
+                        chosen = cheapest;
+                        unavoidableOvershoot = !!cheapest;
+                    }
+
+                    if (chosen) {
+                        selectedXI[slotIdx] = chosen;
+                        usedPlayerIds.add(chosen.id);
+                        currentSpent += chosen.price;
+                        localLog.push({ slot, chosen, usedTolerance, unavoidableOvershoot });
                     }
                 }
+                return { selectedXI, totalCost: currentSpent, localLog };
+            }
 
-                // Pass 3: even the tolerance can't fit anyone here — take the
-                // cheapest eligible candidate so the slot isn't left empty.
-                // This only happens when totalMinCost already exceeded
-                // hardCap above, so it's a known, logged unavoidable case.
-                if (!bestCandidate) {
-                    let cheapest = null;
-                    for (const cand of candidates) {
-                        if (usedPlayerIds.has(cand.id)) continue;
-                        if (!cheapest || cand.price < cheapest.price) cheapest = cand;
-                    }
-                    bestCandidate = cheapest;
-                    unavoidableOvershoot = !!cheapest;
-                }
+            // Fully processes one fill attempt (chemistry-fix + leftover-
+            // spend, same passes every build gets) and scores the RESULT —
+            // not the raw fill — since what actually matters is how good
+            // the squad is after those passes run, exactly the number the
+            // deterministic-only approach never bothered to check itself
+            // against alternatives for.
+            function evaluateAttempt(xi) {
+                squadState.selectedXI = { ...xi };
+                squadState.totalCost = Object.values(squadState.selectedXI).reduce((s, p) => s + (p ? p.price : 0), 0);
+                improveSquadChemistry();
+                spendLeftoverBudget();
+                const chem = calculateSquadChemistry();
+                let qualitySum = 0, chemSum = 0;
+                slots.forEach((slot, idx) => {
+                    const p = squadState.selectedXI[idx];
+                    if (!p) return;
+                    qualitySum += calculatePlayerScore(p, slot.pos);
+                    chemSum += (chem.perSlot[idx] && chem.perSlot[idx].points) || 0;
+                });
+                return {
+                    value: qualitySum + chemSum * CHEM_VALUE_WEIGHT,
+                    selectedXI: { ...squadState.selectedXI },
+                    totalCost: squadState.totalCost
+                };
+            }
 
-                if (bestCandidate) {
-                    selectedXI[slotIdx] = bestCandidate;
-                    usedPlayerIds.add(bestCandidate.id);
-                    currentSpent += bestCandidate.price;
-                    const metaTag = typeof bestCandidate.meta === 'number' ? ` · MR ${bestCandidate.meta.toFixed(1)}` : '';
-                    const noteTag = unavoidableOvershoot
-                        ? (currentLanguage === 'ar' ? ' ⚠️ تجاوز غير قابل للتفادي' : ' ⚠️ unavoidable overshoot')
-                        : (usedTolerance ? (currentLanguage === 'ar' ? ' (ضمن هامش الـ50,000)' : ' (within 50,000 tolerance)') : '');
-                    const selectionLogText = currentLanguage === 'ar' ?
-                        `تم اختيار <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) مقابل <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>${noteTag}.` :
-                        `Selected <span class="text-white font-bold">${bestCandidate.name}</span> (${bestCandidate.rating} ${bestCandidate.pos}${metaTag}) for <span class="text-fc-gold">${bestCandidate.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>${noteTag}.`;
-                    squadState.explanationLog.push(selectionLogText);
+            const OPTIMIZER_ATTEMPTS = 6;
+            let bestAttempt = null;
+            let bestAttemptLog = null;
+            for (let a = 0; a < OPTIMIZER_ATTEMPTS; a++) {
+                const poolSize = a === 0 ? 1 : 3; // first attempt = pure deterministic best-fit; rest explore like Regenerate
+                const built = fillSlots(poolSize);
+                const evaluated = evaluateAttempt(built.selectedXI);
+                if (!bestAttempt || evaluated.value > bestAttempt.value) {
+                    bestAttempt = evaluated;
+                    bestAttemptLog = built.localLog;
                 }
             }
 
-            squadState.selectedXI = selectedXI;
-            squadState.totalCost = currentSpent;
+            // Commit the winning attempt as the live squad.
+            squadState.selectedXI = bestAttempt.selectedXI;
+            squadState.totalCost = bestAttempt.totalCost;
 
-            // Chemistry-aware improvement pass: try to raise anyone under 2
-            // chemistry (0/1) toward 2-3 via affordable, better-linked
-            // teammates, before computing final totals/alternatives.
-            improveSquadChemistry();
-
-            // Reinvest any leftover budget into upgrades (chemistry-aware)
-            // now that we know the squad's true final cost — fixes formations
-            // that were quietly underspending the available budget.
-            spendLeftoverBudget();
+            // Log the winning attempt's per-slot picks in the same format
+            // as before, so the explanation panel reads exactly like a
+            // single deterministic build even though several were tried.
+            bestAttemptLog.forEach(({ slot, chosen, usedTolerance, unavoidableOvershoot }) => {
+                const metaTag = typeof chosen.meta === 'number' ? ` · MR ${chosen.meta.toFixed(1)}` : '';
+                const noteTag = unavoidableOvershoot
+                    ? (currentLanguage === 'ar' ? ' ⚠️ تجاوز غير قابل للتفادي' : ' ⚠️ unavoidable overshoot')
+                    : (usedTolerance ? (currentLanguage === 'ar' ? ' (ضمن هامش الـ50,000)' : ' (within 50,000 tolerance)') : '');
+                const selectionLogText = currentLanguage === 'ar' ?
+                    `تم اختيار <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) مقابل <span class="text-fc-gold">${chosen.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>${noteTag}.` :
+                    `Selected <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) for <span class="text-fc-gold">${chosen.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>${noteTag}.`;
+                squadState.explanationLog.push(selectionLogText);
+            });
 
             let totalRating = 0;
             let totalMeta = 0;
