@@ -2220,22 +2220,21 @@
         // chemistry. Meta rating is the tiebreaker among candidates that tie
         // on the resulting chemistry gain, so quality isn't sacrificed
         // needlessly. Runs only during the automatic build — manual swaps
-        // via the modal are left alone since those are deliberate choices.
-        // The score-equivalent value of ONE chemistry point when weighing
-        // a chemistry-driven swap against player quality. Calibrated
-        // against the other bonuses calculatePlayerScore already uses
-        // (an exact position match is worth 50, an alt position 20) —
-        // 40 per chemistry point makes fixing genuinely broken chemistry
-        // (0/1) a real priority without letting a marginal +1 chemistry
-        // gain override a much better player. Previously this pass had
-        // NO such balance at all: any chemistry improvement won outright
-        // regardless of size, with quality only breaking an EXACT tie —
-        // which is what let a squad snowball toward one league even with
-        // no league filter set, since each "fix" nudged toward whichever
-        // league/club/nation was already dominant among the rest of the
-        // squad, making the NEXT fix even more likely to pick that same
-        // league, compounding pass over pass.
+        // The score-equivalent value of ONE chemistry point when choosing
+        // AMONG candidates that already pass the quality floor below.
         const CHEM_VALUE_WEIGHT = 40;
+        // The actual hard guarantee: a candidate is only even considered
+        // for a chemistry-driven swap if their raw quality is within 2%
+        // of the current player's. The weighted blend above sounds like
+        // it should stop chemistry from dominating, but in practice most
+        // top-meta players sit within a couple of points of each other —
+        // a 2%-worse candidate with full chemistry (worth up to +120 in
+        // the blend) still easily beats a 0-chemistry current player, so
+        // the blend ALONE wasn't enough; this is what actually was still
+        // pulling Regenerate toward one league with no filter set. Below
+        // this floor, chemistry can tip a genuine near-tie; above it (a
+        // real quality gap), the current player is simply kept.
+        const MAX_QUALITY_SACRIFICE_PCT = 0.02;
 
         function improveSquadChemistry() {
             const slots = formationSlots[squadState.formation];
@@ -2262,15 +2261,17 @@
                     );
 
                     const currentScore = calculatePlayerScore(currentPlayer, slot.pos);
+                    const qualityFloor = currentScore * (1 - MAX_QUALITY_SACRIFICE_PCT);
                     const currentValue = currentScore + currentChem * CHEM_VALUE_WEIGHT;
 
                     let best = null, bestChem = currentChem, bestValue = currentValue;
                     const originalPlayer = squadState.selectedXI[idx];
                     candidates.forEach(cand => {
+                        const candScore = calculatePlayerScore(cand, slot.pos);
+                        if (candScore < qualityFloor) return; // too big a quality sacrifice — never allowed, regardless of chemistry
                         squadState.selectedXI[idx] = cand;
                         const hypo = calculateSquadChemistry();
                         const candChem = (hypo.perSlot[idx] && hypo.perSlot[idx].points) || 0;
-                        const candScore = calculatePlayerScore(cand, slot.pos);
                         const candValue = candScore + candChem * CHEM_VALUE_WEIGHT;
                         if (candValue > bestValue) {
                             best = cand;
@@ -2319,14 +2320,18 @@
                     if (!currentPlayer) return;
                     if (squadState.lockedIds.has(currentPlayer.id)) return; // locked — never auto-swapped
                     const priceCeiling = currentPlayer.price + leftover;
-                    const currentAdjScore = calculatePlayerScore(currentPlayer, slot.pos) * chemistryMultiplier(idx, currentPlayer);
+                    const currentRawScore = calculatePlayerScore(currentPlayer, slot.pos);
+                    const qualityFloor = currentRawScore * (1 - MAX_QUALITY_SACRIFICE_PCT);
+                    const currentAdjScore = currentRawScore * chemistryMultiplier(idx, currentPlayer);
 
                     getActiveDatabase().forEach(cand => {
                         if (cand.id === currentPlayer.id) return;
                         if (usedIds.has(cand.id)) return;
                         if (!(cand.pos === slot.pos || (cand.alt && cand.alt.includes(slot.pos)))) return;
                         if (cand.price > priceCeiling) return;
-                        const candAdjScore = calculatePlayerScore(cand, slot.pos) * chemistryMultiplier(idx, cand);
+                        const candRawScore = calculatePlayerScore(cand, slot.pos);
+                        if (candRawScore < qualityFloor) return; // same hard floor as improveSquadChemistry — the multiplier alone (up to 1.15x) could otherwise justify a real quality drop for a same-league chemistry gain
+                        const candAdjScore = candRawScore * chemistryMultiplier(idx, cand);
                         const gain = candAdjScore - currentAdjScore;
                         if (gain > bestGain) { bestGain = gain; bestSlotIdx = idx; bestCandidate = cand; }
                     });
