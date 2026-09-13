@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EA SPORTS FC 27 Ultimate Team - Coin & Squad Builder</title>
+    <link rel="icon" type="image/png" href="https://res.cloudinary.com/dydy0sxej/image/upload/v1789261475/logo_wrj17j.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -159,8 +160,8 @@
     <header class="sticky top-0 z-50 bg-fc-card/95 backdrop-blur border-b border-fc-border">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
             <div class="flex items-center space-x-3 rtl:space-x-reverse">
-                <div class="w-10 h-10 rounded-lg bg-gradient-to-tr from-fc-accent to-blue-600 flex items-center justify-center font-black text-xl text-fc-dark shadow-lg shadow-fc-accent/20">
-                    FC
+                <div class="w-10 h-10 rounded-lg overflow-hidden shadow-lg shadow-fc-accent/20 shrink-0">
+                    <img src="https://res.cloudinary.com/dydy0sxej/image/upload/v1789261475/logo_wrj17j.png" alt="Logo" class="w-full h-full object-cover">
                 </div>
                 <div>
                     <h1 class="text-xl font-black tracking-wider bg-gradient-to-r from-white via-gray-200 to-fc-accent bg-clip-text text-transparent">
@@ -3714,9 +3715,9 @@
                                 <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
                                 <img src="${player.photo}" alt="${player.name}" class="w-9 h-9 sm:w-12 sm:h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                                 <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
-                                <div class="flex items-center justify-center gap-1 mt-0.5 h-3">
-                                    ${getNationFlag(player.nationId) ? `<span class="text-[10px] leading-none" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
-                                    ${getLeagueLogoUrl(player.leagueId) ? `<img src="${getLeagueLogoUrl(player.leagueId)}" alt="" class="w-2.5 h-2.5 object-contain" title="${getLeagueName(player.leagueId) || ''}" onerror="this.style.display='none'">` : ''}
+                                <div class="flex items-center justify-center gap-1 mt-0.5 h-3.5">
+                                    ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white shadow-sm text-[9px] leading-none overflow-hidden" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
+                                    ${getLeagueLogoUrl(player.leagueId) ? `<span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white shadow-sm overflow-hidden"><img src="${getLeagueLogoUrl(player.leagueId)}" alt="" class="w-2.5 h-2.5 object-contain" title="${getLeagueName(player.leagueId) || ''}" onerror="this.parentElement.style.display='none'"></span>` : ''}
                                 </div>
                                 <div class="flex items-center justify-center gap-0.5 mt-1" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
                                 <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
