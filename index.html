@@ -2220,6 +2220,22 @@
         // on the resulting chemistry gain, so quality isn't sacrificed
         // needlessly. Runs only during the automatic build — manual swaps
         // via the modal are left alone since those are deliberate choices.
+        // The score-equivalent value of ONE chemistry point when weighing
+        // a chemistry-driven swap against player quality. Calibrated
+        // against the other bonuses calculatePlayerScore already uses
+        // (an exact position match is worth 50, an alt position 20) —
+        // 40 per chemistry point makes fixing genuinely broken chemistry
+        // (0/1) a real priority without letting a marginal +1 chemistry
+        // gain override a much better player. Previously this pass had
+        // NO such balance at all: any chemistry improvement won outright
+        // regardless of size, with quality only breaking an EXACT tie —
+        // which is what let a squad snowball toward one league even with
+        // no league filter set, since each "fix" nudged toward whichever
+        // league/club/nation was already dominant among the rest of the
+        // squad, making the NEXT fix even more likely to pick that same
+        // league, compounding pass over pass.
+        const CHEM_VALUE_WEIGHT = 40;
+
         function improveSquadChemistry() {
             const slots = formationSlots[squadState.formation];
             const MAX_PASSES = 4;
@@ -2244,22 +2260,26 @@
                         p.price <= priceCeiling
                     );
 
-                    let best = null, bestChem = currentChem, bestScore = -Infinity;
+                    const currentScore = calculatePlayerScore(currentPlayer, slot.pos);
+                    const currentValue = currentScore + currentChem * CHEM_VALUE_WEIGHT;
+
+                    let best = null, bestChem = currentChem, bestValue = currentValue;
                     const originalPlayer = squadState.selectedXI[idx];
                     candidates.forEach(cand => {
                         squadState.selectedXI[idx] = cand;
                         const hypo = calculateSquadChemistry();
                         const candChem = (hypo.perSlot[idx] && hypo.perSlot[idx].points) || 0;
                         const candScore = calculatePlayerScore(cand, slot.pos);
-                        if (candChem > bestChem || (candChem === bestChem && candScore > bestScore)) {
+                        const candValue = candScore + candChem * CHEM_VALUE_WEIGHT;
+                        if (candValue > bestValue) {
                             best = cand;
                             bestChem = candChem;
-                            bestScore = candScore;
+                            bestValue = candValue;
                         }
                     });
                     squadState.selectedXI[idx] = originalPlayer;
 
-                    if (best && bestChem > currentChem) {
+                    if (best && bestValue > currentValue) {
                         squadState.selectedXI[idx] = best;
                         squadState.totalCost = squadState.totalCost - originalPlayer.price + best.price;
                         const logText = currentLanguage === 'ar'
