@@ -460,7 +460,7 @@
                      (wrapped together so Next Best Upgrade sits under the
                      pitch specifically, not spanning under the sidebar too). -->
                 <div class="lg:col-span-3 space-y-6">
-                <div class="bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                <div id="pitch-card-outer" class="bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                     <!-- Pseudo-3D half-pitch background (trapezoid, not a
                          real 3D transform — see .pitch-3d comment). -->
                     <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
@@ -4220,9 +4220,28 @@
             // 4-5-1/3-5-2 only) where there's no margin for the two to
             // disagree about which card size is actually being rendered.
             const isNarrowViewport = document.documentElement.clientWidth < 640;
+
+            // FIXED PITCH SIZE — the whole point of this block is that the
+            // pitch box (grass + markings) must be the exact same size for
+            // every formation, whether it has 4 rows (e.g. 4-4-2) or 5
+            // (e.g. 4-2-3-1). Previously both the outer card and this
+            // container only had a min-height, so extra rows simply grew
+            // the whole box taller — the pitch visibly "stretched" between
+            // formations. Now both get a real, non-negotiable pixel height
+            // (set directly via style, not a Tailwind min-h class), and any
+            // formation whose rows don't fit that height at natural size
+            // gets uniformly scaled down (see the transform block below)
+            // instead of growing the box. Fewer rows just get more
+            // breathing room via justify-between; more rows shrink slightly
+            // — the box itself never moves.
+            const fixedPitchHeight = isNarrowViewport ? 520 : 600;
+            const outerCard = document.getElementById('pitch-card-outer');
+            if (outerCard) outerCard.style.height = fixedPitchHeight + 'px';
+
             container.className = isNarrowViewport
-                ? "relative z-10 flex flex-col justify-between gap-2 py-4 px-1 min-h-[520px] overflow-x-auto"
-                : "relative z-10 flex flex-col justify-between gap-3 py-6 px-4 min-h-[600px]";
+                ? "relative z-10 flex flex-col justify-between gap-2 py-4 px-1 h-full overflow-x-auto"
+                : "relative z-10 flex flex-col justify-between gap-3 py-6 px-4 h-full";
+            container.style.transform = 'none';
 
             usedRowKeys.forEach((rowNum, i) => {
                 const rowItems = rows[rowNum];
@@ -4330,6 +4349,22 @@
 
                 container.appendChild(rowDiv);
             });
+
+            // Scale-to-fit: measure the rows' natural (unscaled) height
+            // against the fixed box just set above. If they fit, leave
+            // scale alone — justify-between spreads fewer rows out nicely
+            // on its own. If they don't (a 5-row formation on a box sized
+            // for 4), shrink the whole row stack uniformly from the top so
+            // it fits inside the fixed box instead of the box growing to
+            // fit it. transform-origin 'top' keeps the GK row anchored at
+            // the same spot regardless of formation.
+            container.style.transformOrigin = 'top center';
+            const naturalHeight = container.scrollHeight;
+            const availableHeight = container.clientHeight;
+            if (naturalHeight > availableHeight && availableHeight > 0) {
+                const scale = Math.max(0.6, availableHeight / naturalHeight);
+                container.style.transform = `scale(${scale})`;
+            }
         }
 
         // ===================================================================
