@@ -2237,6 +2237,15 @@
         // quality for a marginal gain — hence two different floors.
         const MAX_QUALITY_SACRIFICE_PCT = { 0: 0.08, 1: 0.02 };
 
+        // Minimum "usable" squad chemistry — out of 33 (11 players x 3).
+        // 20 means an average just above 1.8/3 per player; below that,
+        // enough players are taking real in-game stat penalties that the
+        // squad isn't really usable regardless of how good it looks on
+        // quality alone. Shared by BOTH Optimize and Regenerate — a floor
+        // that only applied to one of them would leave the other able to
+        // hand back exactly the "unusable" result this exists to prevent.
+        const MIN_USABLE_CHEMISTRY = 20;
+
         function improveSquadChemistry() {
             const slots = formationSlots[squadState.formation];
             const MAX_PASSES = 4;
@@ -2805,6 +2814,7 @@
                 });
                 return {
                     value: qualitySum + chemSum * CHEM_VALUE_WEIGHT,
+                    chemSum,
                     selectedXI: { ...squadState.selectedXI },
                     totalCost: squadState.totalCost
                 };
@@ -2820,6 +2830,47 @@
                 if (!bestAttempt || evaluated.value > bestAttempt.value) {
                     bestAttempt = evaluated;
                     bestAttemptLog = built.localLog;
+                }
+            }
+
+            // Nothing stops all 6 attempts above from unluckily landing on
+            // mediocre chemistry (a tight budget or league filter narrows
+            // the pool enough for this to happen for real) — this is the
+            // rescue pass that catches that, using the shared
+            // MIN_USABLE_CHEMISTRY floor defined above.
+            const CHEMISTRY_RESCUE_ATTEMPTS = 10;
+
+            if (bestAttempt.chemSum < MIN_USABLE_CHEMISTRY) {
+                for (let a = 0; a < CHEMISTRY_RESCUE_ATTEMPTS; a++) {
+                    const built = fillSlots(3);
+                    const evaluated = evaluateAttempt(built.selectedXI);
+                    // Rescue mode prioritizes chemistry itself, not the
+                    // balanced value — reaching the floor matters more
+                    // right now than a marginal quality difference does.
+                    const bestMeetsFloor = bestAttempt.chemSum >= MIN_USABLE_CHEMISTRY;
+                    const evalMeetsFloor = evaluated.chemSum >= MIN_USABLE_CHEMISTRY;
+                    const better = evalMeetsFloor && !bestMeetsFloor
+                        ? true
+                        : (evalMeetsFloor === bestMeetsFloor && evaluated.chemSum > bestAttempt.chemSum)
+                        ? true
+                        : (evalMeetsFloor === bestMeetsFloor && evaluated.chemSum === bestAttempt.chemSum && evaluated.value > bestAttempt.value);
+                    if (better) {
+                        bestAttempt = evaluated;
+                        bestAttemptLog = built.localLog;
+                    }
+                    if (bestAttempt.chemSum >= MIN_USABLE_CHEMISTRY) break; // good enough — stop searching
+                }
+
+                if (bestAttempt.chemSum >= MIN_USABLE_CHEMISTRY) {
+                    const rescueLogText = currentLanguage === 'ar'
+                        ? `تم تشغيل محاولات إضافية للوصول إلى حد أدنى مقبول من الكيمياء (${bestAttempt.chemSum}/33).`
+                        : `Ran extra attempts to reach an acceptable chemistry floor (${bestAttempt.chemSum}/33).`;
+                    squadState.explanationLog.push(rescueLogText);
+                } else {
+                    const warnText = currentLanguage === 'ar'
+                        ? `<span class="text-amber-400 font-semibold">ملاحظة:</span> تعذّر الوصول إلى الحد الأدنى المقترح للكيمياء (20/33) حتى بعد محاولات إضافية — على الأرجح بسبب قيود الميزانية أو الدوري المحدد. الكيمياء الحالية: ${bestAttempt.chemSum}/33.`
+                        : `<span class="text-amber-400 font-semibold">Note:</span> Couldn't reach the recommended chemistry floor (20/33) even after extra attempts — likely due to the budget or league restriction in play. Current chemistry: ${bestAttempt.chemSum}/33.`;
+                    squadState.explanationLog.push(warnText);
                 }
             }
 
@@ -3008,8 +3059,9 @@
             const backupCost = squadState.totalCost;
             const backupLockedIds = new Set(squadState.lockedIds);
 
+            const slots = formationSlots[squadState.formation];
             const MAX_ATTEMPTS = 40;
-            let found = null;
+            let bestUnique = null; // best NEW (not-already-seen) combination found so far
             let unlockedDuringRegen = [];
 
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -3027,11 +3079,47 @@
                 spendLeftoverBudget();
 
                 const signature = computeSquadSignature(squadState.selectedXI);
-                if (!squadState.history.has(signature)) {
-                    found = signature;
-                    break;
+                if (squadState.history.has(signature)) continue; // already shown this session — try again
+
+                const chem = calculateSquadChemistry();
+                let qualitySum = 0, chemSum = 0;
+                slots.forEach((slot, idx) => {
+                    const p = squadState.selectedXI[idx];
+                    if (!p) return;
+                    qualitySum += calculatePlayerScore(p, slot.pos);
+                    chemSum += (chem.perSlot[idx] && chem.perSlot[idx].points) || 0;
+                });
+                const candidate = {
+                    signature, chemSum,
+                    value: qualitySum + chemSum * CHEM_VALUE_WEIGHT,
+                    selectedXI: { ...squadState.selectedXI },
+                    totalCost: squadState.totalCost
+                };
+
+                // Same priority as Optimize's chemistry-floor rescue: a
+                // result that clears MIN_USABLE_CHEMISTRY always beats one
+                // that doesn't, regardless of quality — Regenerate exists
+                // to offer variety, but not at the cost of handing back
+                // something unusable just because it happened to be the
+                // first new combination found.
+                if (!bestUnique) {
+                    bestUnique = candidate;
+                } else {
+                    const bestMeetsFloor = bestUnique.chemSum >= MIN_USABLE_CHEMISTRY;
+                    const candMeetsFloor = candidate.chemSum >= MIN_USABLE_CHEMISTRY;
+                    const better = (candMeetsFloor && !bestMeetsFloor)
+                        || (candMeetsFloor === bestMeetsFloor && candidate.chemSum > bestUnique.chemSum)
+                        || (candMeetsFloor === bestMeetsFloor && candidate.chemSum === bestUnique.chemSum && candidate.value > bestUnique.value);
+                    if (better) bestUnique = candidate;
                 }
+
+                // Once we've got a genuinely new AND floor-meeting result,
+                // stop searching — no need to spend the rest of the
+                // attempt budget chasing a marginally better one.
+                if (bestUnique.chemSum >= MIN_USABLE_CHEMISTRY) break;
             }
+
+            const found = bestUnique ? bestUnique.signature : null;
 
             if (!found) {
                 // Restore whatever squad was showing before this attempt and
@@ -3057,7 +3145,18 @@
                 return;
             }
 
+            // Commit the best unique combination found, not just whatever
+            // the loop happened to land on last.
+            squadState.selectedXI = bestUnique.selectedXI;
+            squadState.totalCost = bestUnique.totalCost;
             squadState.history.add(found);
+
+            if (bestUnique.chemSum < MIN_USABLE_CHEMISTRY) {
+                const warnText = currentLanguage === 'ar'
+                    ? `<span class="text-amber-400 font-semibold">ملاحظة:</span> تعذّر الوصول إلى الحد الأدنى المقترح للكيمياء (20/33) ضمن محاولات إعادة التوليد — على الأرجح بسبب قيود الميزانية أو الدوري المحدد. الكيمياء الحالية: ${bestUnique.chemSum}/33.`
+                    : `<span class="text-amber-400 font-semibold">Note:</span> Couldn't reach the recommended chemistry floor (20/33) within this regenerate attempt — likely due to the budget or league restriction in play. Current chemistry: ${bestUnique.chemSum}/33.`;
+                squadState.explanationLog.push(warnText);
+            }
 
             let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
             Object.values(squadState.selectedXI).forEach(p => {
