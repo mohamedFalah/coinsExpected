@@ -2947,17 +2947,11 @@
                     return `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${style}"></span>`;
                 }).join('');
                 return `
-                    <div class="w-14 sm:w-20 lg:w-24" style="${posStyle}">
-                        <div class="bg-fc-card/95 border border-fc-border rounded-t-lg p-1 sm:p-1.5 text-center flex flex-col items-center relative">
-                            <div class="absolute top-0.5 left-1 text-[8px] font-black text-fc-gold">${player.rating}</div>
-                            <div class="absolute top-0.5 right-1 text-[8px] font-bold text-fc-accent">${player.pos}</div>
-                            <img src="${player.photo}" alt="${player.name}" class="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover mt-2.5 mb-0.5 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
-                            <div class="font-bold text-[9px] sm:text-[10px] text-white truncate w-full leading-tight">${player.name}</div>
-                            <div class="flex items-center justify-center gap-0.5 mt-0.5">${diamonds}</div>
-                        </div>
-                        <div class="bg-fc-dark border border-t-0 border-fc-border rounded-b-lg px-1 py-0.5 text-center">
-                            <div class="text-[8px] sm:text-[9px] font-bold text-fc-gold truncate">${(player.price || 0).toLocaleString()}</div>
-                        </div>
+                    <div class="w-14 sm:w-20 lg:w-24 flex flex-col items-center text-center" style="${posStyle}">
+                        <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
+                        <div class="font-bold text-[9px] sm:text-[10px] text-white truncate w-full leading-tight mt-1">${player.name}</div>
+                        <div class="flex items-center justify-center gap-0.5 mt-0.5">${diamonds}</div>
+                        <div class="text-[8px] sm:text-[9px] font-bold text-fc-gold truncate mt-0.5">${(player.price || 0).toLocaleString()}</div>
                     </div>
                 `;
             }).join('');
