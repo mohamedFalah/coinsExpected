@@ -4574,7 +4574,15 @@
         // Stoppers." Groups by category first (attack/neutral/defend) so
         // players sharing a tendency are named together, then joins the
         // per-category clauses into one flowing sentence for the line.
-        function narrateLine(list, isAr) {
+        // Describes what a line's shape actually LOOKS like on the pitch —
+        // not just "who has what role", but the spatial/tactical
+        // consequence of that mix (width, gaps, cover, who occupies which
+        // space) — so the person can picture the movement, not just read
+        // a role list. Branches on the PATTERN (all-attack / all-defend /
+        // split / mostly-neutral) since the tactical picture for "both
+        // fullbacks bomb on" is qualitatively different from "one bombs on,
+        // one holds", not just a smaller/bigger version of the same thing.
+        function narrateLine(zone, list, isAr) {
             const groups = { attack: [], neutral: [], defend: [] };
             list.forEach(item => groups[item.category].push(item));
 
@@ -4584,29 +4592,79 @@
                 if (isAr) return names.slice(0, -1).join('، ') + ' و' + names[names.length - 1];
                 return names.length === 2 ? names.join(' and ') : names.slice(0, -1).join(', ') + ', and ' + names[names.length - 1];
             };
-            const joinRoles = roles => {
-                const unique = [...new Set(roles)];
-                return isAr ? unique.join('/') : unique.join('/');
-            };
+            const joinRoles = items => [...new Set(items.map(i => i.role))].join('/');
+            const namesOf = items => joinNames(items.map(lastName));
+            const rolesOf = items => joinRoles(items);
+            const v = (items, singular, plural) => items.length > 1 ? plural : singular;
 
-            const clauseFor = (cat, items) => {
-                if (!items.length) return null;
-                const names = joinNames(items.map(lastName));
-                const roles = joinRoles(items.map(i => i.role));
-                const plural = items.length > 1;
-                if (isAr) {
-                    if (cat === 'attack') return `${names} ${plural ? 'بأدوار هجومية' : 'بدور هجومي'} (${roles})`;
-                    if (cat === 'defend') return `${names} ${plural ? 'بأدوار دفاعية صرفة' : 'بدور دفاعي صرف'} (${roles})`;
-                    return `${names} ${plural ? 'بأدوار متوازنة/داعمة' : 'بدور متوازن/داعم'} (${roles})`;
+            const total = list.length;
+            const attack = groups.attack, defend = groups.defend, neutral = groups.neutral;
+            let pattern;
+            if (attack.length === total) pattern = 'all-attack';
+            else if (defend.length === total) pattern = 'all-defend';
+            else if (attack.length > 0 && defend.length > 0) pattern = 'split';
+            else pattern = 'mixed-neutral';
+
+            const T = {
+                DEF: {
+                    'all-attack': {
+                        en: () => `Both ${namesOf(attack)} push all the way forward as ${rolesOf(attack)}, so your back line effectively becomes a back two in possession — huge width and overlap, but real space to defend on the counter.`,
+                        ar: () => `يتقدم ${namesOf(attack)} بالكامل للأمام كـ${rolesOf(attack)}، فيتحول خط دفاعك عملياً إلى دفاع ثنائي أثناء الاستحواذ — اتساع كبير وتداخل، لكن مساحة حقيقية للدفاع عنها في الهجمات المرتدة.`
+                    },
+                    'all-defend': {
+                        en: () => `The back line (${namesOf(list)}) stays compact and disciplined as ${rolesOf(list)} — nobody bombs forward, so you'll rarely be exposed on the counter, but you won't get much natural width going forward.`,
+                        ar: () => `يبقى خط الدفاع (${namesOf(list)}) متماسكاً ومنضبطاً كـ${rolesOf(list)} — لا أحد يندفع للأمام، فنادراً ما ستتعرض لهجمة مرتدة، لكنك لن تحصل على اتساع طبيعي في الهجوم.`
+                    },
+                    'split': {
+                        en: () => `Width is asymmetric: ${namesOf(attack)} ${v(attack, 'pushes', 'push')} forward as ${rolesOf(attack)} on one side, while ${namesOf(defend)} ${v(defend, 'stays', 'stay')} home as ${rolesOf(defend)} — expect your attacking width to come from one flank more than the other.`,
+                        ar: () => `الاتساع غير متماثل: يتقدم ${namesOf(attack)} كـ${rolesOf(attack)} من جهة، بينما يبقى ${namesOf(defend)} في مكانه كـ${rolesOf(defend)} — توقع أن يأتي اتساعك الهجومي من جهة واحدة أكثر من الأخرى.`
+                    },
+                    'mixed-neutral': {
+                        en: () => `${namesOf(list)} play a measured, balanced role at the back (${rolesOf(list)}) — some license to support play, but no one is committed fully forward or fully back.`,
+                        ar: () => `يلعب ${namesOf(list)} دوراً متوازناً ومحسوباً في الخلف (${rolesOf(list)}) — بعض الحرية لدعم اللعب، لكن لا أحد ملتزم بالكامل بالأمام أو الخلف.`
+                    }
+                },
+                MID: {
+                    'all-attack': {
+                        en: () => `Your midfield floods forward together (${namesOf(list)} all in ${rolesOf(list)}) — great for overloading the opposition higher up, but there's no one left screening the back four if possession is lost.`,
+                        ar: () => `يندفع وسط ملعبك بالكامل للأمام معاً (${namesOf(list)} جميعاً بدور ${rolesOf(list)}) — ممتاز للتفوق العددي في مناطق متقدمة، لكن لا أحد يحمي خط الدفاع إذا خسرت الكرة.`
+                    },
+                    'all-defend': {
+                        en: () => `The midfield sits deep as a defensive screen (${namesOf(list)} as ${rolesOf(list)}) — very hard to play through, but you'll need your attackers to create largely on their own.`,
+                        ar: () => `يتمركز الوسط بعمق كحاجز دفاعي (${namesOf(list)} بدور ${rolesOf(list)}) — يصعب اختراقه، لكنك ستحتاج مهاجميك لصناعة الفرص بأنفسهم إلى حد كبير.`
+                    },
+                    'split': {
+                        en: () => `${namesOf(defend)} ${v(defend, 'anchors', 'anchor')} in front of the back four as ${rolesOf(defend)}, freeing ${namesOf(attack)} to push on and join attacks as ${rolesOf(attack)} — a classic holding-plus-runner balance.`,
+                        ar: () => `يرتكز ${namesOf(defend)} أمام خط الدفاع كـ${rolesOf(defend)}، ما يمنح ${namesOf(attack)} حرية التقدم والانضمام للهجمات كـ${rolesOf(attack)} — توازن كلاسيكي بين الارتكاز والاندفاع.`
+                    },
+                    'mixed-neutral': {
+                        en: () => `${namesOf(list)} operate centrally in a balanced capacity (${rolesOf(list)}) — recycling possession and linking play rather than pressing fully forward or dropping fully back.`,
+                        ar: () => `يعمل ${namesOf(list)} مركزياً بدور متوازن (${rolesOf(list)}) — إعادة تدوير الاستحواذ وربط اللعب بدلاً من الضغط للأمام أو التراجع الكامل.`
+                    }
+                },
+                ATT: {
+                    'all-attack': {
+                        en: () => `The front line stays high and direct (${namesOf(list)} all in ${rolesOf(list)}) — always threatening the last defender, always ready to attack the box.`,
+                        ar: () => `يبقى خط الهجوم متقدماً ومباشراً (${namesOf(list)} جميعاً بدور ${rolesOf(list)}) — تهديد دائم لآخر مدافع، وجاهزية دائمة لمهاجمة منطقة الجزاء.`
+                    },
+                    'all-defend': {
+                        en: () => `Even up front, ${namesOf(list)} are asked to contribute defensively (${rolesOf(list)}) rather than just occupy the last line.`,
+                        ar: () => `حتى في الهجوم، يُطلب من ${namesOf(list)} المساهمة دفاعياً (${rolesOf(list)}) بدلاً من الاكتفاء بالتمركز على آخر خط.`
+                    },
+                    'split': {
+                        en: () => `${namesOf(attack)} ${v(attack, 'stays', 'stay')} pinned on the last line as ${rolesOf(attack)}, while ${namesOf(defend)} ${v(defend, 'drops', 'drop')} to link play as ${rolesOf(defend)} — the space that creates is exactly what the pinned runner will attack.`,
+                        ar: () => `يبقى ${namesOf(attack)} مثبتاً على آخر خط كـ${rolesOf(attack)}، بينما ينزل ${namesOf(defend)} لربط اللعب كـ${rolesOf(defend)} — المساحة الناتجة هي ما سيهاجمه اللاعب المثبت.`
+                    },
+                    'mixed-neutral': {
+                        en: () => `${namesOf(list)} drift and combine rather than staying fixed on the last line (${rolesOf(list)}) — more about movement and link-up than pure penetration.`,
+                        ar: () => `يتحرك ${namesOf(list)} ويتبادلون اللعب بدلاً من الثبات على آخر خط (${rolesOf(list)}) — التركيز على الحركة والربط أكثر من الاختراق المباشر.`
+                    }
                 }
-                if (cat === 'attack') return `${names} ${plural ? 'push forward' : 'pushes forward'} in ${plural ? 'attack-focused roles' : 'an attack-focused role'} (${roles})`;
-                if (cat === 'defend') return `${names} ${plural ? 'sit back' : 'sits back'} in ${plural ? 'purely defensive roles' : 'a purely defensive role'} (${roles})`;
-                return `${names} ${plural ? 'operate' : 'operates'} in ${plural ? 'balanced/support roles' : 'a balanced/support role'} (${roles})`;
             };
 
-            const clauses = ['attack', 'neutral', 'defend'].map(cat => clauseFor(cat, groups[cat])).filter(Boolean);
-            if (!clauses.length) return '';
-            return isAr ? clauses.join('، بينما ') + '.' : clauses.join(', while ') + '.';
+            const entry = T[zone] && T[zone][pattern];
+            if (!entry) return '';
+            return isAr ? entry.ar() : entry.en();
         }
 
         function renderTeamTacticalShape() {
@@ -4650,7 +4708,7 @@
             const lineParagraphs = ['DEF', 'MID', 'ATT'].map(zone => {
                 const list = shape.byLine[zone];
                 if (!list.length) return '';
-                const sentence = narrateLine(list, isAr);
+                const sentence = narrateLine(zone, list, isAr);
                 if (!sentence) return '';
                 return `<p class="text-[11px] text-gray-400 leading-relaxed"><span class="font-bold text-gray-300">${lineIntro[zone]}:</span> ${sentence}</p>`;
             }).filter(Boolean).join('');
@@ -5782,6 +5840,7 @@
                     ? (isAr ? profile.label.ar : profile.label.en)
                     : (detail.bodyTypeId != null ? `${isAr ? 'نوع' : 'Type'} ${detail.bodyTypeId}` : (isAr ? 'غير متاح' : 'Not available'));
                 const feelText = profile ? (isAr ? profile.feel.ar : profile.feel.en) : '';
+                bodyTypeEl.setAttribute('dir', isAr ? 'rtl' : 'ltr');
                 bodyTypeEl.innerHTML = `
                     <span class="font-bold text-gray-400">${isAr ? 'نمط الجسم:' : 'Body Type:'}</span>
                     <span class="font-bold text-white">${label}</span>
@@ -5795,6 +5854,7 @@
             const bodyTypeEl = document.getElementById('bodytype-live');
             if (heightEl) { heightEl.classList.remove('animate-pulse'); heightEl.innerHTML = '<bdi>—</bdi>'; }
             if (bodyTypeEl) {
+                bodyTypeEl.setAttribute('dir', isAr ? 'rtl' : 'ltr');
                 bodyTypeEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'نمط الجسم:' : 'Body Type:'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية.' : "Couldn't verify."}</span>`;
             }
         }
@@ -7104,7 +7164,7 @@
                                     <span id="height-value-live" class="font-black text-white text-sm leading-none animate-pulse"><bdi>…</bdi></span>
                                 </div>
                             </div>
-                            <div id="bodytype-live" class="text-[11px] text-gray-300">
+                            <div id="bodytype-live" dir="${currentLanguage === 'ar' ? 'rtl' : 'ltr'}" class="text-[11px] text-gray-300">
                                 <span class="font-bold text-gray-400">${currentLanguage === 'ar' ? 'نمط الجسم:' : 'Body Type:'}</span>
                                 <span class="text-gray-500 italic">${currentLanguage === 'ar' ? 'جارٍ التحقق من البيانات الفعلية…' : 'Verifying against real player data…'}</span>
                             </div>
