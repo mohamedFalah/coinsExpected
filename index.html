@@ -4568,6 +4568,47 @@
             return { byLine, attackCount, defendCount, neutralCount, verdictKey };
         }
 
+        // Turns one line's grouped players into a real sentence instead of
+        // a bare tag list — e.g. "Carmona and Carmona push forward as
+        // Attacking Wingbacks, while Gila and Pubill stay back as pure
+        // Stoppers." Groups by category first (attack/neutral/defend) so
+        // players sharing a tendency are named together, then joins the
+        // per-category clauses into one flowing sentence for the line.
+        function narrateLine(list, isAr) {
+            const groups = { attack: [], neutral: [], defend: [] };
+            list.forEach(item => groups[item.category].push(item));
+
+            const lastName = item => item.player.name.trim().split(' ').slice(-1)[0];
+            const joinNames = names => {
+                if (names.length === 1) return names[0];
+                if (isAr) return names.slice(0, -1).join('، ') + ' و' + names[names.length - 1];
+                return names.length === 2 ? names.join(' and ') : names.slice(0, -1).join(', ') + ', and ' + names[names.length - 1];
+            };
+            const joinRoles = roles => {
+                const unique = [...new Set(roles)];
+                return isAr ? unique.join('/') : unique.join('/');
+            };
+
+            const clauseFor = (cat, items) => {
+                if (!items.length) return null;
+                const names = joinNames(items.map(lastName));
+                const roles = joinRoles(items.map(i => i.role));
+                const plural = items.length > 1;
+                if (isAr) {
+                    if (cat === 'attack') return `${names} ${plural ? 'بأدوار هجومية' : 'بدور هجومي'} (${roles})`;
+                    if (cat === 'defend') return `${names} ${plural ? 'بأدوار دفاعية صرفة' : 'بدور دفاعي صرف'} (${roles})`;
+                    return `${names} ${plural ? 'بأدوار متوازنة/داعمة' : 'بدور متوازن/داعم'} (${roles})`;
+                }
+                if (cat === 'attack') return `${names} ${plural ? 'push forward' : 'pushes forward'} in ${plural ? 'attack-focused roles' : 'an attack-focused role'} (${roles})`;
+                if (cat === 'defend') return `${names} ${plural ? 'sit back' : 'sits back'} in ${plural ? 'purely defensive roles' : 'a purely defensive role'} (${roles})`;
+                return `${names} ${plural ? 'operate' : 'operates'} in ${plural ? 'balanced/support roles' : 'a balanced/support role'} (${roles})`;
+            };
+
+            const clauses = ['attack', 'neutral', 'defend'].map(cat => clauseFor(cat, groups[cat])).filter(Boolean);
+            if (!clauses.length) return '';
+            return isAr ? clauses.join('، بينما ') + '.' : clauses.join(', while ') + '.';
+        }
+
         function renderTeamTacticalShape() {
             const container = document.getElementById('squad-tactical-shape');
             if (!container) return;
@@ -4576,37 +4617,43 @@
             const isAr = currentLanguage === 'ar';
 
             const verdictMeta = {
-                attacking: { icon: 'fa-bolt', color: 'text-red-400', en: 'Attack-Minded XI', ar: 'تشكيلة بميول هجومية' },
-                defensive: { icon: 'fa-shield-halved', color: 'text-blue-400', en: 'Defensive-Minded XI', ar: 'تشكيلة بميول دفاعية' },
-                balanced: { icon: 'fa-scale-balanced', color: 'text-fc-accent', en: 'Balanced XI', ar: 'تشكيلة متوازنة' }
+                attacking: {
+                    icon: 'fa-bolt', color: 'text-red-400',
+                    en: 'Attack-Minded XI', ar: 'تشكيلة بميول هجومية',
+                    meaningEn: "Expect plenty of attacking threat and forward runs, but the shape leans thin at the back in transition — you're built to win games through goals, not clean sheets.",
+                    meaningAr: 'توقع تهديداً هجومياً كبيراً وجريات متقدمة، لكن البنية أقل تغطية خلفياً أثناء الهجمات المرتدة — أنت مبني للفوز بالأهداف لا بنظافة الشباك.'
+                },
+                defensive: {
+                    icon: 'fa-shield-halved', color: 'text-blue-400',
+                    en: 'Defensive-Minded XI', ar: 'تشكيلة بميول دفاعية',
+                    meaningEn: "This shape prioritizes defensive solidity and control over attacking directness — hard to break down, but you may lean on individual quality up front to unlock tight defenses.",
+                    meaningAr: 'تُعطي هذه البنية الأولوية للصلابة الدفاعية والسيطرة على المباشرة الهجومية — سيكون كسر تشكيلتك صعباً، لكنك قد تعتمد على جودة فردية في الهجوم لفتح الدفاعات المغلقة.'
+                },
+                balanced: {
+                    icon: 'fa-scale-balanced', color: 'text-fc-accent',
+                    en: 'Balanced XI', ar: 'تشكيلة متوازنة',
+                    meaningEn: "No glaring lean either way — flexible enough to adapt mid-match without overcommitting players forward or back.",
+                    meaningAr: 'لا يوجد ميل واضح لأي جانب — مرنة بما يكفي للتكيف أثناء المباراة دون المبالغة بدفع اللاعبين للأمام أو للخلف.'
+                }
             }[shape.verdictKey];
 
             const countsLine = isAr
-                ? `${shape.attackCount} هجوم · ${shape.neutralCount} متوازن/دعم · ${shape.defendCount} دفاع`
-                : `${shape.attackCount} Attack · ${shape.neutralCount} Balanced/Support · ${shape.defendCount} Defend`;
+                ? `${shape.attackCount} بأدوار هجومية، ${shape.neutralCount} متوازنة/داعمة، و${shape.defendCount} دفاعية.`
+                : `${shape.attackCount} in attack-focused roles, ${shape.neutralCount} balanced/support, and ${shape.defendCount} purely defensive.`;
 
-            const lineLabel = { DEF: isAr ? 'الدفاع' : 'Defence', MID: isAr ? 'الوسط' : 'Midfield', ATT: isAr ? 'الهجوم' : 'Attack' };
-            const catStyle = {
-                attack: 'text-red-400 border-red-400/30 bg-red-400/10',
-                defend: 'text-blue-400 border-blue-400/30 bg-blue-400/10',
-                neutral: 'text-gray-400 border-gray-500/30 bg-gray-400/10'
+            const lineIntro = {
+                DEF: isAr ? 'في الدفاع' : 'In defense',
+                MID: isAr ? 'في الوسط' : 'In midfield',
+                ATT: isAr ? 'في الهجوم' : 'Up front'
             };
 
-            const detailHtml = ['DEF', 'MID', 'ATT'].map(zone => {
+            const lineParagraphs = ['DEF', 'MID', 'ATT'].map(zone => {
                 const list = shape.byLine[zone];
                 if (!list.length) return '';
-                const chips = list.map(item => `
-                    <span class="inline-flex items-center gap-1 text-[10px] font-semibold border rounded-full px-2 py-0.5 ${catStyle[item.category]}" title="${item.player.name}">
-                        ${item.player.name.split(' ').slice(-1)[0]}: ${item.role} · ${item.focus}
-                    </span>
-                `).join('');
-                return `
-                    <div class="space-y-1">
-                        <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wide">${lineLabel[zone]}</div>
-                        <div class="flex flex-wrap gap-1">${chips}</div>
-                    </div>
-                `;
-            }).join('');
+                const sentence = narrateLine(list, isAr);
+                if (!sentence) return '';
+                return `<p class="text-[11px] text-gray-400 leading-relaxed"><span class="font-bold text-gray-300">${lineIntro[zone]}:</span> ${sentence}</p>`;
+            }).filter(Boolean).join('');
 
             container.innerHTML = `
                 <button onclick="window.toggleTacticalShapeDetail()" class="w-full flex items-center justify-between gap-2 text-left ${isAr ? 'flex-row-reverse text-right' : ''}">
@@ -4616,8 +4663,13 @@
                     </div>
                     <i class="fa-solid fa-chevron-${tacticalShapeExpanded ? 'up' : 'down'} text-gray-500 text-xs"></i>
                 </button>
-                <div class="text-[11px] text-gray-500 mt-1">${countsLine}</div>
-                ${tacticalShapeExpanded ? `<div class="mt-3 space-y-2.5">${detailHtml}</div>` : ''}
+                <p class="text-[11px] text-gray-500 mt-1.5 leading-relaxed ${isAr ? 'text-right' : ''}">${isAr ? verdictMeta.meaningAr : verdictMeta.meaningEn}</p>
+                ${tacticalShapeExpanded ? `
+                    <div class="mt-3 space-y-2 ${isAr ? 'text-right' : ''}">
+                        <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wide">${isAr ? 'التوزيع' : 'Breakdown'}: ${countsLine}</p>
+                        ${lineParagraphs}
+                    </div>
+                ` : ''}
             `;
         }
 
@@ -6067,6 +6119,15 @@
         const FOCUS_DESC_AR = {"With an Attack focus, the Advanced Forward will concentrate on goal-scoring opportunities, usually positioning themselves high and central on the pitch.":"مع تركيز الهجوم، يركز المهاجم المتقدم على فرص التسجيل، ويتمركز عادة في مكان متقدم ومركزي في الملعب.","When set to Support, the Advanced Forward will look to make runs from deeper or wider positions, and press the defenders.":"عند ضبطه على الدعم، يسعى المهاجم المتقدم للجري من مراكز أعمق أو أوسع، والضغط على المدافعين.","When set to Versatile, the Advanced Forward has the freedom to move wide when necessary to receive a pass or create space with a run.":"عند ضبطه على التنوع، يتمتع المهاجم المتقدم بحرية التحرك عرضياً عند الحاجة لاستقبال تمريرة أو خلق مساحة بالجري.","When asked to Attack, the Attacking Wingback will push even higher up the pitch, and perform fewer defensive duties.":"عند تكليفه بالهجوم، يتقدم الظهير الهجومي أكثر في الملعب، ويؤدي مهام دفاعية أقل.","When asked to Support, the Attacking Wingback will rarely spring back to defend, unless their team has been hit on the counter.":"عند تكليفه بالدعم، نادراً ما يعود الظهير الهجومي للدفاع، إلا إذا تعرض فريقه لهجمة مرتدة.","When asked to be Aggressive, the Ball-Playing Defender will focus on intercepting passes and closing down opponents.":"عند تكليفه بالعدوانية، يركز المدافع اللاعب بالكرة على اعتراض التمريرات والضغط على الخصوم.","The Build-Up focus moves the Ball-Playing Defender into more of a holding midfielder role during possession.":"يحول تركيز بناء اللعب المدافع اللاعب بالكرة إلى دور أقرب للاعب وسط مرتكز أثناء الاستحواذ.","When set to Defend, the Ball-Playing Defender will step up a little to support teammates during possession.":"عند ضبطه على الدفاع، يتقدم المدافع اللاعب بالكرة قليلاً لدعم زملائه أثناء الاستحواذ.","A Build-Up focus encourages the Ball-Playing Keeper to push higher up the pitch to support play.":"يشجع تركيز بناء اللعب الحارس اللاعب بالكرة على التقدم أكثر في الملعب لدعم اللعب.","When asked to be Balanced, the Box Crasher will balance their responsibilities between defence and offence.":"عند تكليفه بالتوازن، يوازن لاعب اقتحام المنطقة مسؤولياته بين الدفاع والهجوم.","When asked to be balanced, the Box-to-box Midfielder will cover the centre of the pitch in attack and defence.":"عند تكليفه بالتوازن، يغطي لاعب الوسط الشامل منتصف الملعب دفاعاً وهجوماً.","When asked to be Ball-Winning, the Box-to-Box Midfielder will focus on recovering the ball while providing central support in attack and defence.":"عند تكليفه باستخلاص الكرة، يركز لاعب الوسط الشامل على استعادة الكرة مع تقديم الدعم المركزي هجوماً ودفاعاً.","When set to Defend, the Centre Half will focus on their defensive duties.":"عند ضبطه على الدفاع، يركز لاعب الوسط المحوري على مهامه الدفاعية.","When asked to Attack, the Classic 10 will maintain their position in the pocket behind the forward line, operating as the team's chief creative force.":"عند تكليفه بالهجوم، يحافظ صانع الألعاب الكلاسيكي على مركزه في الفراغ خلف خط الهجوم، كقوة الإبداع الرئيسية للفريق.","When set to Versatile, the classic 10 will use their best judgement when determining if they should stay central or use the pitch's width during attacks.":"عند ضبطه على التنوع، يستخدم صانع الألعاب الكلاسيكي حكمه لتحديد ما إذا كان سيبقى مركزياً أو يستغل اتساع الملعب أثناء الهجمات.","When set to Wide, the Classic 10 is able to drift out to the wing, and dictate attacks from anywhere across the width of the pitch.":"عند ضبطه على الاتساع، يستطيع صانع الألعاب الكلاسيكي التحرك نحو الجناح، وقيادة الهجمات من أي نقطة عبر عرض الملعب.","With Build-Up, the Playmaker is asked to drop deeper to get the ball, and orchestrate an attack.":"مع بناء اللعب، يُطلب من صانع الألعاب النزول للعمق لاستلام الكرة وتنظيم الهجمة.","With a Defend focus, the Deep-lying Playmaker will focus on closing down passing lanes and staying back while their team attacks.":"مع تركيز الدفاع، يركز صانع الألعاب العميق على غلق ممرات التمرير والبقاء خلفاً أثناء هجوم فريقه.","The Roaming focus allows the Deep-lying Playmaker to move across the width of the pitch to support attacks.":"يتيح تركيز التجول لصانع الألعاب العميق التحرك عبر عرض الملعب لدعم الهجمات.","With a Balanced focus, the Defender will step up to close down attackers when needed.":"مع تركيز التوازن، يتقدم المدافع للضغط على المهاجمين عند الحاجة.","When asked to Defend, the Defender will focus only on their defensive responsibilities.":"عند تكليفه بالدفاع، يركز المدافع فقط على مسؤولياته الدفاعية.","When set to Attack, the False 9 will drop back from the opposition's defence, and make trailing runs into the box from deep.":"عند ضبطه على الهجوم، ينسحب المهاجم الوهمي من دفاع الخصم، ويقوم بالجري من العمق نحو منطقة الجزاء.","With Build-Up, the False 9 will drop back from the opposition's defence, and operate as a playmaker, leading attacks.":"مع بناء اللعب، ينسحب المهاجم الوهمي من دفاع الخصم، ويعمل كصانع ألعاب يقود الهجمات.","When set to Balanced, the Falseback positions themselves as a Central Midfielder when their team is in possession.":"عند ضبطه على التوازن، يتمركز الظهير الوهمي كلاعب وسط مركزي عندما يستحوذ فريقه على الكرة.","When set to Defend, the Falseback operates as a Defensive Midfielder when the team has the ball.":"عند ضبطه على الدفاع، يعمل الظهير الوهمي كلاعب وسط دفاعي عندما تكون الكرة بحوزة الفريق.","When set to Balanced, the Fullback is granted more freedom to push slightly forward and wider in support of attacks.":"عند ضبطه على التوازن، يُمنح الظهير حرية أكبر للتقدم قليلاً للأمام وللعرض دعماً للهجمات.","When set to Defend, the Fullback will move inside to form a back three when their team is in possession.":"عند ضبطه على الدفاع، يتحرك الظهير للداخل لتشكيل دفاع ثلاثي عندما يستحوذ فريقه على الكرة.","When set to Versatile, the Fullback can move inside to form a back three or push slightly forward and wider to support build-up.":"عند ضبطه على التنوع، يستطيع الظهير التحرك للداخل لتشكيل دفاع ثلاثي أو التقدم قليلاً للأمام والعرض لدعم بناء اللعب.","With a Balanced focus, the Goalkeeper will occassionally leave their area to collect long or loose balls.":"مع تركيز التوازن، يغادر الحارس منطقته أحياناً لاستلام الكرات الطويلة أو المرتدة.","With a Defend focus, the Goalkeeper won't rush out to collect long or loose balls.":"مع تركيز الدفاع، لا يندفع الحارس خارج منطقته لاستلام الكرات الطويلة أو المرتدة.","When set to Attack, the Half Winger can advance freely, sacrificing defensive responsibilities.":"عند ضبطه على الهجوم، يتقدم لاعب الجناح النصفي بحرية، مضحياً بمسؤولياته الدفاعية.","With Balanced, the Half Winger will alternate equally between attacking and defending in a measured way.":"مع التوازن، يتناوب لاعب الجناح النصفي بالتساوي بين الهجوم والدفاع بطريقة محسوبة.","When set to Roaming, this attacking Half-Winger will freely alternate the side on which they attack, even during plays.":"عند ضبطه على التجول، يتناوب لاعب الجناح النصفي الهجومي بحرية بين جانبي الهجوم، حتى أثناء اللعب.","When set to Support, the Half-Winger will focus on supporting the play instead of simply attacking or defending.":"عند ضبطه على الدعم، يركز لاعب الجناح النصفي على دعم اللعب بدلاً من الاكتفاء بالهجوم أو الدفاع.","The Ball-Winning focus tasks the Holding Midfielder with aggressively intercepting passing as part of their defensive focus.":"يكلف تركيز استخلاص الكرة لاعب الوسط المرتكز باعتراض التمريرات بعدوانية كجزء من مهامه الدفاعية.","When instructed to Defend, the Holding Midfielder will move slightly higher to offer a passing option, but will otherwise focus on defending.":"عند توجيهه للدفاع، يتقدم لاعب الوسط المرتكز قليلاً لتوفير خيار تمرير، لكنه يركز في باقي الأوقات على الدفاع.","When given an Attack focus, the Inside Forward will focus on cutting inside and making attacking runs.":"عند منحه تركيز الهجوم، يركز المهاجم الداخلي على الدخول للداخل والقيام بجريات هجومية.","When Balanced, the Inside Forward will offer minimal defensive support, and sometimes hold off making runs in behind to instead offer passing options.":"مع التوازن، يقدم المهاجم الداخلي دعماً دفاعياً محدوداً، وأحياناً يمتنع عن الجري خلف الدفاع ليوفر بدلاً من ذلك خيارات تمرير.","When set to Roaming, the Inside Forward is allowed to freely explore and exploit ant defensive gaps they can find.":"عند ضبطه على التجول، يُسمح للمهاجم الداخلي باستكشاف واستغلال أي ثغرات دفاعية يجدها بحرية.","When asked to Attack, the Inverted Wingback will act as a central Shadow Striker, helping in the final third.":"عند تكليفه بالهجوم، يعمل الظهير المقلوب كمهاجم ظل مركزي، مساعداً في الثلث الأخير.","When asked to Build-Up, the Inverted Wingback will act as a central Playmaker, helping dictate the play.":"عند تكليفه ببناء اللعب، يعمل الظهير المقلوب كصانع ألعاب مركزي، مساعداً في التحكم باللعب.","When set to Attack, the Playmaker will move forward to support attacks higher up the field.":"عند ضبطه على الهجوم، يتقدم صانع الألعاب للأمام لدعم الهجمات في مناطق متقدمة.","When asked to be Balanced, the Playmaker will offer defensive support when needed, as well as orchestrating attacks.":"عند تكليفه بالتوازن، يقدم صانع الألعاب دعماً دفاعياً عند الحاجة، إلى جانب تنظيم الهجمات.","When set to Roaming, the Playmaker will have freedom to explore the pitch to find the best spaces to support attacks.":"عند ضبطه على التجول، يتمتع صانع الألعاب بحرية استكشاف الملعب لإيجاد أفضل المساحات لدعم الهجمات.","With an Attack focus, the Poacher will lurk just off the defensive line, ready to capitalise on any defensive gaps or errors.":"مع تركيز الهجوم، يتربص صائد الفرص بالقرب من خط الدفاع، مستعداً لاستغلال أي ثغرة أو خطأ دفاعي.","When set to Support, the Poacher will stay close to the opposition defence, aggressively pressing them when in possession, in the hope of triggering a mistake.":"عند ضبطه على الدعم، يبقى صائد الفرص قريباً من دفاع الخصم، ويضغط عليه بعدوانية أثناء استحواذه أملاً في افتعال خطأ.","With a Versatile focus, the Poacher will use their judgement to determine if they should come back to support their team or apply pressure.":"مع تركيز التنوع، يستخدم صائد الفرص حكمه لتحديد ما إذا كان سيعود لدعم فريقه أو يمارس الضغط.","When set to Attack, the Shadow Striker will focus on making late runs into the box, filling the space behind the striker.":"عند ضبطه على الهجوم، يركز مهاجم الظل على الجري المتأخر نحو منطقة الجزاء، ملء الفراغ خلف المهاجم.","When asked to be Aggressive, the Stopper will push up into the base of the midfield to intercept passes and close down attackers.":"عند تكليفه بالعدوانية، يتقدم لاعب الاقتحام نحو قاعدة الوسط لاعتراض التمريرات والضغط على المهاجمين.","With a Balanced focus, the Stopper will intercept passes and pressure attackers receiving the ball.":"مع تركيز التوازن، يعترض لاعب الاقتحام التمريرات ويضغط على المهاجمين المستلمين للكرة.","A balanced focus allows the Sweeper Keeper to leave their area to collect balls close to their box":"يتيح تركيز التوازن للحارس الكاسح مغادرة منطقته لاستلام الكرات القريبة من منطقة جزائه.","A Build-Up focus encourages the Sweeper Keeper to push even higher up the pitch to collect the ball and support play.":"يشجع تركيز بناء اللعب الحارس الكاسح على التقدم أكثر في الملعب لاستلام الكرة ودعم اللعب.","With an Attack focus, the Target Forward is free to focus on going forward, without any defensive instructions.":"مع تركيز الهجوم، يتفرغ المهاجم الارتكازي للتقدم للأمام، دون أي تعليمات دفاعية.","When Balanced, the Target Forward will drop off from the defensive line, hold up play, and lay the ball off to teammates. They will have minor defensive duties.":"مع التوازن، ينزل المهاجم الارتكازي من خط الدفاع، ويحافظ على الكرة، ويمررها لزملائه. سيكون له مهام دفاعية بسيطة.","When set to Wide, the Target Forward will drift to the edges of the box in a search for space to make an impact.":"عند ضبطه على الاتساع، ينجرف المهاجم الارتكازي نحو أطراف منطقة الجزاء بحثاً عن مساحة لصنع الفارق.","With an Aggressive focus, the Wide Back will also close down opponents and intercept pasases during the defensive phase.":"مع تركيز العدوانية، يضغط المدافع العريض أيضاً على الخصوم ويعترض التمريرات أثناء المرحلة الدفاعية.","With a Defend focus, the Wide Back will cover for the fullbacks in all phases but stay close to the defensive line.":"مع تركيز الدفاع، يغطي المدافع العريض للظهيرين في كل المراحل لكنه يبقى قريباً من خط الدفاع.","With a Support focus, the Wide Back will move up the side of the pitch to a pass option when their team needs to release pressure.":"مع تركيز الدعم، يتقدم المدافع العريض على جانب الملعب كخيار تمرير عندما يحتاج فريقه لتخفيف الضغط.","When set to Build-Up, the Wide Half can move wide into the Wingback position, and forward into Wide Midfielder territory, when their team is in possession.":"عند ضبطه على بناء اللعب، يستطيع لاعب الوسط العريض التحرك عرضياً لمركز الظهير المتقدم، وللأمام نحو منطقة لاعب الوسط العريض، عندما يستحوذ فريقه على الكرة.","When instructed to Defend, the Wide Half can drop into the Fullback and Wingback positions while their team has the ball.":"عند توجيهه للدفاع، يستطيع لاعب الوسط العريض النزول لمركز الظهير أو الظهير المتقدم بينما تكون الكرة بحوزة فريقه.","When in Build-Up, the Wide Midfielder will position themselves a little higher up the pitch to support plays, while providing defensive support if needed.":"أثناء بناء اللعب، يتمركز لاعب الوسط العريض في مكان أكثر تقدماً قليلاً لدعم اللعب، مع تقديم الدعم الدفاعي عند الحاجة.","When asked to Defend, the Wide Midfielder will drop into the defensive midfield line and protect the defence.":"عند تكليفه بالدفاع، ينزل لاعب الوسط العريض إلى خط الوسط الدفاعي ويحمي الدفاع.","When in a Support focus, the Wide Midfielder will stay wide to support possession and provide defensive support when needed.":"مع تركيز الدعم، يبقى لاعب الوسط العريض على الطرف لدعم الاستحواذ وتقديم الدعم الدفاعي عند الحاجة.","With an Attack focus, the Wide Playmaker will move forward, and receive passes out wide.":"مع تركيز الهجوم، يتقدم صانع الألعاب العريض للأمام، ويستلم التمريرات على الطرف.","When set to Build-Up, the Wide Playmaker will come short to offer a passing option, while balancing their approach to support the defence if needed.":"عند ضبطه على بناء اللعب، يقترب صانع الألعاب العريض لتوفير خيار تمرير، مع موازنة أسلوبه لدعم الدفاع عند الحاجة.","With Balanced, the Wingback is given license to stay forward even when the team is out of possession, or drop back into defence when needed.":"مع التوازن، يُمنح الظهير المتقدم حرية البقاء متقدماً حتى عندما يفقد الفريق الاستحواذ، أو العودة للدفاع عند الحاجة.","When asked to Support, the Wingback can only attack when their team has controlled possession, and only defend when the team doesn't have the ball.":"عند تكليفه بالدعم، لا يهاجم الظهير المتقدم إلا عندما يسيطر فريقه على الاستحواذ، ولا يدافع إلا عندما لا تكون الكرة بحوزة الفريق.","When set to Attack, the Winger will focus on getting forward, and prefers to make runs behind the defence instead of receiving the ball to feet.":"عند ضبطه على الهجوم، يركز الجناح على التقدم للأمام، ويفضل الجري خلف الدفاع بدلاً من استلام الكرة على قدميه.","When Balanced, the Winger will offer both defensive and attacking support. They mix making runs in behind and offering themselves as a passing option.":"مع التوازن، يقدم الجناح دعماً دفاعياً وهجومياً معاً. يمزج بين الجري خلف الدفاع وتوفير نفسه كخيار تمرير.","The Versatile Winger decides when it's the right opportunity to attack or defend, and they can swap sides with another Versatile Winger between phases of play.":"يقرر الجناح متعدد الأدوار متى تكون الفرصة مناسبة للهجوم أو الدفاع، ويمكنه تبديل الجانب مع جناح آخر متعدد الأدوار بين مراحل اللعب."};
         const TRAIT_WORD_AR = {"Aggressiveness":"العدوانية","Attack Support":"دعم هجومي","Attacking":"هجومي","Attacking Runs":"جريات هجومية","Build-Up Support":"دعم بناء اللعب","Cover Side":"تغطية الجانب","Creative":"إبداعي","Cut Inside":"الدخول للداخل","Defence Support":"دعم دفاعي","Defending":"الدفاع","Dynamic Side":"جانب ديناميكي","Dynamic Width":"اتساع ديناميكي","High Risk":"مخاطرة عالية","Intercepts Passes":"اعتراض التمريرات","Lacks Mobility":"ضعف الحركة","Leaves Gaps":"يترك ثغرات","Limited Versatility":"تنوع محدود","Limited Width":"اتساع محدود","Low Risk":"مخاطرة منخفضة","Movement":"الحركة","Out of Position":"خارج المركز","Pass Option":"خيار تمرير","Physical":"بدني","Pressure":"الضغط","Rush":"الاندفاع","Some Risk":"مخاطرة متوسطة","Stamina Usage":"استهلاك اللياقة","Stay in Position":"البقاء في المركز","Stays Back":"يبقى خلفاً","Support Centrally":"دعم مركزي","Supports Attack":"يدعم الهجوم","Supports Attacks":"يدعم الهجمات","Supports Centrally":"يدعم مركزياً","Supports Play":"يدعم اللعب","Supports the Defence":"يدعم الدفاع","Versatile":"متعدد الأدوار","Wide Support":"دعم عريض"};
 
+        // Focus NAMES stay in English everywhere the role/focus is shown
+        // as data (pitch cards, "Role / Focus" line) to match the rest of
+        // the app's convention — but the official-role description block
+        // below weaves the focus name into an actual Arabic sentence
+        // ("عند التركيز على الدفاع:"), where leaving it as a bare English
+        // word reads as a mixed-language mistake. This map is ONLY used
+        // for that one inline connector phrase.
+        const FOCUS_NAME_AR = { 'Attack': 'الهجوم', 'Balanced': 'التوازن', 'Ball-Winning': 'استخلاص الكرة', 'Build-Up': 'بناء اللعب', 'Defend': 'الدفاع', 'Roaming': 'التجول', 'Support': 'الدعم', 'Versatile': 'التنوع', 'Wide': 'الاتساع', 'Aggressive': 'العدوانية' };
+
         // Looks up the real in-game description for whatever role/focus
         // name our own heuristic assigned. Normalizes both sides with
         // normalizeAttrKey (already defined above) so small naming
@@ -6598,7 +6659,7 @@
                                         ...off.traits.strengths.map(t => `<span class="inline-flex items-center gap-0.5 text-[9px] font-semibold text-green-400 bg-green-400/10 border border-green-400/30 rounded-full px-1.5 py-0.5"><i class="fa-solid fa-check text-[7px]"></i>${t}</span>`),
                                         ...off.traits.drawbacks.map(t => `<span class="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-full px-1.5 py-0.5"><i class="fa-solid fa-triangle-exclamation text-[7px]"></i>${t}</span>`)
                                     ].join('');
-                                    return `<p class="text-gray-500 mt-1 text-[10px] pt-1 border-t border-fc-border/40"><span class="font-semibold text-fc-accent">${isAr ? 'وصف الدور في اللعبة: ' : 'In-game: '}</span>${off.roleDescription}</p>${chips ? `<div class="mt-1 flex flex-wrap gap-1">${chips}</div>` : ''}`;
+                                    return `<div class="${isAr ? 'text-right' : ''}"><p class="text-gray-500 mt-1 text-[10px] pt-1 border-t border-fc-border/40"><span class="font-semibold text-fc-accent">${isAr ? 'وصف الدور في اللعبة: ' : 'In-game: '}</span>${off.roleDescription}</p>${chips ? `<div class="mt-1 flex flex-wrap gap-1">${chips}</div>` : ''}</div>`;
                                 })()}
                             </div>
 
@@ -6812,10 +6873,10 @@
                 </div>
             ` : '';
             const officialRoleHtml = officialRoleInfo ? `
-                <div class="mt-2 pt-2 border-t border-fc-border/60">
+                <div class="mt-2 pt-2 border-t border-fc-border/60 ${currentLanguage === 'ar' ? 'text-right' : ''}">
                     <span class="font-bold text-fc-accent text-[11px]">${currentLanguage === 'ar' ? 'وصف الدور الرسمي في اللعبة:' : 'In-Game Role Description:'}</span>
                     <p class="text-gray-400 mt-0.5 text-[11px]">${officialRoleInfo.roleDescription}</p>
-                    ${officialRoleInfo.focusDescription ? `<p class="text-gray-500 mt-1 text-[10px]"><span class="font-semibold text-gray-400">${officialRoleInfo.focus} focus:</span> ${officialRoleInfo.focusDescription}</p>` : ''}
+                    ${officialRoleInfo.focusDescription ? `<p class="text-gray-500 mt-1 text-[10px]"><span class="font-semibold text-gray-400">${currentLanguage === 'ar' ? `عند التركيز على ${FOCUS_NAME_AR[officialRoleInfo.focus] || officialRoleInfo.focus}:` : `${officialRoleInfo.focus} focus:`}</span> ${officialRoleInfo.focusDescription}</p>` : ''}
                     ${traitChipsHtml}
                 </div>
             ` : '';
