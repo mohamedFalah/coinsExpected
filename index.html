@@ -4533,10 +4533,12 @@
         // Groups every starter's ASSIGNED role+focus (squadState.teamRoles
         // — the same team-aware assignment the pitch cards and player
         // modal already read) by line, and classifies each into
-        // attack/defend/neutral based on focus. Our own getRoleSuggestion/
-        // computeTeamRoles only ever assigns one of 5 focus values
-        // ('Attack','Defend','Build Up','Support','Balanced'), so this
-        // classification is exhaustive, not a guess at unmapped values.
+        // attack/defend/neutral based on focus. Every role+focus pair our
+        // own getRoleSuggestion/getRoleCandidates can assign is a real,
+        // valid combination from ROLE_CATALOG_RAW (the scraped Futbin
+        // data) — 'Attack' and 'Defend' are classified explicitly, every
+        // other real focus name (Balanced, Support, Build-Up, Roaming,
+        // etc.) falls into the neutral bucket.
         function computeTeamTacticalShape() {
             if (!squadState.teamRoles) return null;
             const slots = formationSlots[squadState.formation];
@@ -6250,7 +6252,7 @@
             pos = pos || player.pos;
             const a = player.att;
             if (pos === 'GK') {
-                if (a.kic >= 82 && a.spe >= 55) return { role: 'Sweeper Keeper', focus: 'Attack',
+                if (a.kic >= 82 && a.spe >= 55) return { role: 'Sweeper Keeper', focus: 'Build-Up',
                     en: 'High kicking and mobility let them act as an auxiliary sweeper and launch attacks with distribution, not just shot-stop.',
                     ar: 'دقة الإرسال والحركة العالية تتيحان له دور الحارس الكاسح وبدء الهجمات بالتمرير، وليس فقط التصدي.' };
                 return { role: 'Goalkeeper', focus: 'Defend',
@@ -6258,18 +6260,18 @@
                     ar: 'ملفه يعتمد على ردود الفعل والإمساك بالكرة، فيُفضل إبقاؤه في التصدي التقليدي دون الكشف العالي.' };
             }
             if (pos === 'CB') {
-                if (a.pac >= 82) return { role: 'Ball-Playing Defender', focus: 'Build Up',
+                if (a.pac >= 82) return { role: 'Ball-Playing Defender', focus: 'Build-Up',
                     en: 'Enough pace to safely step out of the back line and support build-up without being exposed in behind.',
                     ar: 'سرعته تتيح له الخروج من خط الدفاع بأمان والمساهمة في بناء اللعب دون التعرض للخطر خلفه.' };
-                return { role: 'Stopper', focus: 'Defend',
-                    en: 'Strength/defending-led profile is best used as a pure last-line stopper rather than covering space in behind.',
-                    ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كخط دفاعي أخير دون تكليفه بتغطية المساحات الخلفية.' };
+                return { role: 'Defender', focus: 'Defend',
+                    en: 'Strength/defending-led profile is best used as a no-nonsense last-line defender rather than covering space in behind.',
+                    ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كمدافع تقليدي في الخط الأخير دون تكليفه بتغطية المساحات الخلفية.' };
             }
             if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') {
                 if (a.pac >= 85 && a.dri >= 78) return { role: 'Attacking Wingback', focus: 'Attack',
                     en: 'Pace and dribbling let them overlap and create in the final third without wrecking defensive shape.',
                     ar: 'سرعته ومهارته تتيحان له التداخل والمشاركة الهجومية دون الإخلال الكبير بالتوازن الدفاعي.' };
-                if (a.pas >= 75 && a.dri >= 75 && a.pac < 80) return { role: 'Inverted Wingback', focus: 'Build Up',
+                if (a.pas >= 75 && a.dri >= 75 && a.pac < 80) return { role: 'Inverted Wingback', focus: 'Build-Up',
                     en: 'Passing and close control let them tuck inside into midfield during possession, forming a temporary double-pivot instead of just holding the touchline.',
                     ar: 'تمريره وتحكمه بالكرة يتيحان له الدخول للوسط أثناء الاستحواذ ليشكّل محوراً مزدوجاً مؤقتاً بدلاً من الثبات على الخط الجانبي فقط.' };
                 return { role: 'Fullback', focus: 'Defend',
@@ -6277,7 +6279,7 @@
                     ar: 'ملفه الأكثر توازناً ودفاعياً يجعله أفضل في الثبات دفاعياً بدلاً من الاندفاع المستمر للأمام.' };
             }
             if (pos === 'CDM') {
-                if (a.pas >= 80 && a.dri >= 78) return { role: 'Deep-Lying Playmaker', focus: 'Build Up',
+                if (a.pas >= 80 && a.dri >= 78) return { role: 'Deep-Lying Playmaker', focus: 'Build-Up',
                     en: 'Passing range and close control let them dictate tempo from deep, not just break up play.',
                     ar: 'مدى تمريره وتحكمه بالكرة يتيحان التحكم بإيقاع اللعب من العمق، لا فقط قطع الكرات.' };
                 return { role: 'Holding', focus: 'Defend',
@@ -6285,16 +6287,16 @@
                     ar: 'ملفه الدفاعي/البدني يجعله الأفضل في حماية خط الدفاع، ما يمنح لاعبي الإبداع حرية أكبر.' };
             }
             if (pos === 'CM') {
-                if (a.def >= 78 && a.phy >= 75) return { role: 'Holding / Ball-Winning', focus: 'Defend',
+                if (a.def >= 78 && a.phy >= 75) return { role: 'Holding', focus: 'Defend',
                     en: 'Defending and physicality this strong at CM are better spent anchoring in front of the back four than roaming forward.',
                     ar: 'قدرته الدفاعية وبدنيته القويتان في مركز الوسط أفضل استغلالاً في الارتكاز أمام خط الدفاع بدلاً من التقدم للأمام.' };
-                if (a.pas >= 82 && a.pac <= 72) return { role: 'Deep-Lying Playmaker', focus: 'Build Up',
+                if (a.pas >= 82 && a.pac <= 72) return { role: 'Deep-Lying Playmaker', focus: 'Build-Up',
                     en: 'Elite passing with modest pace is wasted box-to-box — drop them deeper to recycle and dictate tempo instead.',
                     ar: 'التمرير النخبوي مع سرعة متواضعة يُهدر في الجري بين الخطين — أنزله للعمق ليعيد توزيع الكرة ويتحكم بالإيقاع.' };
-                if (a.sho >= 78 && a.pac >= 78) return { role: 'Box-to-Box', focus: 'Attack',
+                if (a.sho >= 78 && a.pac >= 78) return { role: 'Box-to-Box', focus: 'Balanced',
                     en: 'Enough shooting and pace to join the front line late without abandoning defensive duty entirely.',
                     ar: 'تسديده وسرعته الكافيان يتيحان الانضمام للهجوم في اللحظة الأخيرة دون التخلي التام عن الدفاع.' };
-                return { role: 'Playmaker', focus: 'Support',
+                return { role: 'Playmaker', focus: 'Roaming',
                     en: 'Passing-led profile is best used dictating play from a deeper, central position.',
                     ar: 'ملفه القائم على التمرير يجعله الأفضل في التحكم باللعب من مركز أعمق وأكثر مركزية.' };
             }
@@ -6302,12 +6304,12 @@
                 if (a.sho >= 82) return { role: 'Shadow Striker', focus: 'Attack',
                     en: "Shooting rivals a real striker's, so pushing them almost level with the front line maximizes shot volume.",
                     ar: 'قدرته التسديدية تضاهي المهاجمين، لذا دفعه ليكون شبه محاذٍ لخط الهجوم يعظّم عدد تسديداته.' };
-                return { role: 'Playmaker', focus: 'Attack',
+                return { role: 'Classic 10', focus: 'Attack',
                     en: 'Passing/dribbling-led profile is best used creating chances just behind the striker.',
                     ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' };
             }
             if (pos === 'LM' || pos === 'RM') {
-                if (a.pas >= 78 && a.dri >= 75 && a.def < 65) return { role: 'Wide Playmaker', focus: 'Support',
+                if (a.pas >= 78 && a.dri >= 75 && a.def < 65) return { role: 'Wide Playmaker', focus: 'Build-Up',
                     en: 'Creative, low-defending profile is better drifting inside into pockets to create than holding the touchline.',
                     ar: 'ملفه الإبداعي وضعف دفاعه يجعلانه أفضل في الانزلاق للمساحات الداخلية للصناعة بدلاً من الثبات على الخط الجانبي.' };
                 if (a.def >= 60) return { role: 'Wide Midfielder', focus: 'Support',
@@ -6366,7 +6368,7 @@
             pos = pos || player.pos;
             const a = player.att;
             if (pos === 'GK') return [
-                { role: 'Sweeper Keeper', focus: 'Attack', score: a.kic * 0.6 + a.spe * 0.4,
+                { role: 'Sweeper Keeper', focus: 'Build-Up', score: a.kic * 0.6 + a.spe * 0.4,
                     en: 'High kicking and mobility let them act as an auxiliary sweeper and launch attacks with distribution, not just shot-stop.',
                     ar: 'دقة الإرسال والحركة العالية تتيحان له دور الحارس الكاسح وبدء الهجمات بالتمرير، وليس فقط التصدي.' },
                 { role: 'Goalkeeper', focus: 'Defend', score: 70,
@@ -6374,18 +6376,18 @@
                     ar: 'ملفه يعتمد على ردود الفعل والإمساك بالكرة، فيُفضل إبقاؤه في التصدي التقليدي دون الكشف العالي.' }
             ];
             if (pos === 'CB') return [
-                { role: 'Ball-Playing Defender', focus: 'Build Up', score: a.pac * 0.5 + a.pas * 0.3 + 20,
+                { role: 'Ball-Playing Defender', focus: 'Build-Up', score: a.pac * 0.5 + a.pas * 0.3 + 20,
                     en: 'Enough pace to safely step out of the back line and support build-up without being exposed in behind.',
                     ar: 'سرعته تتيح له الخروج من خط الدفاع بأمان والمساهمة في بناء اللعب دون التعرض للخطر خلفه.' },
-                { role: 'Stopper', focus: 'Defend', score: a.def * 0.5 + a.phy * 0.3 + 25,
-                    en: 'Strength/defending-led profile is best used as a pure last-line stopper rather than covering space in behind.',
-                    ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كخط دفاعي أخير دون تكليفه بتغطية المساحات الخلفية.' }
+                { role: 'Defender', focus: 'Defend', score: a.def * 0.5 + a.phy * 0.3 + 25,
+                    en: 'Strength/defending-led profile is best used as a no-nonsense last-line defender rather than covering space in behind.',
+                    ar: 'ملفه القائم على القوة والدفاع يجعله الأفضل كمدافع تقليدي في الخط الأخير دون تكليفه بتغطية المساحات الخلفية.' }
             ];
             if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') return [
                 { role: 'Attacking Wingback', focus: 'Attack', score: a.pac * 0.4 + a.dri * 0.3 + 10,
                     en: 'Pace and dribbling let them overlap and create in the final third without wrecking defensive shape.',
                     ar: 'سرعته ومهارته تتيحان له التداخل والمشاركة الهجومية دون الإخلال الكبير بالتوازن الدفاعي.' },
-                { role: 'Inverted Wingback', focus: 'Build Up', score: a.pas * 0.4 + a.dri * 0.3 + 5,
+                { role: 'Inverted Wingback', focus: 'Build-Up', score: a.pas * 0.4 + a.dri * 0.3 + 5,
                     en: 'Passing and close control let them tuck inside into midfield during possession, forming a temporary double-pivot instead of just holding the touchline.',
                     ar: 'تمريره وتحكمه بالكرة يتيحان له الدخول للوسط أثناء الاستحواذ ليشكّل محوراً مزدوجاً مؤقتاً بدلاً من الثبات على الخط الجانبي فقط.' },
                 { role: 'Fullback', focus: 'Defend', score: a.def * 0.4 + a.phy * 0.2 + 15,
@@ -6393,7 +6395,7 @@
                     ar: 'ملفه الأكثر توازناً ودفاعياً يجعله أفضل في الثبات دفاعياً بدلاً من الاندفاع المستمر للأمام.' }
             ];
             if (pos === 'CDM') return [
-                { role: 'Deep-Lying Playmaker', focus: 'Build Up', score: a.pas * 0.4 + a.dri * 0.3 + 10,
+                { role: 'Deep-Lying Playmaker', focus: 'Build-Up', score: a.pas * 0.4 + a.dri * 0.3 + 10,
                     en: 'Passing range and close control let them dictate tempo from deep, not just break up play.',
                     ar: 'مدى تمريره وتحكمه بالكرة يتيحان التحكم بإيقاع اللعب من العمق، لا فقط قطع الكرات.' },
                 { role: 'Holding', focus: 'Defend', score: a.def * 0.4 + a.phy * 0.3 + 15,
@@ -6401,16 +6403,16 @@
                     ar: 'ملفه الدفاعي/البدني يجعله الأفضل في حماية خط الدفاع، ما يمنح لاعبي الإبداع حرية أكبر.' }
             ];
             if (pos === 'CM') return [
-                { role: 'Holding / Ball-Winning', focus: 'Defend', score: a.def * 0.35 + a.phy * 0.3 + 5,
+                { role: 'Holding', focus: 'Defend', score: a.def * 0.35 + a.phy * 0.3 + 5,
                     en: 'Defending and physicality this strong at CM are better spent anchoring in front of the back four than roaming forward.',
                     ar: 'قدرته الدفاعية وبدنيته القويتان في مركز الوسط أفضل استغلالاً في الارتكاز أمام خط الدفاع بدلاً من التقدم للأمام.' },
-                { role: 'Deep-Lying Playmaker', focus: 'Build Up', score: a.pas * 0.4 - a.pac * 0.1 + 15,
+                { role: 'Deep-Lying Playmaker', focus: 'Build-Up', score: a.pas * 0.4 - a.pac * 0.1 + 15,
                     en: 'Elite passing with modest pace is wasted box-to-box — drop them deeper to recycle and dictate tempo instead.',
                     ar: 'التمرير النخبوي مع سرعة متواضعة يُهدر في الجري بين الخطين — أنزله للعمق ليعيد توزيع الكرة ويتحكم بالإيقاع.' },
-                { role: 'Box-to-Box', focus: 'Attack', score: a.sho * 0.3 + a.pac * 0.3 + 10,
+                { role: 'Box-to-Box', focus: 'Balanced', score: a.sho * 0.3 + a.pac * 0.3 + 10,
                     en: 'Enough shooting and pace to join the front line late without abandoning defensive duty entirely.',
                     ar: 'تسديده وسرعته الكافيان يتيحان الانضمام للهجوم في اللحظة الأخيرة دون التخلي التام عن الدفاع.' },
-                { role: 'Playmaker', focus: 'Support', score: a.pas * 0.35 + a.dri * 0.2 + 12,
+                { role: 'Playmaker', focus: 'Roaming', score: a.pas * 0.35 + a.dri * 0.2 + 12,
                     en: 'Passing-led profile is best used dictating play from a deeper, central position.',
                     ar: 'ملفه القائم على التمرير يجعله الأفضل في التحكم باللعب من مركز أعمق وأكثر مركزية.' }
             ];
@@ -6418,12 +6420,12 @@
                 { role: 'Shadow Striker', focus: 'Attack', score: a.sho * 0.5 + 5,
                     en: "Shooting rivals a real striker's, so pushing them almost level with the front line maximizes shot volume.",
                     ar: 'قدرته التسديدية تضاهي المهاجمين، لذا دفعه ليكون شبه محاذٍ لخط الهجوم يعظّم عدد تسديداته.' },
-                { role: 'Playmaker', focus: 'Attack', score: a.pas * 0.35 + a.dri * 0.25 + 15,
+                { role: 'Classic 10', focus: 'Attack', score: a.pas * 0.35 + a.dri * 0.25 + 15,
                     en: 'Passing/dribbling-led profile is best used creating chances just behind the striker.',
                     ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' }
             ];
             if (pos === 'LM' || pos === 'RM') return [
-                { role: 'Wide Playmaker', focus: 'Support', score: a.pas * 0.35 + a.dri * 0.25 - a.def * 0.2 + 10,
+                { role: 'Wide Playmaker', focus: 'Build-Up', score: a.pas * 0.35 + a.dri * 0.25 - a.def * 0.2 + 10,
                     en: 'Creative, low-defending profile is better drifting inside into pockets to create than holding the touchline.',
                     ar: 'ملفه الإبداعي وضعف دفاعه يجعلانه أفضل في الانزلاق للمساحات الداخلية للصناعة بدلاً من الثبات على الخط الجانبي.' },
                 { role: 'Wide Midfielder', focus: 'Support', score: a.def * 0.3 + a.pas * 0.2 + 12,
