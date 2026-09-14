@@ -465,24 +465,40 @@
                          real 3D transform — see .pitch-3d comment). -->
                     <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
 
-                    <!-- Pitch markings kept to the essentials only: halfway
-                         line + center circle at the far edge, penalty box +
-                         six-yard box + spot + arc + goal at the near edge
-                         where the GK stands. No corner arcs or extra
-                         flourishes — nothing that isn't needed. -->
+                    <!-- Full-pitch markings: halfway line + full center
+                         circle at the actual middle, a penalty box at each
+                         end (six-yard box, spot, D-arc, goal notch) — the
+                         bottom set is the original GK-end box; the top set
+                         is that exact same markup, wrapped and flipped
+                         vertically (scaleY(-1)) so it's a guaranteed mirror
+                         rather than a hand-tuned duplicate that could drift
+                         out of sync with the original. -->
                     <div class="absolute inset-0 pointer-events-none">
-                        <div class="absolute top-0 left-[18%] right-[18%] h-px bg-white/30"></div>
-                        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-14 overflow-hidden">
-                            <div class="absolute -top-14 left-0 w-28 h-28 rounded-full border-2 border-white/30"></div>
+                        <div class="absolute top-1/2 left-[9%] right-[9%] h-px bg-white/30 -translate-y-1/2"></div>
+                        <div class="absolute top-1/2 left-1/2 w-28 h-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/30"></div>
+                        <div class="absolute top-1/2 left-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40"></div>
+
+                        <!-- Bottom box (GK end) -->
+                        <div class="absolute inset-x-0 bottom-0 h-44">
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                            <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                            <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                                <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                            </div>
+                            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                         </div>
 
-                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
-                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
-                        <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
-                        <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
-                            <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                        <!-- Top box (far end) — identical markup, flipped -->
+                        <div class="absolute inset-x-0 top-0 h-44" style="transform: scaleY(-1);">
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                            <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                            <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                                <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                            </div>
+                            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                         </div>
-                        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                     </div>
 
                     <!-- Dynamic Pitch Row Container -->
@@ -811,17 +827,29 @@
             <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 520px;">
                 <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
                 <div class="absolute inset-0 pointer-events-none">
-                    <div class="absolute top-0 left-[18%] right-[18%] h-px bg-white/30"></div>
-                    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-14 overflow-hidden">
-                        <div class="absolute -top-14 left-0 w-28 h-28 rounded-full border-2 border-white/30"></div>
+                    <div class="absolute top-1/2 left-[9%] right-[9%] h-px bg-white/30 -translate-y-1/2"></div>
+                    <div class="absolute top-1/2 left-1/2 w-28 h-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/30"></div>
+                    <div class="absolute top-1/2 left-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40"></div>
+
+                    <div class="absolute inset-x-0 bottom-0 h-44">
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                        <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                            <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                        </div>
+                        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                     </div>
-                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
-                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
-                    <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
-                    <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
-                        <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+
+                    <div class="absolute inset-x-0 top-0 h-44" style="transform: scaleY(-1);">
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                        <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                            <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                        </div>
+                        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                     </div>
-                    <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                 </div>
                 <div id="view-squad-pitch" dir="ltr" class="absolute inset-0 z-10">
                     <!-- Populated by viewSavedSquad() -->
