@@ -465,6 +465,16 @@
                          real 3D transform — see .pitch-3d comment). -->
                     <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
 
+                    <!-- Thick outer boundary line, traced as an SVG polygon
+                         matching the .pitch-3d clip-path exactly (18%/82%
+                         top corners, full width at the bottom) —
+                         vector-effect="non-scaling-stroke" keeps the line a
+                         constant pixel thickness even though the viewBox
+                         is stretched non-uniformly to fill the pitch box. -->
+                    <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <polygon points="18,0 82,0 100,100 0,100" fill="none" stroke="white" stroke-opacity="0.55" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
+                    </svg>
+
                     <!-- Full-pitch markings: halfway line + full center
                          circle at the actual middle, a penalty box at each
                          end (six-yard box, spot, D-arc, goal notch) — the
@@ -484,7 +494,7 @@
                             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
                             <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
                             <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
-                                <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                                <div class="absolute top-0 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
                             </div>
                             <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                         </div>
@@ -495,7 +505,7 @@
                             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
                             <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
                             <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
-                                <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                                <div class="absolute top-0 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
                             </div>
                             <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                         </div>
@@ -826,6 +836,9 @@
                  frozen view of a saved squad, not the live builder. -->
             <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 520px;">
                 <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
+                <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <polygon points="18,0 82,0 100,100 0,100" fill="none" stroke="white" stroke-opacity="0.55" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
+                </svg>
                 <div class="absolute inset-0 pointer-events-none">
                     <div class="absolute top-1/2 left-[9%] right-[9%] h-px bg-white/30 -translate-y-1/2"></div>
                     <div class="absolute top-1/2 left-1/2 w-28 h-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/30"></div>
@@ -836,7 +849,7 @@
                         <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
                         <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
                         <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
-                            <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                            <div class="absolute top-0 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
                         </div>
                         <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                     </div>
@@ -846,7 +859,7 @@
                         <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
                         <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
                         <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
-                            <div class="absolute -top-16 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                            <div class="absolute top-0 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
                         </div>
                         <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                     </div>
