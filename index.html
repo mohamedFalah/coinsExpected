@@ -808,7 +808,7 @@
                  as the Squad Builder pitch, but with plain (non-clickable)
                  player cards: no lock/swap affordances, since this is a
                  frozen view of a saved squad, not the live builder. -->
-            <div class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden">
+            <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 480px;">
                 <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
                 <div class="absolute inset-0 pointer-events-none">
                     <div class="absolute top-0 left-[18%] right-[18%] h-px bg-white/30"></div>
@@ -823,7 +823,7 @@
                     </div>
                     <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
                 </div>
-                <div id="view-squad-pitch" dir="ltr" class="relative z-10 flex flex-col justify-between gap-2 py-4 px-2 min-h-[420px]">
+                <div id="view-squad-pitch" dir="ltr" class="absolute inset-0 z-10">
                     <!-- Populated by viewSavedSquad() -->
                 </div>
             </div>
@@ -1158,99 +1158,130 @@
         let fc27Database = [];
 
         /* Formation slot layouts & coordinates */
+        // Every slot has an explicit (top, left) position instead of a
+        // loose row number. "top" is the vertical position on the pitch
+        // (0 = furthest forward, 100 = goal line where the GK stands).
+        // "left" is NOT an absolute pitch coordinate — it's a 0-100
+        // fraction of however much width is actually available at that
+        // depth (see getSlotPixelPosition), since the pitch graphic is a
+        // trapezoid that's narrower near the top. This mirrors how
+        // EasySBC's own formation diagrams lay a squad out: back four/
+        // three as one clean line, a single midfield band for a flat
+        // formation, and — for a lone deep pivot (CDM) or advanced
+        // playmaker (CAM) — that one player nudged toward the center
+        // circle instead of forced onto its own full-width row. That
+        // per-slot placement is also what keeps the pitch a fixed size
+        // regardless of formation: nothing here is measured from content,
+        // so a 5-tier formation never needs a taller box than a 4-tier one.
         const formationSlots = {
             '4-3-3': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'LB', label: 'Left Back', row: 3 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'RB', label: 'Right Back', row: 3 },
-                { pos: 'CM', label: 'Central Mid 1', row: 2 },
-                { pos: 'CM', label: 'Central Mid 2', row: 2 },
-                { pos: 'CM', label: 'Central Mid 3', row: 2 },
-                { pos: 'LW', label: 'Left Winger', row: 1 },
-                { pos: 'ST', label: 'Striker', row: 1 },
-                { pos: 'RW', label: 'Right Winger', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 72, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 74, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 74, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 72, left: 88 },
+                { pos: 'CM', label: 'Central Mid 1', top: 42, left: 22 },
+                { pos: 'CM', label: 'Central Mid 2', top: 55, left: 50 },
+                { pos: 'CM', label: 'Central Mid 3', top: 42, left: 78 },
+                { pos: 'LW', label: 'Left Winger', top: 16, left: 14 },
+                { pos: 'ST', label: 'Striker', top: 12, left: 50 },
+                { pos: 'RW', label: 'Right Winger', top: 16, left: 86 }
             ],
             '4-4-2': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'LB', label: 'Left Back', row: 3 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'RB', label: 'Right Back', row: 3 },
-                { pos: 'LM', label: 'Left Mid', row: 2 },
-                { pos: 'CM', label: 'Central Mid 1', row: 2 },
-                { pos: 'CM', label: 'Central Mid 2', row: 2 },
-                { pos: 'RM', label: 'Right Mid', row: 2 },
-                { pos: 'ST', label: 'Striker 1', row: 1 },
-                { pos: 'ST', label: 'Striker 2', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 72, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 74, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 74, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 72, left: 88 },
+                { pos: 'LM', label: 'Left Mid', top: 42, left: 10 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 37 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 63 },
+                { pos: 'RM', label: 'Right Mid', top: 42, left: 90 },
+                { pos: 'ST', label: 'Striker 1', top: 14, left: 37 },
+                { pos: 'ST', label: 'Striker 2', top: 14, left: 63 }
             ],
             '4-2-3-1': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'LB', label: 'Left Back', row: 3 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'RB', label: 'Right Back', row: 3 },
-                { pos: 'CDM', label: 'Defensive Mid 1', row: 2 },
-                { pos: 'CDM', label: 'Defensive Mid 2', row: 2 },
-                { pos: 'LW', label: 'Left Winger', row: 1.5 },
-                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
-                { pos: 'RW', label: 'Right Winger', row: 1.5 },
-                { pos: 'ST', label: 'Striker', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 72, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 74, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 74, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 72, left: 88 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 56, left: 32 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 56, left: 68 },
+                { pos: 'LW', label: 'Left Winger', top: 34, left: 16 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 24, left: 50 },
+                { pos: 'RW', label: 'Right Winger', top: 34, left: 84 },
+                { pos: 'ST', label: 'Striker', top: 12, left: 50 }
             ],
             '4-1-2-1-2': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'LB', label: 'Left Back', row: 3 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'RB', label: 'Right Back', row: 3 },
-                { pos: 'CDM', label: 'Defensive Mid', row: 2.5 },
-                { pos: 'CM', label: 'Left Mid', row: 2 },
-                { pos: 'CM', label: 'Right Mid', row: 2 },
-                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
-                { pos: 'ST', label: 'Striker 1', row: 1 },
-                { pos: 'ST', label: 'Striker 2', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 72, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 74, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 74, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 72, left: 88 },
+                { pos: 'CDM', label: 'Defensive Mid', top: 58, left: 50 },
+                { pos: 'CM', label: 'Left Mid', top: 42, left: 28 },
+                { pos: 'CM', label: 'Right Mid', top: 42, left: 72 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 26, left: 50 },
+                { pos: 'ST', label: 'Striker 1', top: 12, left: 38 },
+                { pos: 'ST', label: 'Striker 2', top: 12, left: 62 }
             ],
             '3-5-2': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'CB', label: 'Center Back 3', row: 3 },
-                { pos: 'LM', label: 'Left Mid', row: 2 },
-                { pos: 'CDM', label: 'Defensive Mid 1', row: 2 },
-                { pos: 'CDM', label: 'Defensive Mid 2', row: 2 },
-                { pos: 'RM', label: 'Right Mid', row: 2 },
-                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
-                { pos: 'ST', label: 'Striker 1', row: 1 },
-                { pos: 'ST', label: 'Striker 2', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'CB', label: 'Center Back 1', top: 76, left: 25 },
+                { pos: 'CB', label: 'Center Back 2', top: 76, left: 75 },
+                { pos: 'CB', label: 'Center Back 3', top: 66, left: 50 },
+                { pos: 'LM', label: 'Left Mid', top: 44, left: 10 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 54, left: 34 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 54, left: 66 },
+                { pos: 'RM', label: 'Right Mid', top: 44, left: 90 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 28, left: 50 },
+                { pos: 'ST', label: 'Striker 1', top: 12, left: 38 },
+                { pos: 'ST', label: 'Striker 2', top: 12, left: 62 }
             ],
             '4-5-1': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'LB', label: 'Left Back', row: 3 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'RB', label: 'Right Back', row: 3 },
-                { pos: 'LM', label: 'Left Mid', row: 2 },
-                { pos: 'CM', label: 'Central Mid 1', row: 2 },
-                { pos: 'CDM', label: 'Defensive Mid', row: 2 },
-                { pos: 'CM', label: 'Central Mid 2', row: 2 },
-                { pos: 'RM', label: 'Right Mid', row: 2 },
-                { pos: 'ST', label: 'Striker', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 72, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 74, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 74, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 72, left: 88 },
+                { pos: 'LM', label: 'Left Mid', top: 42, left: 8 },
+                { pos: 'CM', label: 'Central Mid 1', top: 42, left: 32 },
+                { pos: 'CDM', label: 'Defensive Mid', top: 52, left: 50 },
+                { pos: 'CM', label: 'Central Mid 2', top: 42, left: 68 },
+                { pos: 'RM', label: 'Right Mid', top: 42, left: 92 },
+                { pos: 'ST', label: 'Striker', top: 14, left: 50 }
             ],
             '4-4-1-1': [
-                { pos: 'GK', label: 'Goalkeeper', row: 4 },
-                { pos: 'LB', label: 'Left Back', row: 3 },
-                { pos: 'CB', label: 'Center Back 1', row: 3 },
-                { pos: 'CB', label: 'Center Back 2', row: 3 },
-                { pos: 'RB', label: 'Right Back', row: 3 },
-                { pos: 'LM', label: 'Left Mid', row: 2 },
-                { pos: 'CM', label: 'Central Mid 1', row: 2 },
-                { pos: 'CM', label: 'Central Mid 2', row: 2 },
-                { pos: 'RM', label: 'Right Mid', row: 2 },
-                { pos: 'CAM', label: 'Attacking Mid', row: 1.5 },
-                { pos: 'ST', label: 'Striker', row: 1 }
+                { pos: 'GK', label: 'Goalkeeper', top: 88, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 72, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 74, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 74, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 72, left: 88 },
+                { pos: 'LM', label: 'Left Mid', top: 44, left: 10 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 34 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 66 },
+                { pos: 'RM', label: 'Right Mid', top: 44, left: 90 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 28, left: 50 },
+                { pos: 'ST', label: 'Striker', top: 14, left: 50 }
             ]
         };
+
+        // Converts a slot's (top, left) into real pitch-container
+        // percentages. "top" is used as-is. "left" is a 0-100 fraction of
+        // the width actually available at that depth — the grass is a
+        // trapezoid (clip-path 18%/82% at the top, 0%/100% at the bottom;
+        // see .pitch-3d), so the same raw left% would drift off the grass
+        // near the top and look too conservative near the bottom if used
+        // directly. This linearly interpolates the trapezoid's left/right
+        // edges at that depth and places the card within them.
+        function getSlotPixelPosition(slot) {
+            const depth = slot.top / 100;
+            const leftEdge = 18 * (1 - depth);
+            const rightEdge = 82 + 18 * depth;
+            const availableWidth = rightEdge - leftEdge;
+            return { top: slot.top, left: leftEdge + (slot.left / 100) * availableWidth };
+        }
 
         window.switchTab = function(tabId) {
             ['calculator', 'squad', 'database', 'mysquads'].forEach(t => {
@@ -2852,59 +2883,40 @@
             const xi = saved.selectedXI || {};
             const perSlotChem = (saved.chemistry && saved.chemistry.perSlot) || {};
 
-            let rows = {};
-            slots.forEach((slot, idx) => {
-                if (!rows[slot.row]) rows[slot.row] = [];
-                rows[slot.row].push({ slot, idx, player: xi[idx] });
-            });
-            const usedRowKeys = Object.keys(rows).map(Number).sort((a, b) => a - b);
-            const totalRows = usedRowKeys.length;
+            container.innerHTML = slots.map((slot, idx) => {
+                const player = xi[idx];
+                const pos = getSlotPixelPosition(slot);
+                const posStyle = `position:absolute; top:${pos.top}%; left:${pos.left}%; transform:translate(-50%, -50%);`;
 
-            container.innerHTML = usedRowKeys.map((rowNum, i) => {
-                const rowItems = rows[rowNum];
-                const depth = totalRows > 1 ? i / (totalRows - 1) : 0;
-                const grassInset = 18 * (1 - depth);
-                const densityFactor = Math.min(1, 3 / rowItems.length);
-                const rowInset = Math.min(22, Math.max(2, (grassInset + 5) * densityFactor));
-
-                const cards = rowItems.map(item => {
-                    const player = item.player;
-                    if (!player) {
-                        return `
-                            <div class="w-16 sm:w-24 lg:w-28 shrink-0 flex flex-col items-center">
-                                <div class="w-full bg-fc-card/40 border border-dashed border-fc-border rounded-xl p-2 sm:p-3 text-center">
-                                    <div class="text-[9px] sm:text-[10px] font-bold text-gray-500">${item.slot.label}</div>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    const chemInfo = perSlotChem[item.idx];
-                    const chemPoints = chemInfo ? chemInfo.points : 0;
-                    const chemInPos = chemInfo ? chemInfo.inPosition : true;
-                    const diamonds = [0, 1, 2].map(d => {
-                        const filled = d < chemPoints && chemInPos;
-                        const style = filled ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : 'border-color:#6b7280;');
-                        return `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${style}"></span>`;
-                    }).join('');
+                if (!player) {
                     return `
-                        <div class="w-16 sm:w-24 lg:w-28 shrink-0">
-                            <div class="bg-fc-card/95 border border-fc-border rounded-t-xl p-1.5 sm:p-2 text-center flex flex-col items-center relative">
-                                <div class="absolute top-1 left-1.5 text-[9px] font-black text-fc-gold">${player.rating}</div>
-                                <div class="absolute top-1 right-1.5 text-[9px] font-bold text-fc-accent">${player.pos}</div>
-                                <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-10 sm:h-10 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
-                                <div class="font-bold text-[10px] sm:text-xs text-white truncate w-full">${player.name}</div>
-                                <div class="flex items-center justify-center gap-1 mt-0.5">${diamonds}</div>
-                            </div>
-                            <div class="bg-fc-dark border border-t-0 border-fc-border rounded-b-xl px-1 py-1 text-center">
-                                <div class="text-[9px] sm:text-[10px] font-bold text-fc-gold truncate">${(player.price || 0).toLocaleString()}</div>
+                        <div class="w-16 sm:w-24 lg:w-28" style="${posStyle}">
+                            <div class="w-full bg-fc-card/40 border border-dashed border-fc-border rounded-xl p-2 sm:p-3 text-center">
+                                <div class="text-[9px] sm:text-[10px] font-bold text-gray-500">${slot.label}</div>
                             </div>
                         </div>
                     `;
+                }
+                const chemInfo = perSlotChem[idx];
+                const chemPoints = chemInfo ? chemInfo.points : 0;
+                const chemInPos = chemInfo ? chemInfo.inPosition : true;
+                const diamonds = [0, 1, 2].map(d => {
+                    const filled = d < chemPoints && chemInPos;
+                    const style = filled ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : 'border-color:#6b7280;');
+                    return `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${style}"></span>`;
                 }).join('');
-
                 return `
-                    <div class="flex justify-evenly items-start w-full" style="padding-left:${rowInset}%;padding-right:${rowInset}%;">
-                        ${cards}
+                    <div class="w-16 sm:w-24 lg:w-28" style="${posStyle}">
+                        <div class="bg-fc-card/95 border border-fc-border rounded-t-xl p-1.5 sm:p-2 text-center flex flex-col items-center relative">
+                            <div class="absolute top-1 left-1.5 text-[9px] font-black text-fc-gold">${player.rating}</div>
+                            <div class="absolute top-1 right-1.5 text-[9px] font-bold text-fc-accent">${player.pos}</div>
+                            <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-10 sm:h-10 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
+                            <div class="font-bold text-[10px] sm:text-xs text-white truncate w-full">${player.name}</div>
+                            <div class="flex items-center justify-center gap-1 mt-0.5">${diamonds}</div>
+                        </div>
+                        <div class="bg-fc-dark border border-t-0 border-fc-border rounded-b-xl px-1 py-1 text-center">
+                            <div class="text-[9px] sm:text-[10px] font-bold text-fc-gold truncate">${(player.price || 0).toLocaleString()}</div>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -4183,188 +4195,99 @@
             // the team's actual shape, not each player scored alone.
             squadState.teamRoles = computeTeamRoles(squadState.selectedXI, slots);
 
-            let rows = {};
-            slots.forEach((slot, idx) => {
-                if (!rows[slot.row]) rows[slot.row] = [];
-                rows[slot.row].push({ slot, idx, player: squadState.selectedXI[idx] });
-            });
-
-            // Rows are laid out in NORMAL DOCUMENT FLOW (stacked top to
-            // bottom, sized by their actual content) instead of absolute
-            // percentages. Percentage anchoring assumed every formation
-            // spreads its rows evenly across the same fixed 1..4 scale —
-            // but formations with more distinct row levels (1, 1.5, 2, 2.5,
-            // 3, 4) pack those levels much closer together in percentage
-            // terms, while the cards themselves are the same height
-            // regardless of formation. That mismatch is what caused rows to
-            // overlap on anything other than a plain 4-row formation.
-            // Document flow makes overlap structurally impossible: the
-            // browser stacks each row after the last one actually ends.
-            const usedRowKeys = Object.keys(rows).map(Number).sort((a, b) => a - b);
-            const totalRows = usedRowKeys.length;
-
-            // Fixed-width cards inside percentage-based padding is what
-            // broke on phones: a 4-5 card defensive/midfield line at the
-            // desktop-tuned inset simply doesn't fit a ~380-420px screen —
-            // the last card(s) get pushed off-screen with no visual cue
-            // that anything's missing. Use a much tighter inset budget on
-            // narrow viewports, sized for how little room there actually is.
-            // Uses clientWidth, NOT window.innerWidth — innerWidth includes
-            // the scrollbar width while CSS media queries (like Tailwind's
-            // sm: breakpoint controlling each card's actual w-20/w-28/w-32
-            // size below) effectively don't. That few-pixel gap meant this
-            // JS check and the CSS breakpoint could land on OPPOSITE sides
-            // of 640px depending on browser zoom (zoom shifts exactly where
-            // the rounding falls) — invisible on a 3-4 wide row with slack
-            // to spare, but visibly broken on the widest row (5-across, in
-            // 4-5-1/3-5-2 only) where there's no margin for the two to
-            // disagree about which card size is actually being rendered.
+            // FIXED PITCH SIZE — every formation renders onto the exact
+            // same box. Each slot has its own (top, left) position (see
+            // formationSlots) instead of being stacked row-by-row in
+            // document flow, so a 5-tier formation (4-2-3-1) never needs a
+            // taller box than a 4-tier one (4-4-2) — there's no "content
+            // height" to grow with, just fixed coordinates on a fixed
+            // canvas. This is also what gives the clean, EasySBC-style
+            // separation between lines: a lone deep pivot or advanced
+            // playmaker sits nudged toward the center circle at its own
+            // coordinate, instead of being forced onto a shared row.
             const isNarrowViewport = document.documentElement.clientWidth < 640;
-
-            // FIXED PITCH SIZE — the whole point of this block is that the
-            // pitch box (grass + markings) must be the exact same size for
-            // every formation, whether it has 4 rows (e.g. 4-4-2) or 5
-            // (e.g. 4-2-3-1). Previously both the outer card and this
-            // container only had a min-height, so extra rows simply grew
-            // the whole box taller — the pitch visibly "stretched" between
-            // formations. Now both get a real, non-negotiable pixel height
-            // (set directly via style, not a Tailwind min-h class), and any
-            // formation whose rows don't fit that height at natural size
-            // gets uniformly scaled down (see the transform block below)
-            // instead of growing the box. Fewer rows just get more
-            // breathing room via justify-between; more rows shrink slightly
-            // — the box itself never moves.
             const fixedPitchHeight = isNarrowViewport ? 520 : 600;
             const outerCard = document.getElementById('pitch-card-outer');
             if (outerCard) outerCard.style.height = fixedPitchHeight + 'px';
+            container.className = "absolute inset-0 z-10";
 
-            container.className = isNarrowViewport
-                ? "relative z-10 flex flex-col justify-between gap-2 py-4 px-1 h-full overflow-x-auto"
-                : "relative z-10 flex flex-col justify-between gap-3 py-6 px-4 h-full";
-            container.style.transform = 'none';
+            slots.forEach((slot, idx) => {
+                const player = squadState.selectedXI[idx];
+                const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
+                const borderClasses = isLocked ? 'border-fc-gold' : 'border-fc-border group-hover:border-fc-accent';
+                const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
+                const pos = getSlotPixelPosition(slot);
 
-            usedRowKeys.forEach((rowNum, i) => {
-                const rowItems = rows[rowNum];
-                // Relative depth (0 = furthest forward row present, 1 =
-                // last row present) drives how much left/right padding this
-                // row needs to stay on the grass — the pitch is a trapezoid
-                // (see .pitch-3d) that's narrowest at the top, so a row near
-                // the top needs real inset or its cards hang off the edge.
-                const depth = totalRows > 1 ? i / (totalRows - 1) : 0;
-                const grassInset = 18 * (1 - depth);
-                // A row with more cards needs more of the FULL width to fit
-                // them at all — a wide 5-across midfield line can't afford
-                // the same generous "stay off the narrow trapezoid edge"
-                // padding a lone striker gets, or it overflows the grass on
-                // both sides (fixed-width cards don't shrink). Scale the
-                // inset down as the row gets more crowded, and use a much
-                // smaller cap/buffer on narrow viewports where there's
-                // barely enough width for the cards themselves, let alone
-                // generous padding.
-                const itemCount = rowItems.length;
-                const densityFactor = Math.min(1, 3 / itemCount);
-                const rowInset = isNarrowViewport
-                    ? Math.min(8, Math.max(1, (grassInset + 2) * densityFactor * 0.4))
-                    : Math.min(24, Math.max(2, (grassInset + 5) * densityFactor));
+                // Wrapper holds the main card AND a role-badge strip
+                // attached flush underneath it (no gap, shared border
+                // color) so the role reads as one connected unit with the
+                // card instead of a faint line of text easy to miss.
+                // Absolutely positioned at the slot's own coordinate and
+                // centered on that point via the translate, independent of
+                // every other slot — nothing here is measured from
+                // siblings, which is what keeps formations from bumping
+                // into each other regardless of row density.
+                const wrapper = document.createElement('div');
+                wrapper.className = `absolute w-20 sm:w-28 lg:w-32 cursor-pointer player-card-glow transition-all group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
+                wrapper.style.top = pos.top + '%';
+                wrapper.style.left = pos.left + '%';
+                wrapper.style.transform = 'translate(-50%, -50%)';
 
-                const rowDiv = document.createElement('div');
-                // justify-evenly (not a fixed pixel gap) so the whitespace
-                // between cards scales with however much room this row
-                // actually has inside its grass-safe padding — a static
-                // 12-16px gap reads as basically nothing on a wide desktop
-                // pitch, but evenly distributing the real leftover space
-                // gives clearly visible gaps at any screen size.
-                rowDiv.className = "flex justify-evenly items-start w-full";
-                rowDiv.style.paddingLeft = rowInset + '%';
-                rowDiv.style.paddingRight = rowInset + '%';
-
-                rowItems.forEach(item => {
-                    const player = item.player;
-                    const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
-                    const borderClasses = isLocked ? 'border-fc-gold' : 'border-fc-border group-hover:border-fc-accent';
-                    const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
-
-                    // Wrapper holds the main card AND a role-badge strip
-                    // attached flush underneath it (no gap, shared border
-                    // color) so the role reads as one connected unit with
-                    // the card instead of a faint line of text easy to miss.
-                    const wrapper = document.createElement('div');
-                    wrapper.className = `w-20 sm:w-28 lg:w-32 shrink-0 cursor-pointer player-card-glow transition-all relative group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
-
-                    if (player) {
-                        const lockTitle = isLocked
-                            ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
-                            : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
-                        const roleInfo = (squadState.teamRoles && squadState.teamRoles[item.idx]) || getRoleSuggestion(player, item.slot.pos);
-                        const roleTooltip = roleInfo.adjusted
-                            ? `${roleInfo.role} · ${roleInfo.focus} — ${currentLanguage === 'ar' ? roleInfo.adjustAr : roleInfo.adjustEn}`
-                            : `${roleInfo.role} · ${roleInfo.focus}`;
-                        const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[item.idx];
-                        const chemPoints = chemInfo ? chemInfo.points : 0;
-                        const chemInPos = chemInfo ? chemInfo.inPosition : true;
-                        // 3 small diamonds: filled green up to chemPoints, gray
-                        // otherwise. Red outline if out of position (locked at 0
-                        // per the position-lock rule) so it reads differently
-                        // from "just low chemistry".
-                        const diamonds = [0, 1, 2].map(i => {
-                            const filled = i < chemPoints;
-                            const color = !chemInPos ? 'border-red-500/70' : (filled ? 'bg-green-400 border-green-400' : 'border-gray-500');
-                            return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
-                        }).join('');
-                        wrapper.innerHTML = `
-                            <div class="bg-fc-card/95 group-hover:bg-fc-cardHover border border-b-0 ${borderClasses} rounded-t-xl p-1.5 sm:p-2.5 text-center flex flex-col items-center relative transition-all">
-                                <div class="absolute top-1.5 left-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
-                                <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
-                                <img src="${player.photo}" alt="${player.name}" class="w-9 h-9 sm:w-12 sm:h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
-                                <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
-                                <div class="flex items-center justify-center gap-1 mt-0.5 h-3.5">
-                                    ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white shadow-sm text-[9px] leading-none overflow-hidden" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
-                                    ${getLeagueLogoUrl(player.leagueId) ? `<span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white shadow-sm overflow-hidden"><img src="${getLeagueLogoUrl(player.leagueId)}" alt="" class="w-2.5 h-2.5 object-contain" title="${getLeagueName(player.leagueId) || ''}" onerror="this.parentElement.style.display='none'"></span>` : ''}
-                                </div>
-                                <div class="flex items-center justify-center gap-0.5 mt-1" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
-                                <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
-                                <button onclick="event.stopPropagation(); window.toggleLockPlayer(${item.idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
-                                    <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[9px]"></i>
-                                </button>
+                if (player) {
+                    const lockTitle = isLocked
+                        ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
+                        : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
+                    const roleInfo = (squadState.teamRoles && squadState.teamRoles[idx]) || getRoleSuggestion(player, slot.pos);
+                    const roleTooltip = roleInfo.adjusted
+                        ? `${roleInfo.role} · ${roleInfo.focus} — ${currentLanguage === 'ar' ? roleInfo.adjustAr : roleInfo.adjustEn}`
+                        : `${roleInfo.role} · ${roleInfo.focus}`;
+                    const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[idx];
+                    const chemPoints = chemInfo ? chemInfo.points : 0;
+                    const chemInPos = chemInfo ? chemInfo.inPosition : true;
+                    // 3 small diamonds: filled green up to chemPoints, gray
+                    // otherwise. Red outline if out of position (locked at 0
+                    // per the position-lock rule) so it reads differently
+                    // from "just low chemistry".
+                    const diamonds = [0, 1, 2].map(i => {
+                        const filled = i < chemPoints;
+                        const color = !chemInPos ? 'border-red-500/70' : (filled ? 'bg-green-400 border-green-400' : 'border-gray-500');
+                        return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
+                    }).join('');
+                    wrapper.innerHTML = `
+                        <div class="bg-fc-card/95 group-hover:bg-fc-cardHover border border-b-0 ${borderClasses} rounded-t-xl p-1.5 sm:p-2.5 text-center flex flex-col items-center relative transition-all">
+                            <div class="absolute top-1.5 left-2 text-[10px] font-black text-fc-gold">${player.rating}</div>
+                            <div class="absolute top-1.5 right-2 text-[10px] font-bold text-fc-accent">${player.pos}</div>
+                            <img src="${player.photo}" alt="${player.name}" class="w-9 h-9 sm:w-12 sm:h-12 rounded-full object-cover my-1 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
+                            <div class="font-bold text-xs text-white truncate w-full">${player.name}</div>
+                            <div class="flex items-center justify-center gap-1 mt-0.5 h-3.5">
+                                ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white shadow-sm text-[9px] leading-none overflow-hidden" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
+                                ${getLeagueLogoUrl(player.leagueId) ? `<span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white shadow-sm overflow-hidden"><img src="${getLeagueLogoUrl(player.leagueId)}" alt="" class="w-2.5 h-2.5 object-contain" title="${getLeagueName(player.leagueId) || ''}" onerror="this.parentElement.style.display='none'"></span>` : ''}
                             </div>
-                            <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-xl px-1.5 py-1 transition-all relative">
-                                ${roleInfo.adjusted ? `<span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-fc-gold" title="${currentLanguage === 'ar' ? 'تم تعديل الدور لموازنة شكل التشكيلة' : 'Role adjusted for team shape'}"></span>` : ''}
-                                <span class="block text-center text-[9px] font-bold text-fc-accent truncate" title="${roleTooltip}">${roleInfo.role} · ${roleInfo.focus}</span>
-                            </div>
-                        `;
-                        wrapper.onclick = () => window.openPlayerModal(player, item.slot.label, item.idx);
-                    } else {
-                        const emptyTxt = currentLanguage === 'ar' ? 'اضغط لإضافة لاعب' : 'Tap to Add Player';
-                        wrapper.innerHTML = `
-                            <div class="bg-fc-card/95 hover:bg-fc-cardHover border border-dashed ${borderClasses} rounded-xl p-2.5 text-center transition-all">
-                                <i class="fa-solid fa-circle-plus text-gray-500 text-lg mt-3"></i>
-                                <div class="text-[10px] text-gray-500 font-bold mt-2">${emptyTxt}</div>
-                                <div class="text-[10px] text-gray-400 mt-1">${item.slot.label}</div>
-                            </div>
-                        `;
-                        wrapper.onclick = () => window.openAddPlayerModal(item.idx);
-                    }
-                    rowDiv.appendChild(wrapper);
-                });
-
-                container.appendChild(rowDiv);
+                            <div class="flex items-center justify-center gap-0.5 mt-1" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
+                            <div class="text-[10px] font-semibold text-fc-gold mt-0.5">${player.price.toLocaleString()}${coinLabel}</div>
+                            <button onclick="event.stopPropagation(); window.toggleLockPlayer(${idx})" title="${lockTitle}" class="absolute bottom-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
+                                <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[9px]"></i>
+                            </button>
+                        </div>
+                        <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-xl px-1.5 py-1 transition-all relative">
+                            ${roleInfo.adjusted ? `<span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-fc-gold" title="${currentLanguage === 'ar' ? 'تم تعديل الدور لموازنة شكل التشكيلة' : 'Role adjusted for team shape'}"></span>` : ''}
+                            <span class="block text-center text-[9px] font-bold text-fc-accent truncate" title="${roleTooltip}">${roleInfo.role} · ${roleInfo.focus}</span>
+                        </div>
+                    `;
+                    wrapper.onclick = () => window.openPlayerModal(player, slot.label, idx);
+                } else {
+                    const emptyTxt = currentLanguage === 'ar' ? 'اضغط لإضافة لاعب' : 'Tap to Add Player';
+                    wrapper.innerHTML = `
+                        <div class="bg-fc-card/95 hover:bg-fc-cardHover border border-dashed ${borderClasses} rounded-xl p-2.5 text-center transition-all">
+                            <i class="fa-solid fa-circle-plus text-gray-500 text-lg mt-3"></i>
+                            <div class="text-[10px] text-gray-500 font-bold mt-2">${emptyTxt}</div>
+                            <div class="text-[10px] text-gray-400 mt-1">${slot.label}</div>
+                        </div>
+                    `;
+                    wrapper.onclick = () => window.openAddPlayerModal(idx);
+                }
+                container.appendChild(wrapper);
             });
-
-            // Scale-to-fit: measure the rows' natural (unscaled) height
-            // against the fixed box just set above. If they fit, leave
-            // scale alone — justify-between spreads fewer rows out nicely
-            // on its own. If they don't (a 5-row formation on a box sized
-            // for 4), shrink the whole row stack uniformly from the top so
-            // it fits inside the fixed box instead of the box growing to
-            // fit it. transform-origin 'top' keeps the GK row anchored at
-            // the same spot regardless of formation.
-            container.style.transformOrigin = 'top center';
-            const naturalHeight = container.scrollHeight;
-            const availableHeight = container.clientHeight;
-            if (naturalHeight > availableHeight && availableHeight > 0) {
-                const scale = Math.max(0.6, availableHeight / naturalHeight);
-                container.style.transform = `scale(${scale})`;
-            }
         }
 
         // ===================================================================
