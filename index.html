@@ -816,7 +816,7 @@
 
     <!-- View Squad Modal (read-only snapshot of a saved squad) -->
     <div id="view-squad-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeViewSquadModal()">
-        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative space-y-5 max-h-[85vh] overflow-y-auto hide-scrollbar" onclick="event.stopPropagation()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-3xl w-full p-6 shadow-2xl relative space-y-5 max-h-[85vh] overflow-y-auto hide-scrollbar" onclick="event.stopPropagation()">
             <div class="flex items-center justify-between border-b border-fc-border pb-4">
                 <div>
                     <h3 id="view-squad-name" class="text-lg font-black text-white flex items-center gap-2">
@@ -834,7 +834,7 @@
                  as the Squad Builder pitch, but with plain (non-clickable)
                  player cards: no lock/swap affordances, since this is a
                  frozen view of a saved squad, not the live builder. -->
-            <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 520px;">
+            <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 620px;">
                 <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
                 <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <polygon points="18,0 82,0 100,100 0,100" fill="none" stroke="white" stroke-opacity="0.55" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
@@ -2931,9 +2931,9 @@
 
                 if (!player) {
                     return `
-                        <div class="w-14 sm:w-20 lg:w-24" style="${posStyle}">
+                        <div class="w-16 sm:w-24 lg:w-28" style="${posStyle}">
                             <div class="w-full bg-fc-card/40 border border-dashed border-fc-border rounded-lg p-1.5 sm:p-2 text-center">
-                                <div class="text-[8px] sm:text-[9px] font-bold text-gray-500 leading-tight">${slot.label}</div>
+                                <div class="text-[9px] sm:text-[10px] font-bold text-gray-500 leading-tight">${slot.label}</div>
                             </div>
                         </div>
                     `;
@@ -2944,14 +2944,14 @@
                 const diamonds = [0, 1, 2].map(d => {
                     const filled = d < chemPoints && chemInPos;
                     const style = filled ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : 'border-color:#6b7280;');
-                    return `<span class="inline-block w-1.5 h-1.5 rotate-45 border" style="${style}"></span>`;
+                    return `<span class="inline-block w-2 h-2 rotate-45 border" style="${style}"></span>`;
                 }).join('');
                 return `
-                    <div class="w-14 sm:w-20 lg:w-24 flex flex-col items-center text-center" style="${posStyle}">
-                        <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
-                        <div class="font-bold text-[9px] sm:text-[10px] text-white truncate w-full leading-tight mt-1">${player.name}</div>
-                        <div class="flex items-center justify-center gap-0.5 mt-0.5">${diamonds}</div>
-                        <div class="text-[8px] sm:text-[9px] font-bold text-fc-gold truncate mt-0.5">${(player.price || 0).toLocaleString()}</div>
+                    <div class="w-16 sm:w-24 lg:w-28 flex flex-col items-center text-center" style="${posStyle}">
+                        <img src="${player.photo}" alt="${player.name}" class="w-9 h-9 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=?'">
+                        <div class="font-bold text-[11px] sm:text-xs text-white truncate w-full leading-tight mt-1.5">${player.name}</div>
+                        <div class="flex items-center justify-center gap-1 mt-1">${diamonds}</div>
+                        <div class="text-[10px] sm:text-[11px] font-semibold text-fc-gold truncate mt-0.5">${(player.price || 0).toLocaleString()}</div>
                     </div>
                 `;
             }).join('');
