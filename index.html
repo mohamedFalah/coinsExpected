@@ -808,7 +808,7 @@
                  as the Squad Builder pitch, but with plain (non-clickable)
                  player cards: no lock/swap affordances, since this is a
                  frozen view of a saved squad, not the live builder. -->
-            <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 640px;">
+            <div id="view-squad-pitch-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-4 relative overflow-hidden" style="height: 520px;">
                 <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
                 <div class="absolute inset-0 pointer-events-none">
                     <div class="absolute top-0 left-[18%] right-[18%] h-px bg-white/30"></div>
@@ -1175,76 +1175,76 @@
         // so a 5-tier formation never needs a taller box than a 4-tier one.
         const formationSlots = {
             '4-3-3': [
-                { pos: 'GK', label: 'Goalkeeper', top: 95, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 76, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 78, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 78, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 76, left: 88 },
-                { pos: 'CM', label: 'Central Mid 1', top: 42, left: 22 },
-                { pos: 'CM', label: 'Central Mid 2', top: 58, left: 50 },
-                { pos: 'CM', label: 'Central Mid 3', top: 42, left: 78 },
-                { pos: 'LW', label: 'Left Winger', top: 14, left: 14 },
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 74, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 76, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 76, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 74, left: 88 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 22 },
+                { pos: 'CM', label: 'Central Mid 2', top: 60, left: 50 },
+                { pos: 'CM', label: 'Central Mid 3', top: 44, left: 78 },
+                { pos: 'LW', label: 'Left Winger', top: 12, left: 14 },
                 { pos: 'ST', label: 'Striker', top: 10, left: 50 },
-                { pos: 'RW', label: 'Right Winger', top: 14, left: 86 }
+                { pos: 'RW', label: 'Right Winger', top: 12, left: 86 }
             ],
             '4-4-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 95, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 76, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 78, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 78, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 76, left: 88 },
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 74, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 76, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 76, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 74, left: 88 },
                 { pos: 'LM', label: 'Left Mid', top: 44, left: 10 },
-                { pos: 'CM', label: 'Central Mid 1', top: 46, left: 37 },
-                { pos: 'CM', label: 'Central Mid 2', top: 46, left: 63 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 37 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 63 },
                 { pos: 'RM', label: 'Right Mid', top: 44, left: 90 },
                 { pos: 'ST', label: 'Striker 1', top: 10, left: 37 },
                 { pos: 'ST', label: 'Striker 2', top: 10, left: 63 }
             ],
             '4-2-3-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 96, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 78, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 80, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 80, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 78, left: 88 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 58, left: 32 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 58, left: 68 },
-                { pos: 'LW', label: 'Left Winger', top: 36, left: 16 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 34, left: 50 },
-                { pos: 'RW', label: 'Right Winger', top: 36, left: 84 },
-                { pos: 'ST', label: 'Striker', top: 9, left: 50 }
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 76, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 78, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 78, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 76, left: 88 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 60, left: 32 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 60, left: 68 },
+                { pos: 'LW', label: 'Left Winger', top: 34, left: 16 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 27, left: 50 },
+                { pos: 'RW', label: 'Right Winger', top: 34, left: 84 },
+                { pos: 'ST', label: 'Striker', top: 10, left: 50 }
             ],
             '4-1-2-1-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 96, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 78, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 80, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 80, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 78, left: 88 },
-                { pos: 'CDM', label: 'Defensive Mid', top: 62, left: 50 },
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 76, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 78, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 78, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 76, left: 88 },
+                { pos: 'CDM', label: 'Defensive Mid', top: 60, left: 50 },
                 { pos: 'CM', label: 'Left Mid', top: 44, left: 26 },
                 { pos: 'CM', label: 'Right Mid', top: 44, left: 74 },
                 { pos: 'CAM', label: 'Attacking Mid', top: 27, left: 50 },
-                { pos: 'ST', label: 'Striker 1', top: 9, left: 36 },
-                { pos: 'ST', label: 'Striker 2', top: 9, left: 64 }
+                { pos: 'ST', label: 'Striker 1', top: 10, left: 36 },
+                { pos: 'ST', label: 'Striker 2', top: 10, left: 64 }
             ],
             '3-5-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 96, left: 50 },
-                { pos: 'CB', label: 'Center Back 1', top: 80, left: 22 },
-                { pos: 'CB', label: 'Center Back 2', top: 80, left: 78 },
-                { pos: 'CB', label: 'Center Back 3', top: 68, left: 50 },
-                { pos: 'LM', label: 'Left Mid', top: 46, left: 8 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 46, left: 34 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 46, left: 66 },
-                { pos: 'RM', label: 'Right Mid', top: 46, left: 92 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 26, left: 50 },
-                { pos: 'ST', label: 'Striker 1', top: 9, left: 36 },
-                { pos: 'ST', label: 'Striker 2', top: 9, left: 64 }
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'CB', label: 'Center Back 1', top: 78, left: 22 },
+                { pos: 'CB', label: 'Center Back 2', top: 78, left: 78 },
+                { pos: 'CB', label: 'Center Back 3', top: 64, left: 50 },
+                { pos: 'LM', label: 'Left Mid', top: 44, left: 8 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 44, left: 34 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 44, left: 66 },
+                { pos: 'RM', label: 'Right Mid', top: 44, left: 92 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 27, left: 50 },
+                { pos: 'ST', label: 'Striker 1', top: 10, left: 36 },
+                { pos: 'ST', label: 'Striker 2', top: 10, left: 64 }
             ],
             '4-5-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 96, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 78, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 80, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 80, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 78, left: 88 },
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 76, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 78, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 78, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 76, left: 88 },
                 { pos: 'LM', label: 'Left Mid', top: 44, left: 6 },
                 { pos: 'CM', label: 'Central Mid 1', top: 44, left: 30 },
                 { pos: 'CDM', label: 'Defensive Mid', top: 60, left: 50 },
@@ -1253,17 +1253,17 @@
                 { pos: 'ST', label: 'Striker', top: 10, left: 50 }
             ],
             '4-4-1-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 96, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 78, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 80, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 80, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 78, left: 88 },
-                { pos: 'LM', label: 'Left Mid', top: 46, left: 10 },
-                { pos: 'CM', label: 'Central Mid 1', top: 46, left: 34 },
-                { pos: 'CM', label: 'Central Mid 2', top: 46, left: 66 },
-                { pos: 'RM', label: 'Right Mid', top: 46, left: 90 },
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 76, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 78, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 78, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 76, left: 88 },
+                { pos: 'LM', label: 'Left Mid', top: 44, left: 10 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 34 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 66 },
+                { pos: 'RM', label: 'Right Mid', top: 44, left: 90 },
                 { pos: 'CAM', label: 'Attacking Mid', top: 27, left: 50 },
-                { pos: 'ST', label: 'Striker', top: 9, left: 50 }
+                { pos: 'ST', label: 'Striker', top: 10, left: 50 }
             ]
         };
 
@@ -4206,7 +4206,7 @@
             // playmaker sits nudged toward the center circle at its own
             // coordinate, instead of being forced onto a shared row.
             const isNarrowViewport = document.documentElement.clientWidth < 640;
-            const fixedPitchHeight = isNarrowViewport ? 720 : 860;
+            const fixedPitchHeight = isNarrowViewport ? 560 : 680;
             const outerCard = document.getElementById('pitch-card-outer');
             if (outerCard) outerCard.style.height = fixedPitchHeight + 'px';
             container.className = "absolute inset-0 z-10";
@@ -4253,17 +4253,25 @@
                         const color = !chemInPos ? 'border-red-500/70' : (filled ? 'bg-green-400 border-green-400' : 'border-gray-500');
                         return `<span class="inline-block w-1.5 h-1.5 rotate-45 border ${filled && chemInPos ? color : 'border-gray-500'} ${filled && chemInPos ? '' : 'bg-transparent'}" style="${filled && chemInPos ? 'background-color:#4ade80;border-color:#4ade80;' : (!chemInPos ? 'border-color:#ef4444;' : '')}"></span>`;
                     }).join('');
-                    // Compact pitch-card layout — no nation/league icon row
-                    // here (that lives in the full player detail modal one
-                    // tap away). Formations with 5-6 distinct vertical
-                    // tiers (4-2-3-1, 4-1-2-1-2, 3-5-2) need every one of
-                    // those tiers to fit on the same fixed-height pitch, so
-                    // the on-pitch card stays deliberately small — this is
-                    // the summary view, not the full card.
+                    // Compact pitch-card layout. Nation flag and league
+                    // logo are still shown here — stacked directly under
+                    // the rating/position badges in the top corners as
+                    // tiny overlays — rather than as their own row like
+                    // the full player-modal view. Corner badges are
+                    // absolutely positioned over space the card already
+                    // has (beside the centered photo), so this adds zero
+                    // extra card height; a dedicated icon row underneath
+                    // the name would have, which formations with 5-6
+                    // distinct vertical tiers can't spare on this
+                    // fixed-height pitch.
+                    const flag = getNationFlag(player.nationId);
+                    const leagueLogo = getLeagueLogoUrl(player.leagueId);
                     wrapper.innerHTML = `
                         <div class="bg-fc-card/95 group-hover:bg-fc-cardHover border border-b-0 ${borderClasses} rounded-t-lg p-1 sm:p-1.5 text-center flex flex-col items-center relative transition-all">
-                            <div class="absolute top-1 left-1.5 text-[9px] font-black text-fc-gold">${player.rating}</div>
-                            <div class="absolute top-1 right-1.5 text-[9px] font-bold text-fc-accent">${player.pos}</div>
+                            <div class="absolute top-1 left-1.5 text-[9px] font-black text-fc-gold leading-none">${player.rating}</div>
+                            ${flag ? `<div class="absolute top-4 left-1.5 text-[8px] leading-none" title="${getNationName(player.nationId) || ''}">${flag}</div>` : ''}
+                            <div class="absolute top-1 right-1.5 text-[9px] font-bold text-fc-accent leading-none">${player.pos}</div>
+                            ${leagueLogo ? `<img src="${leagueLogo}" alt="" class="absolute top-4 right-1.5 w-2.5 h-2.5 object-contain rounded-full bg-white/90" title="${getLeagueName(player.leagueId) || ''}" onerror="this.style.display='none'">` : ''}
                             <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover mt-3 mb-0.5 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                             <div class="font-bold text-[10px] sm:text-[11px] text-white truncate w-full leading-tight">${player.name}</div>
                             <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
