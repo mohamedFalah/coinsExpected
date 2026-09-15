@@ -2766,51 +2766,169 @@
         }
 
         // ===================================================================
-        // SHARE CODE (self-contained squad export/import)
+        // SHARE CODE (compact squad export/import)
         // ===================================================================
-        // The share code encodes the ENTIRE saved-squad object — full
-        // player data included, not just IDs — as base64 text. That's
-        // deliberate: this app's player database is populated by scraping
-        // EasySBC live, so two people's local databases can genuinely
-        // differ (different scrape time, different filters, database
-        // wiped/reloaded). A code built from player IDs alone would fail
-        // to resolve on the receiving end whenever their database doesn't
-        // happen to contain those exact cards. Embedding the full player
-        // objects means the code always works, independent of whatever's
-        // currently loaded on either side — the trade-off is a longer
-        // string to copy, which is a fine trade for a paste-once code.
-        const SHARE_CODE_PREFIX = 'SPLZ1-';
+        // v1 embedded each player's ENTIRE object (full stats, playstyles,
+        // photo URL, everything) — self-contained, but resulted in codes
+        // hundreds of characters long, way too unwieldy to actually share.
+        // v2 instead encodes just the ID plus a handful of small display
+        // fields per player (name, rating, position, price, nation,
+        // league) — a fraction of the size. On import, each ID is looked
+        // up against the RECEIVING side's own loaded database first; if
+        // found, we get the full real player object for free (stats,
+        // photo, playstyles, everything). Only if that lookup misses
+        // (their database genuinely doesn't have that exact card loaded)
+        // do we fall back to building a minimal stand-in from the small
+        // embedded fields — enough to display and still load into the
+        // builder without crashing, just without real attribute data for
+        // role scoring until they load a database that does have it.
+        const SHARE_CODE_PREFIX = 'SPLZ2-';
+        const SHARE_CODE_PREFIX_LEGACY = 'SPLZ1-'; // old full-payload format, still decodable
 
+        // Custom delimiter-based serialization instead of JSON — JSON's
+        // repeated key names ("id":,"n":,"r":... on every one of 11
+        // players) are pure overhead that inflates the code for no
+        // benefit once the field ORDER is fixed and known on both sides.
+        // A fixed-order, delimiter-joined string carries the exact same
+        // data with none of that repeated-key cost. Delimiters (| , : ~)
+        // are chosen to be characters that essentially never appear in a
+        // player name or formation string.
         function encodeSquadShareCode(saved) {
-            // Strip the local-only id — the receiving side generates a
-            // fresh one on import so it never collides with an existing
-            // save (including re-importing your own code back into the
-            // same browser).
-            const { id, ...payload } = saved;
-            const json = JSON.stringify(payload);
+            const entries = Object.keys(saved.selectedXI || {}).map(idx => {
+                const p = saved.selectedXI[idx];
+                if (!p) return null;
+                // Every id from this app's own database is 'easysbc_' +
+                // resourceId — stripping that constant prefix here (and
+                // re-adding it on decode) saves 8 characters per player
+                // for free.
+                const shortId = p.id && p.id.startsWith('easysbc_') ? p.id.slice(8) : (p.id || '');
+                return [idx, shortId, p.name || '', p.rating || '', p.pos || '', p.price || 0,
+                    p.nationId != null ? p.nationId : '', p.leagueId != null ? p.leagueId : ''].join(':');
+            }).filter(Boolean);
+
+            const header = [
+                saved.formation,
+                saved.budget || '',
+                (saved.manager && saved.manager.nationId != null) ? saved.manager.nationId : '',
+                (saved.manager && saved.manager.leagueId != null) ? saved.manager.leagueId : '',
+                saved.name || ''
+            ].join('|');
+
+            const raw = header + '~' + entries.join(',');
             // encodeURIComponent/unescape round-trip lets btoa (which only
             // handles Latin1) safely carry Arabic names and any other
             // non-ASCII text in the payload.
-            const b64 = btoa(unescape(encodeURIComponent(json)));
+            const b64 = btoa(unescape(encodeURIComponent(raw)));
             return SHARE_CODE_PREFIX + b64;
+        }
+
+        // Builds a real player object for one compact XI entry. Prefers
+        // the receiving side's own database (by id) for full, accurate
+        // data; falls back to a minimal stand-in built from just the
+        // embedded fields when that id isn't found locally. The stand-in
+        // gets neutral-baseline attributes (not zeros) specifically so
+        // that if this squad is later loaded into the builder, role
+        // scoring produces a plausible generic role instead of degenerate
+        // all-zero comparisons.
+        function reconstructPlayerFromCompact(compact) {
+            if (!compact || !compact.id) return null;
+            const fromDb = fc27Database.find(p => p.id === compact.id);
+            if (fromDb) return fromDb;
+            return {
+                id: compact.id,
+                name: compact.n || 'Unknown',
+                rating: compact.r || 75,
+                pos: compact.p || 'CM',
+                alt: [],
+                price: compact.c || 0,
+                nationId: compact.na != null ? compact.na : null,
+                leagueId: compact.le != null ? compact.le : null,
+                clubId: null,
+                att: { pac: 70, sho: 70, pas: 70, dri: 70, def: 70, phy: 70, div: 70, han: 70, kic: 70, ref: 70, spe: 70 },
+                skillMoves: null, weakFoot: null, foot: null,
+                playstyles: [], playstylesPlus: [],
+                isIcon: false, isHero: false,
+                photo: null,
+                meta: null
+            };
         }
 
         function decodeSquadShareCode(code) {
             const trimmed = String(code || '').trim();
             if (!trimmed) return null;
-            const b64 = trimmed.startsWith(SHARE_CODE_PREFIX) ? trimmed.slice(SHARE_CODE_PREFIX.length) : trimmed;
-            try {
-                const json = decodeURIComponent(escape(atob(b64)));
-                const payload = JSON.parse(json);
-                // Minimal shape validation — a real squad payload always
-                // has a formation and a selectedXI map. Anything else
-                // (garbage paste, a code from an unrelated feature) is
-                // rejected rather than half-imported.
-                if (!payload || typeof payload !== 'object' || !payload.formation || !payload.selectedXI) return null;
-                return payload;
-            } catch (e) {
-                return null;
+
+            // Legacy v1 codes (full-JSON payload) — still decodable so an
+            // older code shared before this change doesn't just break.
+            if (trimmed.startsWith(SHARE_CODE_PREFIX_LEGACY)) {
+                try {
+                    const json = decodeURIComponent(escape(atob(trimmed.slice(SHARE_CODE_PREFIX_LEGACY.length))));
+                    const payload = JSON.parse(json);
+                    if (!payload || typeof payload !== 'object' || !payload.formation || !payload.selectedXI) return null;
+                    return payload;
+                } catch (e) { return null; }
             }
+
+            const b64 = trimmed.startsWith(SHARE_CODE_PREFIX) ? trimmed.slice(SHARE_CODE_PREFIX.length) : trimmed;
+            let raw;
+            try {
+                raw = decodeURIComponent(escape(atob(b64)));
+            } catch (e) { return null; }
+
+            const tildeIdx = raw.indexOf('~');
+            if (tildeIdx === -1) return null;
+            const header = raw.slice(0, tildeIdx);
+            const body = raw.slice(tildeIdx + 1);
+            const [formation, budgetStr, mgrNationStr, mgrLeagueStr, name] = header.split('|');
+            if (!formation) return null;
+
+            const selectedXI = {};
+            let totalCost = 0, ratingSum = 0, playerCount = 0;
+            (body ? body.split(',') : []).forEach(entryStr => {
+                if (!entryStr) return;
+                const [idx, shortId, nm, ratingStr, pos, priceStr, nationStr, leagueStr] = entryStr.split(':');
+                const compact = {
+                    id: shortId ? 'easysbc_' + shortId : null,
+                    n: nm,
+                    r: Number(ratingStr) || 0,
+                    p: pos,
+                    c: Number(priceStr) || 0,
+                    na: nationStr !== '' && nationStr != null ? Number(nationStr) : null,
+                    le: leagueStr !== '' && leagueStr != null ? Number(leagueStr) : null
+                };
+                const player = reconstructPlayerFromCompact(compact);
+                if (!player) return;
+                selectedXI[idx] = player;
+                totalCost += player.price || 0;
+                ratingSum += player.rating || 0;
+                playerCount++;
+            });
+
+            // calculateSquadChemistry() reads squadState.formation
+            // internally rather than taking it as a parameter, so it's
+            // temporarily swapped to the imported formation for this one
+            // synchronous call and restored immediately after — nothing
+            // else runs in between, so the live builder never sees the
+            // swap.
+            const prevFormation = squadState.formation;
+            squadState.formation = formation;
+            const chemistry = calculateSquadChemistry(selectedXI);
+            squadState.formation = prevFormation;
+
+            return {
+                name: name || null,
+                formation,
+                budget: Number(budgetStr) || totalCost,
+                totalCost,
+                avgRating: playerCount ? Math.round((ratingSum / playerCount) * 10) / 10 : 0,
+                avgMeta: null,
+                chemistry,
+                manager: {
+                    nationId: mgrNationStr !== '' && mgrNationStr != null ? Number(mgrNationStr) : null,
+                    leagueId: mgrLeagueStr !== '' && mgrLeagueStr != null ? Number(mgrLeagueStr) : null
+                },
+                selectedXI,
+                playerCount
+            };
         }
 
         window.shareSavedSquad = function(id, evt) {
