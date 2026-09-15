@@ -59,6 +59,23 @@
                 linear-gradient(180deg, #0c2e23 0%, #1c5643 55%, #227354 100%);
             box-shadow: inset 0 0 70px rgba(0,0,0,0.55);
         }
+        /* Pitch shape toggle (Formation / Attacking / Defending) — plain
+           gray when inactive, colored fill when the mode is selected. */
+        .pitch-shape-btn {
+            background: transparent;
+            color: #9ca3af;
+        }
+        .pitch-shape-btn:hover {
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+        }
+        .pitch-shape-btn.active {
+            color: #04120c;
+        }
+        .pitch-shape-btn.active#shape-btn-normal { background: #9ca3af; }
+        .pitch-shape-btn.active#shape-btn-attack { background: #f87171; color: #2c0b0b; }
+        .pitch-shape-btn.active#shape-btn-defend { background: #60a5fa; color: #0b1f38; }
+
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -468,6 +485,25 @@
                      (wrapped together so Next Best Upgrade sits under the
                      pitch specifically, not spanning under the sidebar too). -->
                 <div class="lg:col-span-3 space-y-6">
+                <!-- Shape toggle: shows how this XI would actually move
+                     when fully attacking or fully defending, derived from
+                     each player's own assigned role+focus (see
+                     computeShapeOffset) — purely visual, doesn't touch
+                     the saved squad. -->
+                <div class="flex items-center justify-center gap-2 bg-fc-card border border-fc-border rounded-2xl p-1.5">
+                    <button onclick="window.setPitchShapeMode('normal')" id="shape-btn-normal" class="pitch-shape-btn active flex-1 px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-grip-lines"></i>
+                        <span data-i18n="shapeNormalBtn">FORMATION</span>
+                    </button>
+                    <button onclick="window.setPitchShapeMode('attack')" id="shape-btn-attack" class="pitch-shape-btn flex-1 px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-bolt"></i>
+                        <span data-i18n="shapeAttackBtn">ATTACKING</span>
+                    </button>
+                    <button onclick="window.setPitchShapeMode('defend')" id="shape-btn-defend" class="pitch-shape-btn flex-1 px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span data-i18n="shapeDefendBtn">DEFENDING</span>
+                    </button>
+                </div>
                 <div id="pitch-card-outer" class="bg-fc-card border border-fc-border rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                     <!-- Pseudo-3D half-pitch background (trapezoid, not a
                          real 3D transform — see .pitch-3d comment). -->
@@ -1050,7 +1086,10 @@
                 playersTitle: "Players",
                 playersDesc: "Look up any player in the database on their own — no squad or slot needed.",
                 searchPlayerPlaceholder: "Type a player name…",
-                noPlayersFoundStandalone: "No matching players found."
+                noPlayersFoundStandalone: "No matching players found.",
+                shapeNormalBtn: "FORMATION",
+                shapeAttackBtn: "ATTACKING",
+                shapeDefendBtn: "DEFENDING"
             },
             ar: {
                 subtitle: "مُحسّن تشكيلة وكوينز ألتميت تيم",
@@ -1160,7 +1199,10 @@
                 playersTitle: "اللاعبون",
                 playersDesc: "ابحث عن أي لاعب في قاعدة البيانات بشكل مستقل — دون الحاجة لتشكيلة أو مركز.",
                 searchPlayerPlaceholder: "اكتب اسم اللاعب…",
-                noPlayersFoundStandalone: "لا توجد نتائج مطابقة."
+                noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
+                shapeNormalBtn: "التشكيلة",
+                shapeAttackBtn: "الهجوم",
+                shapeDefendBtn: "الدفاع"
             }
         };
 
@@ -1236,6 +1278,13 @@
             alternatives: {},
             totalCost: 0,
             avgRating: 0,
+            // Pitch shape toggle — purely visual, never persisted with the
+            // squad. 'normal' = the fixed formation grid; 'attack'/'defend'
+            // nudge every player toward where their own assigned role+focus
+            // would actually put them in that phase of play (see
+            // computeShapeOffset). Reset to 'normal' on formation change so
+            // switching shapes never has to work out from a moved layout.
+            pitchShapeMode: 'normal',
             // Manager gives +1 chemistry to any in-position starter sharing
             // EITHER the manager's Nation or their League — a real manager
             // has both at once (e.g. a Spanish manager coaching in the
@@ -1416,6 +1465,125 @@
             return { top: slot.top, left: leftEdge + (slot.left / 100) * availableWidth };
         }
 
+        // ===================================================================
+        // PITCH SHAPE (Attacking / Defending) — visual-only toggle
+        // ===================================================================
+        // Computes how far a slot should move off its normal formation
+        // spot for the current phase of play, based on the PLAYER
+        // actually assigned there — their real role+focus (from
+        // squadState.teamRoles, the same team-aware assignment already
+        // driving the card's role footer and the official role
+        // description). This is a rule-based approximation, not literal
+        // positional data from the game: the categories (attack/defend/
+        // neutral focus) and the handful of named-role special cases
+        // below (a False 9 moving DEEPER on the ball, an Inverted
+        // Wingback tucking infield, etc.) are modeled directly off each
+        // role's own real description, so the movement direction is
+        // genuinely tied to what that role/focus says it does — just not
+        // sourced from exact in-game distances.
+        function computeShapeOffset(slot, idx, mode) {
+            if (mode === 'normal') return { dTop: 0, dLeft: 0 };
+            const zone = zoneOfPosition(slot.pos);
+            const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
+            const focus = roleInfo ? roleInfo.focus : null;
+            const roleKey = roleInfo ? normalizeAttrKey(roleInfo.role) : '';
+
+            if (zone === 'GK') {
+                // Keepers barely move — only a build-up-focused one steps
+                // up off the line when the team is attacking.
+                if (mode === 'attack' && focus === 'Build-Up') return { dTop: -5, dLeft: 0 };
+                return { dTop: 0, dLeft: 0 };
+            }
+
+            const category = focus === 'Attack' ? 'attack' : (focus === 'Defend' ? 'defend' : 'neutral');
+
+            // Named roles whose real described movement doesn't match the
+            // generic category shift — e.g. a False 9 is an "Attack"
+            // focus but its whole point is dropping DEEPER, not further
+            // forward, when the team attacks.
+            const SPECIAL = {
+                false9: { attack: 9, defend: 4 },
+                deeplyingplaymaker: { attack: -3, defend: 5 },
+                invertedwingback: { attack: -10, defend: 6, centralize: true },
+                shadowstriker: { attack: -16, defend: 6 },
+                sweeperkeeper: { attack: -6, defend: 0 }
+            };
+            const special = SPECIAL[roleKey];
+
+            let dTop;
+            if (special && typeof special[mode] === 'number') {
+                dTop = special[mode];
+            } else {
+                const table = mode === 'attack'
+                    ? { attack: -14, defend: -5, neutral: -9 }
+                    : { attack: 14, defend: 4, neutral: 9 };
+                dTop = table[category];
+            }
+
+            // Horizontal drift only applies to wide slots: hug the
+            // touchline further when attacking in an Attack-focused wide
+            // role, tuck infield when defending to compact the back/
+            // midfield line, or tuck infield in EITHER phase for roles
+            // that explicitly move centrally (Inverted Wingback, or any
+            // wide Build-Up focus doubling up through the middle).
+            let dLeft = 0;
+            const isWide = ['LB', 'RB', 'LWB', 'RWB', 'LM', 'RM', 'LW', 'RW'].includes(slot.pos);
+            if (isWide) {
+                const isLeftSide = slot.left < 50;
+                const centralize = (special && special.centralize) || focus === 'Build-Up';
+                if (centralize) {
+                    dLeft = isLeftSide ? 8 : -8;
+                } else if (mode === 'attack' && category === 'attack') {
+                    dLeft = isLeftSide ? -4 : 4;
+                } else if (mode === 'defend') {
+                    dLeft = isLeftSide ? 3 : -3;
+                }
+            }
+
+            return { dTop, dLeft };
+        }
+
+        // Applies the current shape mode's offset to a slot's raw grid
+        // coordinates (BEFORE the trapezoid correction in
+        // getSlotPixelPosition) — clamped so no shape ever pushes a card
+        // off the grass or into the opposite goal.
+        function getShapeAdjustedSlot(slot, idx) {
+            const mode = squadState.pitchShapeMode || 'normal';
+            if (mode === 'normal') return slot;
+            const { dTop, dLeft } = computeShapeOffset(slot, idx, mode);
+            return {
+                ...slot,
+                top: Math.min(96, Math.max(6, slot.top + dTop)),
+                left: Math.min(96, Math.max(4, slot.left + dLeft))
+            };
+        }
+
+        // Switches the pitch between its normal formation grid and the
+        // attacking/defending shape. Deliberately does NOT call the full
+        // renderFootballPitch() rebuild — that tears down and recreates
+        // every card, which would make the movement an instant jump
+        // instead of a slide (a freshly-created element has no "before"
+        // state for the CSS transition to animate from). Instead it just
+        // walks the cards already on screen and updates their top/left —
+        // the transition class already on each wrapper (see
+        // renderFootballPitch) picks that up as a smooth slide for free.
+        window.setPitchShapeMode = function(mode) {
+            squadState.pitchShapeMode = mode;
+            const slots = formationSlots[squadState.formation];
+            document.querySelectorAll('#pitch-container [data-slot-idx]').forEach(wrapper => {
+                const idx = Number(wrapper.dataset.slotIdx);
+                const slot = slots[idx];
+                if (!slot) return;
+                const pos = getSlotPixelPosition(getShapeAdjustedSlot(slot, idx));
+                wrapper.style.top = pos.top + '%';
+                wrapper.style.left = pos.left + '%';
+            });
+            ['normal', 'attack', 'defend'].forEach(m => {
+                const btn = document.getElementById(`shape-btn-${m}`);
+                if (btn) btn.classList.toggle('active', m === mode);
+            });
+        };
+
         window.switchTab = function(tabId) {
             ['calculator', 'squad', 'database', 'mysquads', 'players'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
@@ -1572,6 +1740,16 @@
             const previousFormation = squadState.formation;
             if (previousFormation === formKey) return;
             snapshotSquadForUndo();
+            // A shape offset computed for the old formation's slots has no
+            // guaranteed meaning on the new one's — reset to the plain
+            // grid rather than carry over a possibly-nonsensical nudge.
+            squadState.pitchShapeMode = 'normal';
+            if (typeof window.setPitchShapeMode === 'function') {
+                ['normal', 'attack', 'defend'].forEach(m => {
+                    const btn = document.getElementById(`shape-btn-${m}`);
+                    if (btn) btn.classList.toggle('active', m === 'normal');
+                });
+            }
 
             const hasExistingSquad = squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0 && fc27Database.length > 0;
             if (!hasExistingSquad) {
@@ -4629,7 +4807,7 @@
                 const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
                 const borderClasses = isLocked ? 'border-fc-gold' : 'border-fc-border group-hover:border-fc-accent';
                 const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
-                const pos = getSlotPixelPosition(slot);
+                const pos = getSlotPixelPosition(getShapeAdjustedSlot(slot, idx));
 
                 // Wrapper holds the main card AND a role-badge strip
                 // attached flush underneath it (no gap, shared border
@@ -4642,6 +4820,13 @@
                 // into each other regardless of row density.
                 const wrapper = document.createElement('div');
                 wrapper.className = `absolute w-16 sm:w-24 lg:w-28 cursor-pointer player-card-glow transition-all group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
+                wrapper.dataset.slotIdx = idx;
+                // Explicit top/left transition (separate from the
+                // transition-all class above, which covers the card
+                // face's own hover effects) so switching Attack/Defend
+                // shape reads as a smooth slide rather than an instant
+                // snap — see window.setPitchShapeMode.
+                wrapper.style.transition = 'top 0.6s ease, left 0.6s ease';
                 wrapper.style.top = pos.top + '%';
                 wrapper.style.left = pos.left + '%';
                 wrapper.style.transform = 'translate(-50%, -50%)';
