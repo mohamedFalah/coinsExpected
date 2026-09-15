@@ -189,6 +189,10 @@
                     <i class="fa-solid fa-bookmark"></i>
                     <span data-i18n="navMySquads">My Squads</span>
                 </button>
+                <button onclick="switchTab('players')" id="nav-players" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <span data-i18n="navPlayers">Players</span>
+                </button>
             </div>
 
             <!-- Header Budget Widget, Language Switcher & Config Gear Button -->
@@ -231,6 +235,10 @@
             <button onclick="switchTab('mysquads')" id="mob-nav-mysquads" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-bookmark text-base mb-0.5"></i>
                 <span data-i18n="navMySquads">My Squads</span>
+            </button>
+            <button onclick="switchTab('players')" id="mob-nav-players" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-magnifying-glass text-base mb-0.5"></i>
+                <span data-i18n="navPlayers">Players</span>
             </button>
         </div>
     </header>
@@ -737,6 +745,27 @@
             </div>
         </div>
 
+        <!-- ================= VIEW 5: PLAYERS (standalone lookup) ================= -->
+        <div id="view-players" class="hidden space-y-6">
+            <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-4">
+                <div>
+                    <h2 data-i18n="playersTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Players</h2>
+                    <p data-i18n="playersDesc" class="text-gray-400 text-sm md:text-base">
+                        Look up any player in the database on their own — no squad or slot needed.
+                    </p>
+                </div>
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none"></i>
+                    <input type="text" id="players-search-input" data-i18n-placeholder="searchPlayerPlaceholder" placeholder="Type a player name…"
+                        oninput="window.searchStandalonePlayers(this.value)"
+                        class="w-full bg-fc-dark border border-fc-border rounded-xl pl-10 pr-4 rtl:pl-4 rtl:pr-10 py-3 text-sm text-white focus:outline-none focus:border-fc-accent">
+                </div>
+            </div>
+            <div id="players-search-results" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <!-- Populated by window.searchStandalonePlayers() -->
+            </div>
+        </div>
+
     </main>
 
     <!-- ================= MODALS ================= -->
@@ -1016,7 +1045,12 @@
                 shareCodeCopyFailed: "Couldn't copy automatically — code is selected, press Ctrl/Cmd+C.",
                 importSquadSuccess: "Squad imported!",
                 importSquadEmpty: "Paste a share code first.",
-                importSquadInvalid: "That doesn't look like a valid squad share code."
+                importSquadInvalid: "That doesn't look like a valid squad share code.",
+                navPlayers: "Players",
+                playersTitle: "Players",
+                playersDesc: "Look up any player in the database on their own — no squad or slot needed.",
+                searchPlayerPlaceholder: "Type a player name…",
+                noPlayersFoundStandalone: "No matching players found."
             },
             ar: {
                 subtitle: "مُحسّن تشكيلة وكوينز ألتميت تيم",
@@ -1121,7 +1155,12 @@
                 shareCodeCopyFailed: "تعذر النسخ التلقائي — تم تحديد الكود، اضغط Ctrl/Cmd+C.",
                 importSquadSuccess: "تم استيراد التشكيلة!",
                 importSquadEmpty: "الصق كود المشاركة أولاً.",
-                importSquadInvalid: "هذا لا يبدو كوداً صحيحاً لمشاركة تشكيلة."
+                importSquadInvalid: "هذا لا يبدو كوداً صحيحاً لمشاركة تشكيلة.",
+                navPlayers: "اللاعبون",
+                playersTitle: "اللاعبون",
+                playersDesc: "ابحث عن أي لاعب في قاعدة البيانات بشكل مستقل — دون الحاجة لتشكيلة أو مركز.",
+                searchPlayerPlaceholder: "اكتب اسم اللاعب…",
+                noPlayersFoundStandalone: "لا توجد نتائج مطابقة."
             }
         };
 
@@ -1378,7 +1417,7 @@
         }
 
         window.switchTab = function(tabId) {
-            ['calculator', 'squad', 'database', 'mysquads'].forEach(t => {
+            ['calculator', 'squad', 'database', 'mysquads', 'players'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
                 const nav = document.getElementById(`nav-${t}`);
                 const mobNav = document.getElementById(`mob-nav-${t}`);
@@ -4342,6 +4381,48 @@
             resultsContainer.innerHTML = matches.map(p => addPlayerCardHtml(p, getResultingChemPoints(addPlayerSlotIdx, p))).join('');
         };
 
+        // Standalone "Players" tab search — no slot, no squad context, so
+        // no chemistry preview and no "Add" action; clicking a result just
+        // opens the same player modal used everywhere else, but with
+        // standalone=true so it omits the slot-dependent sections (see
+        // openPlayerModal's standalone branch).
+        window.searchStandalonePlayers = function(query) {
+            const resultsContainer = document.getElementById('players-search-results');
+            if (!resultsContainer) return;
+            const q = query.trim().toLowerCase();
+            if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
+
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+            const matches = getActiveDatabase().filter(p => p.name.toLowerCase().includes(q)).slice(0, 24);
+            if (matches.length === 0) {
+                resultsContainer.innerHTML = `<p class="col-span-full text-sm text-gray-500 italic text-center py-6">${isAr ? i18n.ar.noPlayersFoundStandalone : i18n.en.noPlayersFoundStandalone}</p>`;
+                return;
+            }
+            resultsContainer.innerHTML = matches.map(p => {
+                const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
+                return `
+                    <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
+                        <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                        <div class="min-w-0 flex-1">
+                            <div class="text-sm font-bold text-white truncate">${p.name}</div>
+                            <div class="text-[11px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos} · ${(p.price || 0).toLocaleString()}${coinLabel}</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-${isAr ? 'left' : 'right'} text-gray-600 text-xs shrink-0"></i>
+                    </button>
+                `;
+            }).join('');
+        };
+
+        // Looked up by id (not passed inline as a full object) so player
+        // names containing quotes/apostrophes can't break the onclick
+        // attribute — same safe pattern as addPlayerToSlot('${id}').
+        window.openStandalonePlayerModal = function(id) {
+            const player = getActiveDatabase().find(p => p.id === id) || fc27Database.find(p => p.id === id);
+            if (!player) return;
+            window.openPlayerModal(player, null, undefined, false, true);
+        };
+
         // Once every slot in the formation has a player, Manual Build Mode
         // is done — backfill squadState.budget to what was actually spent
         // (plus headroom) so every budget-aware feature that was silently
@@ -7018,7 +7099,16 @@
         }
 
 
-        window.openPlayerModal = function(player, slotLabel, slotIdx, preserveFocus) {
+        // standalone=true is used by the "Players" tab lookup — a player
+        // viewed on their own, outside any squad/slot context. It hides
+        // the sections that only make sense WITH a slot (chemistry,
+        // Alternatives, Search for a Replacement, the Meta
+        // Analyst/re-rank panel — all already gated on slotIdx being a
+        // real number below, so passing no slotIdx handles those for
+        // free) plus the one section that ISN'T naturally slot-gated: the
+        // official in-game Role Description, which is explicitly
+        // suppressed further down when standalone is true.
+        window.openPlayerModal = function(player, slotLabel, slotIdx, preserveFocus, standalone) {
             const modal = document.getElementById('player-modal');
             const content = document.getElementById('modal-player-content');
             if (!modal || !content) return;
@@ -7122,27 +7212,34 @@
                 const isAr = currentLanguage === 'ar';
                 const sentences = [];
 
-                const alts = (typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
-                if (alts.length > 0) {
-                    const nextBest = alts[0];
-                    const gap = getMetaValue(evalPlayer) - getMetaValue(nextBest);
-                    if (gap >= 3) {
-                        sentences.push(isAr
-                            ? `يتفوّق بوضوح على أقرب بديل متاح لهذا المركز (<span class="text-white font-semibold">${nextBest.name}</span>) بفارق ${gap.toFixed(1)} نقطة تقييم.`
-                            : `Clearly ahead of the closest available alternative for this slot (<span class="text-white font-semibold">${nextBest.name}</span>) by ${gap.toFixed(1)} rating points.`);
-                    } else if (gap > 0.3) {
-                        sentences.push(isAr
-                            ? `يتقدّم بفارق ضئيل عن أقرب بديل (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`
-                            : `Only a thin margin ahead of the closest alternative (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`);
+                // Comparing against "alternatives for this slot" is
+                // meaningless with no slot (standalone Players-tab lookup)
+                // — skip the clause entirely rather than show the
+                // fallback "only realistic option" line, which reads as
+                // wrong (there was no budget/slot constraint at all here).
+                const alts = (!standalone && typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
+                if (!standalone) {
+                    if (alts.length > 0) {
+                        const nextBest = alts[0];
+                        const gap = getMetaValue(evalPlayer) - getMetaValue(nextBest);
+                        if (gap >= 3) {
+                            sentences.push(isAr
+                                ? `يتفوّق بوضوح على أقرب بديل متاح لهذا المركز (<span class="text-white font-semibold">${nextBest.name}</span>) بفارق ${gap.toFixed(1)} نقطة تقييم.`
+                                : `Clearly ahead of the closest available alternative for this slot (<span class="text-white font-semibold">${nextBest.name}</span>) by ${gap.toFixed(1)} rating points.`);
+                        } else if (gap > 0.3) {
+                            sentences.push(isAr
+                                ? `يتقدّم بفارق ضئيل عن أقرب بديل (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`
+                                : `Only a thin margin ahead of the closest alternative (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`);
+                        } else {
+                            sentences.push(isAr
+                                ? `الفارق مع البدائل المتاحة محدود جداً — <span class="text-white font-semibold">${nextBest.name}</span> كان سيؤدي بأداء مشابه تقريباً.`
+                                : `Barely separated from the alternatives on the table — <span class="text-white font-semibold">${nextBest.name}</span> would've performed almost as well here.`);
+                        }
                     } else {
                         sentences.push(isAr
-                            ? `الفارق مع البدائل المتاحة محدود جداً — <span class="text-white font-semibold">${nextBest.name}</span> كان سيؤدي بأداء مشابه تقريباً.`
-                            : `Barely separated from the alternatives on the table — <span class="text-white font-semibold">${nextBest.name}</span> would've performed almost as well here.`);
+                            ? `لا يوجد بديل آخر متاح لهذا المركز ضمن الميزانية الحالية — كان الخيار الواقعي الوحيد.`
+                            : `No other candidate for this position fits the current budget — this was the only realistic option.`);
                     }
-                } else {
-                    sentences.push(isAr
-                        ? `لا يوجد بديل آخر متاح لهذا المركز ضمن الميزانية الحالية — كان الخيار الواقعي الوحيد.`
-                        : `No other candidate for this position fits the current budget — this was the only realistic option.`);
                 }
 
                 if (evalAttrEntries && evalAttrEntries.length > 0) {
@@ -7219,7 +7316,7 @@
                     ${officialRoleInfo.traits.drawbacks.map(t => `<span class="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-full px-2 py-0.5"><i class="fa-solid fa-triangle-exclamation text-[8px]"></i>${t}</span>`).join('')}
                 </div>
             ` : '';
-            const officialRoleHtml = officialRoleInfo ? `
+            const officialRoleHtml = (!standalone && officialRoleInfo) ? `
                 <div class="mt-2 pt-2 border-t border-fc-border/60 ${currentLanguage === 'ar' ? 'text-right' : ''}">
                     <span class="font-bold text-fc-accent text-[11px]">${currentLanguage === 'ar' ? 'وصف الدور الرسمي في اللعبة:' : 'In-Game Role Description:'}</span>
                     <p class="text-gray-400 mt-0.5 text-[11px]">${officialRoleInfo.roleDescription}</p>
