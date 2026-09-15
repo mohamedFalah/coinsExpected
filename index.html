@@ -7532,6 +7532,12 @@
                         ` : ''}
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">${statsLine}</p>
+                        ${(getNationFlag(player.nationId) || getLeagueLogoUrl(player.leagueId)) ? `
+                            <div class="flex items-center gap-1.5 mt-1.5">
+                                ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white shadow-sm text-sm leading-none overflow-hidden shrink-0" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
+                                ${getLeagueLogoUrl(player.leagueId) ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white shadow-sm p-1 overflow-hidden shrink-0"><img src="${getLeagueLogoUrl(player.leagueId)}" alt="" class="w-full h-full object-contain" title="${getLeagueName(player.leagueId) || ''}" onerror="this.parentElement.style.display='none'"></span>` : ''}
+                            </div>
+                        ` : ''}
                         ${chemHeaderHtml}
                     </div>
                 </div>
