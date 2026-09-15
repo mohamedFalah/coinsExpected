@@ -1555,10 +1555,23 @@
 
         // Applies the current shape mode to a slot: looks up the real
         // heat-map zone for whatever role+focus is assigned there and
-        // returns a full replacement slot at that target coordinate,
-        // clamped so no shape ever pushes a card off the grass or into
-        // the opposite goal. Falls back to a simple offset only if no
-        // heat-map entry exists at all.
+        // BLENDS it with that slot's own formation position — not a
+        // straight replacement. The heat-map grid is only 5x5 (25 zones
+        // total), coarse enough that two different players — even in
+        // different slots — often land in the exact same tile-cluster.
+        // Fully committing to that raw point collapses them onto literally
+        // the same coordinate (two cards stacked exactly on top of each
+        // other). Blending keeps each player anchored near their own
+        // slot's natural spot on the pitch (which formationSlots already
+        // designed to be well-separated) while still pulling them
+        // meaningfully toward the real attacking/defending tendency —
+        // vertical movement (top) is weighted more toward the heat map
+        // since that's the primary tactical signal (how far forward/back),
+        // horizontal (left) stays closer to the original slot so wide
+        // players don't bunch into the same few columns the low-resolution
+        // grid offers.
+        const HEATMAP_BLEND = { top: 0.7, left: 0.35 };
+
         function getShapeAdjustedSlot(slot, idx) {
             const mode = squadState.pitchShapeMode || 'normal';
             if (mode === 'normal') return slot;
@@ -1569,10 +1582,13 @@
 
             if (zones) {
                 const target = zones[mode];
+                const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
+                const blendedTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
+                const blendedLeft = slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left;
                 return {
                     ...slot,
-                    top: Math.min(96, Math.max(6, target.top)),
-                    left: absoluteToLocalLeft(target.top, target.left)
+                    top: Math.min(96, Math.max(6, blendedTop)),
+                    left: Math.min(96, Math.max(4, blendedLeft))
                 };
             }
 
