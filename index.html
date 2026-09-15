@@ -7254,15 +7254,21 @@
                         : `Their standout trait for this role: ${tier} ${label.toLowerCase()} (${val}).`);
                 }
 
-                const budgetShare = squadState.budget > 0 ? (evalPlayer.price / squadState.budget) * 100 : 0;
-                if (budgetShare >= 15) {
-                    sentences.push(isAr
-                        ? `استثمار كبير في هذا المركز — يستهلك نحو ${budgetShare.toFixed(0)}% من إجمالي الميزانية.`
-                        : `A marquee spend for this slot — around ${budgetShare.toFixed(0)}% of the total budget.`);
-                } else if (budgetShare <= 1) {
-                    sentences.push(isAr
-                        ? `قيمة ممتازة — أقل من 1% فقط من الميزانية الإجمالية.`
-                        : `Excellent value — under 1% of the total budget for this slot.`);
+                // Budget-share commentary ("under 1% of the total
+                // budget") only makes sense relative to an actual squad
+                // budget — skip it in standalone mode, same reasoning as
+                // the alternatives clause above.
+                if (!standalone) {
+                    const budgetShare = squadState.budget > 0 ? (evalPlayer.price / squadState.budget) * 100 : 0;
+                    if (budgetShare >= 15) {
+                        sentences.push(isAr
+                            ? `استثمار كبير في هذا المركز — يستهلك نحو ${budgetShare.toFixed(0)}% من إجمالي الميزانية.`
+                            : `A marquee spend for this slot — around ${budgetShare.toFixed(0)}% of the total budget.`);
+                    } else if (budgetShare <= 1) {
+                        sentences.push(isAr
+                            ? `قيمة ممتازة — أقل من 1% فقط من الميزانية الإجمالية.`
+                            : `Excellent value — under 1% of the total budget for this slot.`);
+                    }
                 }
 
                 return sentences.join(' ');
