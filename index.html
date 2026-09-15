@@ -175,15 +175,15 @@
             <div class="hidden md:flex items-center space-x-2 rtl:space-x-reverse bg-fc-dark/80 p-1.5 rounded-xl border border-fc-border">
                 <button onclick="switchTab('calculator')" id="nav-calculator" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse bg-fc-accent text-fc-dark shadow-md">
                     <i class="fa-solid fa-calculator"></i>
-                    <span data-i18n="navCalculator">Pack Calculator</span>
+                    <span data-i18n="navCalculator">Calculator</span>
                 </button>
                 <button onclick="switchTab('squad')" id="nav-squad" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
                     <i class="fa-solid fa-shield-halved"></i>
-                    <span data-i18n="navSquad">Squad Builder</span>
+                    <span data-i18n="navSquad">Squad</span>
                 </button>
                 <button onclick="switchTab('database')" id="nav-database" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
                     <i class="fa-solid fa-database"></i>
-                    <span data-i18n="navDatabase">Database / Config</span>
+                    <span data-i18n="navDatabase">Database</span>
                 </button>
                 <button onclick="switchTab('mysquads')" id="nav-mysquads" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
                     <i class="fa-solid fa-bookmark"></i>
@@ -222,7 +222,7 @@
         <div class="md:hidden flex items-center justify-around bg-fc-dark/90 border-t border-fc-border py-2 px-4">
             <button onclick="switchTab('calculator')" id="mob-nav-calculator" class="flex flex-col items-center text-xs font-bold text-fc-accent">
                 <i class="fa-solid fa-calculator text-base mb-0.5"></i>
-                <span data-i18n="navCalculator">Pack Calc</span>
+                <span data-i18n="navCalculator">Calculator</span>
             </button>
             <button onclick="switchTab('squad')" id="mob-nav-squad" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-shield-halved text-base mb-0.5"></i>
@@ -944,9 +944,9 @@
         const i18n = {
             en: {
                 subtitle: "ULTIMATE TEAM COIN & SQUAD OPTIMIZER",
-                navCalculator: "Pack Calculator",
-                navSquad: "Squad Builder",
-                navDatabase: "Database / Config",
+                navCalculator: "Calculator",
+                navSquad: "Squad",
+                navDatabase: "Database",
                 navMySquads: "My Squads",
                 activeBudget: "Active Budget",
                 step12: "STEP 1 & 2",
@@ -1054,9 +1054,9 @@
             },
             ar: {
                 subtitle: "مُحسّن تشكيلة وكوينز ألتميت تيم",
-                navCalculator: "حاسبة الباكجات",
-                navSquad: "صانع التشكيلات",
-                navDatabase: "قاعدة البيانات / الإعدادات",
+                navCalculator: "الحاسبة",
+                navSquad: "التشكيلة",
+                navDatabase: "قاعدة البيانات",
                 navMySquads: "تشكيلاتي",
                 activeBudget: "الميزانية الحالية",
                 step12: "الخطوة ١ و ٢",
@@ -7524,6 +7524,12 @@
                         <div class="flex items-center gap-1.5">
                             <span class="px-2.5 py-0.5 rounded text-xs font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30" style="direction:ltr;unicode-bidi:isolate;">${player.pos}</span>${accelBadge}
                         </div>
+                        ${(Array.isArray(player.alt) && player.alt.length > 0) ? `
+                            <div class="flex items-center gap-1 mt-1 flex-wrap">
+                                <span class="text-[10px] text-gray-500">${currentLanguage === 'ar' ? 'أيضاً:' : 'Also:'}</span>
+                                ${player.alt.map(altPos => `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-fc-dark text-gray-400 border border-fc-border" style="direction:ltr;unicode-bidi:isolate;">${altPos}</span>`).join('')}
+                            </div>
+                        ` : ''}
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">${statsLine}</p>
                         ${chemHeaderHtml}
