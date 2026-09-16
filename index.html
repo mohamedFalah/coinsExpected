@@ -7675,6 +7675,34 @@
                 }
             }
 
+            // Rule 4 — Don't overload one flank. A fullback bombing
+            // forward, the winger in front of them holding the touchline,
+            // AND a nearby central mid drifting wide via Half Winger can
+            // all end up converging on the exact same strip of grass —
+            // three players chasing one channel while the opposite flank
+            // and the center go undermanned. Unlike Rule 2 (which only
+            // counts fullbacks, regardless of side), this groups every
+            // wide-pulling role by which HALF of the pitch it's actually
+            // on and caps it at 2 per side.
+            const WIDE_PULL_ROLES = ['Attacking Wingback', 'Wingback', 'Winger', 'Half Winger'];
+            const sideOfSlot = idx => slots[idx].left < 48 ? 'left' : (slots[idx].left > 52 ? 'right' : null);
+            ['left', 'right'].forEach(side => {
+                const sideSlots = Object.keys(assignments).filter(idx => sideOfSlot(idx) === side && WIDE_PULL_ROLES.includes(assignments[idx].role));
+                if (sideSlots.length > 2) {
+                    sideSlots.sort((a, b) => assignments[a].score - assignments[b].score); // weakest fit first
+                    const sideLabelEn = side === 'left' ? 'left' : 'right';
+                    const sideLabelAr = side === 'left' ? 'اليسرى' : 'اليمنى';
+                    for (let i = 0; i < sideSlots.length - 2; i++) {
+                        const idx = sideSlots[i];
+                        const alt = candidatesBySlot[idx].find(o => !WIDE_PULL_ROLES.includes(o.role));
+                        if (alt) adjust(idx, alt.role, {
+                            en: `Pulled into a more central/conservative role — with two teammates already occupying the ${sideLabelEn} flank, a third would just crowd the same strip of grass.`,
+                            ar: `تم تحويله لدور أكثر مركزية/تحفظاً — مع وجود زميلين يشغلان الجهة ${sideLabelAr} بالفعل، فإن لاعباً ثالثاً سيؤدي فقط لازدحام نفس المنطقة.`
+                        });
+                    }
+                }
+            });
+
             return assignments;
         }
 
