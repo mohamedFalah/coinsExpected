@@ -1665,6 +1665,39 @@
         // grid offers.
         const HEATMAP_BLEND = { top: 0.7, left: 0.35 };
 
+        // How deep (highest `top`) each zone's own real heat-map target
+        // sits, unclamped — used only as a boundary for the zone in FRONT
+        // of it (see MIN_ZONE_GAP below). GK is deepest, then DEF, then
+        // MID, then ATT — a zone should never end up as deep or deeper
+        // than the zone naturally behind it, even if the raw data would
+        // put it there.
+        const ZONE_DEPTH_ORDER = ['GK', 'DEF', 'MID', 'ATT'];
+        const MIN_ZONE_GAP = 12;
+
+        function getZoneClampedFrontier(zone, mode) {
+            const slots = formationSlots[squadState.formation] || [];
+            const behindZone = ZONE_DEPTH_ORDER[ZONE_DEPTH_ORDER.indexOf(zone) - 1];
+            // Recurses toward GK first — each zone's frontier must reflect
+            // the zone behind it AFTER that zone's own clamp is applied,
+            // not its raw unclamped target. Using the raw value here would
+            // let both zones shift by the same amount and never actually
+            // close the gap between them (the bug this whole function
+            // exists to prevent).
+            const behindFrontier = behindZone ? getZoneClampedFrontier(behindZone, mode) : null;
+            let minTop = Infinity;
+            slots.forEach((s, i) => {
+                if (zoneOfPosition(s.pos) !== zone) return;
+                const roleInfo = squadState.teamRoles && squadState.teamRoles[i];
+                const focusEntry = roleInfo ? getHeatmapFocusEntry(s.pos, roleInfo.role, roleInfo.focus, i) : null;
+                const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
+                const targetTop = zones ? zones[mode].top : s.top;
+                let blendedTop = s.top + (targetTop - s.top) * HEATMAP_BLEND.top;
+                if (behindFrontier !== null) blendedTop = Math.min(blendedTop, behindFrontier - MIN_ZONE_GAP);
+                minTop = Math.min(minTop, blendedTop);
+            });
+            return minTop === Infinity ? null : minTop;
+        }
+
         function getShapeAdjustedSlot(slot, idx) {
             const mode = squadState.pitchShapeMode || 'normal';
             if (mode === 'normal') return slot;
@@ -1676,8 +1709,26 @@
             if (zones) {
                 const target = zones[mode];
                 const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
-                const blendedTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
+                let blendedTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
                 const blendedLeft = slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left;
+
+                // A Holding-focus CDM (or similar) genuinely drops very
+                // deep when defending — tactically accurate, but if that
+                // puts its CARD at nearly the same depth as the back
+                // line's own card, the two visually collide. Rather than
+                // stop the CDM from dropping deep at all (which would
+                // undersell exactly the tendency this feature exists to
+                // show), cap it at "as deep as the line behind it, minus
+                // a safety gap" — still meaningfully deeper than its own
+                // resting spot, just not literally on top of another
+                // card.
+                const zone = zoneOfPosition(slot.pos);
+                const behindZone = ZONE_DEPTH_ORDER[ZONE_DEPTH_ORDER.indexOf(zone) - 1];
+                if (behindZone) {
+                    const frontier = getZoneClampedFrontier(behindZone, mode);
+                    if (frontier !== null) blendedTop = Math.min(blendedTop, frontier - MIN_ZONE_GAP);
+                }
+
                 return {
                     ...slot,
                     top: Math.min(96, Math.max(6, blendedTop)),
