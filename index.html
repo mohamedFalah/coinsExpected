@@ -555,6 +555,17 @@
                         </div>
                     </div>
 
+                    <!-- Individual player heat-zone overlay — soft, blurred
+                         "cloud" tiles showing where the CURRENTLY-SELECTED
+                         player (via the small fire icon on their card)
+                         actually tends to roam, per the real scraped
+                         Futbin heat-map data for their assigned role+focus.
+                         Sits below the cards (z-[6], cards are z-10) but
+                         above the grass/markings so it reads as painted on
+                         the pitch. Only ever shows one player at a time —
+                         see window.togglePlayerHeatZone. -->
+                    <div id="pitch-heatzone-overlay" class="absolute inset-0 z-[6] pointer-events-none"></div>
+
                     <!-- Dynamic Pitch Row Container -->
                     <!-- dir="ltr" forced: a football pitch is a spatial
                          diagram, not text — RB/LB etc. must stay on their
@@ -775,6 +786,13 @@
                     </div>
                     <p id="import-squad-code-feedback" class="text-xs mt-2 hidden"></p>
                 </div>
+                <div class="border-t border-fc-border pt-4 flex items-center justify-between gap-3 flex-wrap">
+                    <button onclick="window.toggleCompareMode()" id="compare-mode-btn" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-200 hover:text-fc-accent hover:border-fc-accent/50 transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-code-compare"></i>
+                        <span data-i18n="compareSquadsBtn">Compare Squads</span>
+                    </button>
+                    <p id="compare-mode-hint" class="text-xs text-gray-500 hidden"></p>
+                </div>
             </div>
             <div id="saved-squads-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <!-- Populated by renderSavedSquadsList() -->
@@ -973,6 +991,38 @@
         </div>
     </div>
 
+    <!-- Compare Two Squads Modal -->
+    <div id="compare-squads-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeCompareSquadsModal()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-6xl w-full p-6 shadow-2xl relative space-y-5 max-h-[92vh] overflow-y-auto hide-scrollbar" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between border-b border-fc-border pb-4">
+                <h3 class="text-lg font-black text-white flex items-center gap-2">
+                    <i class="fa-solid fa-code-compare text-fc-accent"></i>
+                    <span data-i18n="compareSquadsTitle">Compare Squads</span>
+                </h3>
+                <button onclick="closeCompareSquadsModal()" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div id="compare-stats-grid" class="grid grid-cols-2 gap-4">
+                <!-- Populated by window.openSquadComparison() -->
+            </div>
+
+            <div id="compare-shape-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Populated by window.openSquadComparison() -->
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h4 id="compare-name-a" class="text-center font-bold text-white mb-2"></h4>
+                    <div id="compare-pitch-a-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-3 relative overflow-hidden" style="height: 480px;"></div>
+                </div>
+                <div>
+                    <h4 id="compare-name-b" class="text-center font-bold text-white mb-2"></h4>
+                    <div id="compare-pitch-b-outer" class="bg-fc-dark rounded-2xl border border-fc-border p-3 relative overflow-hidden" style="height: 480px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ================= JAVASCRIPT APPLICATION CORE ================= -->
     <script>
         let currentLanguage = 'en';
@@ -1089,7 +1139,9 @@
                 noPlayersFoundStandalone: "No matching players found.",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
-                shapeDefendBtn: "DEFENDING"
+                shapeDefendBtn: "DEFENDING",
+                compareSquadsBtn: "Compare Squads",
+                compareSquadsTitle: "Compare Squads"
             },
             ar: {
                 subtitle: "مُحسّن تشكيلة وكوينز ألتميت تيم",
@@ -1202,7 +1254,9 @@
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
-                shapeDefendBtn: "الدفاع"
+                shapeDefendBtn: "الدفاع",
+                compareSquadsBtn: "مقارنة التشكيلات",
+                compareSquadsTitle: "مقارنة التشكيلات"
             }
         };
 
@@ -1285,6 +1339,10 @@
             // computeShapeOffset). Reset to 'normal' on formation change so
             // switching shapes never has to work out from a moved layout.
             pitchShapeMode: 'normal',
+            // Which slot (by index) currently has its individual heat
+            // zone painted on the pitch — null means none shown. Purely
+            // visual, like pitchShapeMode; never persisted with the squad.
+            heatZoneSlotIdx: null,
             // Manager gives +1 chemistry to any in-position starter sharing
             // EITHER the manager's Nation or their League — a real manager
             // has both at once (e.g. a Spanish manager coaching in the
@@ -1624,6 +1682,60 @@
                 const btn = document.getElementById(`shape-btn-${m}`);
                 if (btn) btn.classList.toggle('active', m === mode);
             });
+            // A heat zone is painted relative to the card's NORMAL grid
+            // spot — once Attack/Defend has physically moved the card
+            // elsewhere, that same cloud would look disconnected from the
+            // player it's meant to describe. Simplest correct behavior:
+            // hide it rather than let it float free of its player.
+            if (mode !== 'normal' && squadState.heatZoneSlotIdx != null) {
+                squadState.heatZoneSlotIdx = null;
+                renderPlayerHeatZoneOverlay();
+            }
+        };
+
+        // Paints the individual roam-area "cloud" for whichever slot is
+        // currently selected (squadState.heatZoneSlotIdx) using the exact
+        // same real heat-map data driving the Attack/Defend shape toggle —
+        // just shown as an overlay instead of moving the card. Each of the
+        // 25 grid tiles becomes a soft blurred blob sized by its level
+        // (never = skipped entirely, mostly = strongest/most opaque), so
+        // overlapping blobs naturally blend into a smooth heat cloud
+        // rather than a hard-edged grid.
+        function renderPlayerHeatZoneOverlay() {
+            const container = document.getElementById('pitch-heatzone-overlay');
+            if (!container) return;
+            const idx = squadState.heatZoneSlotIdx;
+            if (idx == null) { container.innerHTML = ''; return; }
+
+            const slots = formationSlots[squadState.formation];
+            const slot = slots ? slots[idx] : null;
+            const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
+            const player = squadState.selectedXI[idx];
+            if (!slot || !roleInfo || !player) { container.innerHTML = ''; return; }
+
+            const focusEntry = getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus);
+            if (!focusEntry) { container.innerHTML = ''; return; }
+
+            const OPACITY = { '0': 0, '1': 0.16, '2': 0.30, '3': 0.48 };
+            const grid = HEATMAP_RAW.grid;
+            let html = '';
+            for (let i = 0; i < focusEntry.levels.length; i++) {
+                const op = OPACITY[focusEntry.levels[i]];
+                if (!op) continue;
+                const tile = grid[i];
+                const localLeft = absoluteToLocalLeft(tile.top, tile.left);
+                html += `<div class="absolute" style="top:${tile.top}%; left:${localLeft}%; width:150px; height:110px; transform:translate(-50%,-50%); background:radial-gradient(circle, rgba(255,100,20,${op}) 0%, rgba(255,100,20,0) 72%); filter:blur(4px);"></div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        // Toggles the heat-zone cloud for one slot on/off — clicking the
+        // same player's fire icon again hides it; clicking a different
+        // player switches to theirs. Only usable in the normal formation
+        // view (see the mode!=='normal' guard in setPitchShapeMode).
+        window.togglePlayerHeatZone = function(idx) {
+            squadState.heatZoneSlotIdx = (squadState.heatZoneSlotIdx === idx) ? null : idx;
+            renderPlayerHeatZoneOverlay();
         };
 
         window.switchTab = function(tabId) {
@@ -1792,6 +1904,10 @@
                     if (btn) btn.classList.toggle('active', m === 'normal');
                 });
             }
+            // Same reasoning as the shape-mode reset above — a slot index
+            // from the old formation may point to a totally different
+            // position in the new one.
+            squadState.heatZoneSlotIdx = null;
 
             const hasExistingSquad = squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0 && fc27Database.length > 0;
             if (!hasExistingSquad) {
@@ -2990,6 +3106,11 @@
         // ever-incrementing counter (not array length) so names stay
         // unique even after deletions.
         const SAVED_SQUADS_KEY = 'fc27_saved_squads';
+        // Compare-mode state for "My Squads" — which two (at most) saved
+        // squads are currently selected. Purely a UI selection, never
+        // persisted; resets whenever compare mode is toggled off.
+        let compareModeActive = false;
+        let compareSelectedIds = [];
         const SAVED_SQUADS_COUNTER_KEY = 'fc27_saved_squads_counter';
 
         function getSavedSquads() {
@@ -3377,13 +3498,16 @@
             grid.innerHTML = list.map(sq => {
                 const savedDate = new Date(sq.savedAt);
                 const dateStr = isNaN(savedDate.getTime()) ? '' : savedDate.toLocaleDateString(isAr ? 'ar' : 'en', { year: 'numeric', month: 'short', day: 'numeric' });
+                const isSelected = compareSelectedIds.includes(sq.id);
                 return `
-                    <div class="bg-fc-card border border-fc-border rounded-2xl p-5 hover:border-fc-accent/60 hover:shadow-lg hover:shadow-fc-accent/5 transition-all space-y-3">
+                    <div ${compareModeActive ? `onclick="window.toggleSquadForCompare('${sq.id}')"` : ''} class="bg-fc-card border ${isSelected ? 'border-fc-accent ring-2 ring-fc-accent/50' : 'border-fc-border'} rounded-2xl p-5 hover:border-fc-accent/60 hover:shadow-lg hover:shadow-fc-accent/5 transition-all space-y-3 ${compareModeActive ? 'cursor-pointer' : ''}">
                         <div class="flex items-start justify-between gap-2">
                             <h3 class="font-black text-white text-base truncate">${sq.name}</h3>
-                            <button onclick="window.deleteSavedSquad('${sq.id}', event)" class="shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all" title="${isAr ? 'حذف' : 'Delete'}">
-                                <i class="fa-solid fa-trash text-xs"></i>
-                            </button>
+                            ${compareModeActive
+                                ? `<span class="shrink-0 w-6 h-6 rounded-full border-2 ${isSelected ? 'bg-fc-accent border-fc-accent' : 'border-fc-border'} flex items-center justify-center"><i class="fa-solid fa-check text-[10px] ${isSelected ? 'text-fc-dark' : 'text-transparent'}"></i></span>`
+                                : `<button onclick="window.deleteSavedSquad('${sq.id}', event)" class="shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all" title="${isAr ? 'حذف' : 'Delete'}">
+                                    <i class="fa-solid fa-trash text-xs"></i>
+                                </button>`}
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="text-[11px] font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${sq.formation}</span>
@@ -3400,6 +3524,7 @@
                             </div>
                         </div>
                         <div class="text-[11px] text-gray-500">${dateStr ? (isAr ? `تاريخ الحفظ: ${dateStr}` : `Saved ${dateStr}`) : ''}</div>
+                        ${compareModeActive ? '' : `
                         <div class="grid grid-cols-3 gap-2 pt-1">
                             <button onclick="window.viewSavedSquad('${sq.id}')" class="px-2 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-200 hover:text-fc-accent hover:border-fc-accent/50 transition-all flex items-center justify-center gap-1">
                                 <i class="fa-solid fa-eye"></i> ${isAr ? 'عرض' : 'View'}
@@ -3411,9 +3536,197 @@
                                 <i class="fa-solid fa-share-nodes"></i> ${isAr ? 'مشاركة' : 'Share'}
                             </button>
                         </div>
+                        `}
                     </div>
                 `;
             }).join('');
+        };
+
+        // ===================================================================
+        // SQUAD COMPARISON (two saved squads, side by side)
+        // ===================================================================
+        window.toggleCompareMode = function() {
+            compareModeActive = !compareModeActive;
+            if (!compareModeActive) compareSelectedIds = [];
+            const isAr = currentLanguage === 'ar';
+            const btn = document.getElementById('compare-mode-btn');
+            const hint = document.getElementById('compare-mode-hint');
+            if (btn) {
+                btn.classList.toggle('bg-fc-accent', compareModeActive);
+                btn.classList.toggle('text-fc-dark', compareModeActive);
+                btn.classList.toggle('border-fc-accent', compareModeActive);
+                const label = btn.querySelector('span');
+                if (label) label.textContent = compareModeActive
+                    ? (isAr ? 'إلغاء المقارنة' : 'Cancel Compare')
+                    : (isAr ? 'مقارنة التشكيلات' : 'Compare Squads');
+            }
+            if (hint) {
+                hint.classList.toggle('hidden', !compareModeActive);
+                hint.textContent = isAr ? 'اختر تشكيلتين للمقارنة' : 'Pick two squads to compare';
+            }
+            window.renderSavedSquadsList();
+        };
+
+        // Selecting a 3rd squad silently drops the OLDEST selection rather
+        // than blocking the click or showing an error — keeps this a
+        // one-handed "just tap two" interaction instead of a form with
+        // validation to fight.
+        window.toggleSquadForCompare = function(id) {
+            const idx = compareSelectedIds.indexOf(id);
+            if (idx > -1) {
+                compareSelectedIds.splice(idx, 1);
+            } else {
+                compareSelectedIds.push(id);
+                if (compareSelectedIds.length > 2) compareSelectedIds.shift();
+            }
+            window.renderSavedSquadsList();
+            if (compareSelectedIds.length === 2) {
+                window.openSquadComparison(compareSelectedIds[0], compareSelectedIds[1]);
+            }
+        };
+
+        // Computes the same "Team Tactical Shape" verdict used in the live
+        // Squad Summary (computeTeamTacticalShape), but for a SAVED
+        // squad's stored data rather than the live squadState. That
+        // function reads squadState.formation/selectedXI/teamRoles
+        // directly rather than taking them as parameters, so this
+        // temporarily swaps those three fields, computes, then restores
+        // the live builder's real state — synchronous, nothing else runs
+        // in between, so the live builder never visibly sees the swap.
+        function computeTacticalShapeForSaved(saved) {
+            const prevFormation = squadState.formation;
+            const prevXI = squadState.selectedXI;
+            const prevRoles = squadState.teamRoles;
+
+            squadState.formation = saved.formation;
+            squadState.selectedXI = saved.selectedXI;
+            const slots = formationSlots[saved.formation];
+            squadState.teamRoles = slots ? computeTeamRoles(saved.selectedXI, slots) : {};
+            const shape = computeTeamTacticalShape();
+
+            squadState.formation = prevFormation;
+            squadState.selectedXI = prevXI;
+            squadState.teamRoles = prevRoles;
+            return shape;
+        }
+
+        // Builds the grass + markings + trapezoid-outline markup for one
+        // comparison pitch — identical visual design to the Squad Builder/
+        // View Squad pitches, just parameterized so it can be stamped out
+        // twice with different container ids instead of duplicating this
+        // block by hand in the static HTML.
+        function pitchBackgroundHtml(pitchContainerId) {
+            return `
+                <div class="absolute inset-0 pitch-3d opacity-95 pointer-events-none"></div>
+                <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <polygon points="18,0 82,0 100,100 0,100" fill="none" stroke="white" stroke-opacity="0.55" stroke-width="4" vector-effect="non-scaling-stroke"></polygon>
+                </svg>
+                <div class="absolute inset-0 pointer-events-none">
+                    <div class="absolute top-1/2 left-[9%] right-[9%] h-px bg-white/30 -translate-y-1/2"></div>
+                    <div class="absolute top-1/2 left-1/2 w-28 h-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/30"></div>
+                    <div class="absolute top-1/2 left-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40"></div>
+                    <div class="absolute inset-x-0 bottom-0 h-44">
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                        <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                            <div class="absolute top-0 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                        </div>
+                        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
+                    </div>
+                    <div class="absolute inset-x-0 top-0 h-44" style="transform: scaleY(-1);">
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[46%] h-28 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[20%] h-11 border-2 border-b-0 border-white/30"></div>
+                        <div class="absolute bottom-16 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-white/40"></div>
+                        <div class="absolute bottom-28 left-1/2 -translate-x-1/2 w-32 h-16 overflow-hidden">
+                            <div class="absolute top-0 left-0 w-32 h-32 rounded-full border-2 border-white/30"></div>
+                        </div>
+                        <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-[12%] h-3 border-2 border-b-0 border-white/50"></div>
+                    </div>
+                </div>
+                <div id="${pitchContainerId}" dir="ltr" class="absolute inset-0 z-10"></div>
+            `;
+        }
+
+        window.openSquadComparison = function(idA, idB) {
+            const list = getSavedSquads();
+            const a = list.find(sq => sq.id === idA);
+            const b = list.find(sq => sq.id === idB);
+            if (!a || !b) return;
+            const isAr = currentLanguage === 'ar';
+
+            const shapeA = computeTacticalShapeForSaved(a);
+            const shapeB = computeTacticalShapeForSaved(b);
+
+            // Highlights whichever side "wins" a metric (cheaper cost,
+            // higher rating, higher chemistry) in green — purely a visual
+            // aid, doesn't imply one squad is objectively better overall.
+            const betterClass = (valA, valB, lowerIsBetter) => {
+                if (valA === valB) return ['text-white', 'text-white'];
+                const aWins = lowerIsBetter ? valA < valB : valA > valB;
+                return aWins ? ['text-green-400', 'text-gray-400'] : ['text-gray-400', 'text-green-400'];
+            };
+            const chemA = (a.chemistry && a.chemistry.total) || 0;
+            const chemB = (b.chemistry && b.chemistry.total) || 0;
+            const [costAc, costBc] = betterClass(a.totalCost || 0, b.totalCost || 0, true);
+            const [ratingAc, ratingBc] = betterClass(a.avgRating || 0, b.avgRating || 0, false);
+            const [chemAc, chemBc] = betterClass(chemA, chemB, false);
+
+            const statRow = (label, valA, valB, classA, classB) => `
+                <div class="text-center">
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide">${label}</div>
+                    <div class="text-lg font-black ${classA}">${valA}</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide">${label}</div>
+                    <div class="text-lg font-black ${classB}">${valB}</div>
+                </div>
+            `;
+
+            const statsGrid = document.getElementById('compare-stats-grid');
+            if (statsGrid) {
+                statsGrid.innerHTML = `
+                    <div class="text-center pb-1"><span class="text-xs font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${a.formation}</span></div>
+                    <div class="text-center pb-1"><span class="text-xs font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${b.formation}</span></div>
+                    ${statRow(isAr ? 'التكلفة' : 'Cost', (a.totalCost || 0).toLocaleString(), (b.totalCost || 0).toLocaleString(), costAc, costBc)}
+                    ${statRow(isAr ? 'التقييم' : 'Avg Rating', a.avgRating || '--', b.avgRating || '--', ratingAc, ratingBc)}
+                    ${statRow(isAr ? 'الكيمياء' : 'Chemistry', `${chemA}/33`, `${chemB}/33`, chemAc, chemBc)}
+                `;
+            }
+
+            const verdictMeta = {
+                attacking: { icon: 'fa-bolt', color: 'text-red-400', en: 'Attack-Minded', ar: 'ميول هجومية' },
+                defensive: { icon: 'fa-shield-halved', color: 'text-blue-400', en: 'Defensive-Minded', ar: 'ميول دفاعية' },
+                balanced: { icon: 'fa-scale-balanced', color: 'text-fc-accent', en: 'Balanced', ar: 'متوازنة' }
+            };
+            const shapeGrid = document.getElementById('compare-shape-grid');
+            if (shapeGrid) {
+                shapeGrid.innerHTML = [shapeA, shapeB].map(shape => {
+                    if (!shape) return `<div class="text-center text-xs text-gray-500 italic py-2">${isAr ? 'لا تتوفر بيانات كافية' : 'Not enough data'}</div>`;
+                    const meta = verdictMeta[shape.verdictKey];
+                    return `
+                        <div class="flex items-center justify-center gap-2 bg-fc-dark border border-fc-border rounded-xl py-2.5">
+                            <i class="fa-solid ${meta.icon} ${meta.color} text-xs"></i>
+                            <span class="text-xs font-bold text-white">${isAr ? meta.ar : meta.en}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            document.getElementById('compare-name-a').textContent = a.name;
+            document.getElementById('compare-name-b').textContent = b.name;
+            document.getElementById('compare-pitch-a-outer').innerHTML = pitchBackgroundHtml('compare-pitch-a');
+            document.getElementById('compare-pitch-b-outer').innerHTML = pitchBackgroundHtml('compare-pitch-b');
+            renderSnapshotPitch(a, 'compare-pitch-a');
+            renderSnapshotPitch(b, 'compare-pitch-b');
+
+            const modal = document.getElementById('compare-squads-modal');
+            if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+        };
+
+        window.closeCompareSquadsModal = function() {
+            const modal = document.getElementById('compare-squads-modal');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
         };
 
         // Read-only snapshot modal — shows the saved squad's formation,
@@ -3473,8 +3786,8 @@
         // look, but with no lock state, no click handlers, and no live
         // squadState dependency (works entirely off the saved object), so
         // opening a snapshot can never mutate the actual builder.
-        function renderSnapshotPitch(saved) {
-            const container = document.getElementById('view-squad-pitch');
+        function renderSnapshotPitch(saved, containerId) {
+            const container = document.getElementById(containerId || 'view-squad-pitch');
             if (!container) return;
             const slots = formationSlots[saved.formation] || [];
             const xi = saved.selectedXI || {};
@@ -4919,6 +5232,9 @@
                             <button onclick="event.stopPropagation(); window.toggleLockPlayer(${idx})" title="${lockTitle}" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
                                 <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[7px]"></i>
                             </button>
+                            <button onclick="event.stopPropagation(); window.togglePlayerHeatZone(${idx})" title="${currentLanguage === 'ar' ? 'إظهار منطقة تحرك اللاعب على الملعب' : "Show this player's roam area on the pitch"}" class="absolute bottom-0.5 left-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-all ${squadState.heatZoneSlotIdx === idx ? 'bg-orange-500 text-white opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-orange-400'}">
+                                <i class="fa-solid fa-fire text-[7px]"></i>
+                            </button>
                         </div>
                         <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-lg px-1 py-0.5 transition-all relative">
                             ${roleInfo.adjusted ? `<span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-fc-gold" title="${currentLanguage === 'ar' ? 'تم تعديل الدور لموازنة شكل التشكيلة' : 'Role adjusted for team shape'}"></span>` : ''}
@@ -4939,6 +5255,7 @@
                 }
                 container.appendChild(wrapper);
             });
+            renderPlayerHeatZoneOverlay();
         }
 
         // ===================================================================
