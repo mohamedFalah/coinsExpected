@@ -1325,6 +1325,36 @@
             qsExpected: 1300   // Average expected quick-sell return in coins
         };
 
+        // Persist pack/quick-sell settings across refreshes and sessions.
+        const APP_CONFIG_STORAGE_KEY = 'fc27_app_config_v1';
+
+        function loadAppConfig() {
+            try {
+                const raw = localStorage.getItem(APP_CONFIG_STORAGE_KEY);
+                if (!raw) return;
+                const saved = JSON.parse(raw);
+                if (typeof saved.packCost === 'number') appConfig.packCost = saved.packCost;
+                if (typeof saved.qsMin === 'number') appConfig.qsMin = saved.qsMin;
+                if (typeof saved.qsMax === 'number') appConfig.qsMax = saved.qsMax;
+                if (typeof saved.qsExpected === 'number') appConfig.qsExpected = saved.qsExpected;
+            } catch (e) {
+                console.warn('Could not read saved app config from localStorage:', e);
+            }
+        }
+
+        function persistAppConfig() {
+            try {
+                localStorage.setItem(APP_CONFIG_STORAGE_KEY, JSON.stringify(appConfig));
+            } catch (e) {
+                console.warn('Could not save app config to localStorage:', e);
+            }
+        }
+
+        // Load any saved config immediately so calculatePackReturns() and the
+        // settings modal both start from the user's last values, not the
+        // hardcoded defaults above.
+        loadAppConfig();
+
         const presetPointsList = [100, 500, 1050, 2200, 5750, 12000];
         let currentSelectedPoints = 2200;
         let expectedCoinsResult = 28600;
@@ -1699,6 +1729,14 @@
 
         function computeAllShapeTargets(mode) {
             const slots = formationSlots[squadState.formation] || [];
+            // Local-left bounds are [8,92], not [4,96] — a wide-slot
+            // player (fullback, winger) already sits close to the edge
+            // at REST, and a card has real pixel width: at local-left 96,
+            // the card's own half-width can extend past the visible
+            // pitch entirely even though the anchor POINT is technically
+            // still "on" the trapezoid. [8,92] leaves enough margin for
+            // the card itself, not just its center point, to stay
+            // visible.
             const raw = slots.map((slot, idx) => {
                 const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
                 const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
@@ -1708,11 +1746,11 @@
                     const target = zones[mode];
                     const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
                     rawTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
-                    left = Math.min(96, Math.max(4, slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left));
+                    left = Math.min(92, Math.max(8, slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left));
                 } else {
                     const fallback = computeShapeOffsetFallback(slot, idx, mode);
                     rawTop = slot.top + fallback.dTop;
-                    left = Math.min(96, Math.max(4, slot.left + fallback.dLeft));
+                    left = Math.min(92, Math.max(8, slot.left + fallback.dLeft));
                 }
 
                 // A genuine out-and-out attacker's heat map can be so
@@ -1743,24 +1781,52 @@
             let runningMin = -Infinity;
             const result = {};
             sorted.forEach(item => {
-                // Only inherit the running minimum from the cascade when
-                // this slot is horizontally close enough to the chain
-                // that produced it — checked against the most recent
-                // ALREADY-PLACED slot, which is enough since the chain
-                // only advances runningMin when a real constraint applied.
+                // Only inherit a constraint from a predecessor that's
+                // GENUINELY more advanced (a strictly lower natural base
+                // depth) — not merely earlier in the sort. Same-depth
+                // siblings (e.g. all 4 back-line slots sharing base=70)
+                // are otherwise adjacent in this sorted list purely by
+                // tie-breaking, and checking "nearest predecessor" without
+                // this guard let them daisy-chain against EACH OTHER
+                // through marginal horizontal proximity — CB pushed by LB,
+                // the next CB pushed by that CB, and so on down the back
+                // line, each adding another full MIN_DEPTH_GAP until the
+                // last one in the chain hammered the hard ceiling. Same-
+                // tier teammates should never stack gaps against each
+                // other this way; only a real depth-tier difference
+                // (like a CDM genuinely ahead of the back line) should.
                 let constraint = -Infinity;
                 for (let j = sorted.indexOf(item) - 1; j >= 0; j--) {
                     const prev = sorted[j];
+                    if (prev.baseTop >= item.baseTop) continue;
                     const prevFinal = result[prev.idx];
                     if (!prevFinal) continue;
                     if (Math.abs(item.left - prevFinal.left) < HORIZONTAL_SAFE_DIST) {
                         constraint = Math.max(constraint, prevFinal.top + MIN_DEPTH_GAP);
-                        break; // nearest horizontally-close predecessor is enough
+                        break; // nearest horizontally-close, genuinely-more-advanced predecessor is enough
                     }
                 }
                 const finalTop = Math.min(96, Math.max(6, Math.max(item.rawTop, constraint)));
                 result[item.idx] = { top: finalTop, left: item.left };
             });
+
+            // Final pass: the cascade above can still nudge a slot to
+            // maintain minimum spacing from a neighbor, which can undo
+            // the per-slot direction guarantee applied before sorting.
+            // Re-assert it here as the LAST word — Attacking must never
+            // finish behind a player's own resting spot, Defending must
+            // never finish ahead of it — even if that means a slightly
+            // tighter (but still real) gap with a neighbor in the rare
+            // case both can't be fully satisfied. Wrong-direction
+            // movement is a worse, more confusing failure than a
+            // marginally tighter gap.
+            raw.forEach(item => {
+                const r = result[item.idx];
+                if (!r) return;
+                if (mode === 'attack') r.top = Math.min(r.top, item.baseTop);
+                else r.top = Math.max(r.top, item.baseTop);
+            });
+
             return result;
         }
 
@@ -8597,6 +8663,7 @@
             appConfig.qsMax = elMax ? parseInt(elMax.value) || 1400 : 1400;
             appConfig.qsExpected = elExp ? parseInt(elExp.value) || 1300 : 1300;
 
+            persistAppConfig();
             window.closeSettingsModal();
             window.calculatePackReturns();
         };
@@ -9015,6 +9082,113 @@
             await Promise.all(pool);
         }
 
+        // Local cache of the normalized player database, so a refresh or a
+        // fresh page load can paint real data immediately instead of the
+        // "Empty Slot" placeholder state while EasySBC is re-fetched in the
+        // background. scrapeEasySBCPlayers() only overwrites this (and
+        // re-renders) if the freshly fetched data actually differs.
+        //
+        // Uses IndexedDB rather than localStorage: localStorage caps out
+        // around 5-10MB per origin, which the full ~20k-player EasySBC
+        // catalog (500 pages) could realistically approach. IndexedDB's
+        // quota is much larger (typically a meaningful % of free disk
+        // space), so raising "Pages to fetch" never risks silently failing
+        // to cache.
+        const FC27_IDB_NAME = 'fc27_app_db';
+        const FC27_IDB_VERSION = 1;
+        const FC27_IDB_STORE = 'players_cache';
+        const FC27_IDB_KEY = 'players';
+
+        function openFc27IndexedDB() {
+            return new Promise((resolve, reject) => {
+                if (!('indexedDB' in window)) { reject(new Error('IndexedDB not supported in this browser')); return; }
+                const req = indexedDB.open(FC27_IDB_NAME, FC27_IDB_VERSION);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(FC27_IDB_STORE)) {
+                        db.createObjectStore(FC27_IDB_STORE);
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function idbGetCachedDatabase() {
+            try {
+                const db = await openFc27IndexedDB();
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(FC27_IDB_STORE, 'readonly');
+                    const req = tx.objectStore(FC27_IDB_STORE).get(FC27_IDB_KEY);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => reject(req.error);
+                });
+            } catch (e) {
+                console.warn('IndexedDB read failed, falling back to no cache:', e);
+                return null;
+            }
+        }
+
+        async function idbSetCachedDatabase(players) {
+            try {
+                const db = await openFc27IndexedDB();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(FC27_IDB_STORE, 'readwrite');
+                    tx.objectStore(FC27_IDB_STORE).put(players, FC27_IDB_KEY);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch (e) {
+                console.warn('IndexedDB write failed — database will simply re-fetch fresh next load:', e);
+            }
+        }
+
+        async function loadCachedDatabase() {
+            try {
+                const cached = await idbGetCachedDatabase();
+                if (!Array.isArray(cached) || cached.length === 0) return false;
+                fc27Database = cached;
+                computePositionFitBaselines();
+                window.updateDatabaseStats();
+                populateManagerDropdown();
+                window.runSquadOptimizer();
+                scrapeLog(`Loaded ${cached.length} players from local cache instantly. Checking EasySBC for updates in the background...`, 'info');
+                return true;
+            } catch (e) {
+                console.warn('Could not read cached player database:', e);
+                return false;
+            }
+        }
+
+        async function persistDatabaseCache(players) {
+            await idbSetCachedDatabase(players);
+        }
+
+        // Remembers whatever page count the user last used, so the
+        // background revalidation on the next load pulls the same amount
+        // they chose — not always the 200-page app default — until they
+        // change it again.
+        const SCRAPE_PAGES_STORAGE_KEY = 'fc27_scrape_pages_v1';
+
+        function loadSavedPageCount() {
+            try {
+                const raw = localStorage.getItem(SCRAPE_PAGES_STORAGE_KEY);
+                const n = raw ? parseInt(raw, 10) : NaN;
+                return Number.isFinite(n) && n > 0 ? n : null;
+            } catch (e) {
+                console.warn('Could not read saved page count:', e);
+                return null;
+            }
+        }
+
+        function persistPageCount(n) {
+            try {
+                localStorage.setItem(SCRAPE_PAGES_STORAGE_KEY, String(n));
+            } catch (e) {
+                console.warn('Could not save page count:', e);
+            }
+        }
+
         window.scrapeEasySBCPlayers = async function() {
             const btn = document.getElementById('btn-scrape');
             const logBox = document.getElementById('scrape-status-log');
@@ -9024,6 +9198,7 @@
             const pagesInput = document.getElementById('scrape-pages-input');
             const baseUrl = (urlInput && urlInput.value.trim()) || 'https://api-fc27.easysbc.io/players?v2';
             const pageCount = Math.max(1, Math.min(500, parseInt(pagesInput && pagesInput.value) || 200));
+            persistPageCount(pageCount);
 
             if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-not-allowed'); }
             setScrapeProgress(0);
@@ -9076,12 +9251,29 @@
 
             if (collected.length > 0) {
                 const normalized = collected.map(mapEasySbcPlayer);
-                fc27Database = normalized;
-                computePositionFitBaselines();
-                window.updateDatabaseStats();
-                populateManagerDropdown();
-                window.runSquadOptimizer();
-                scrapeLog(`Database synced with ${normalized.length} players from EasySBC` + (failures > 0 ? ` (${failures} page(s) failed and were skipped).` : '.'), 'ok');
+                // Cheap-but-exact "did anything change" check against what's
+                // already on screen (whether that came from cache or an
+                // earlier fetch this session). If nothing changed, skip the
+                // re-render and re-write entirely — no visible flicker, no
+                // wasted work.
+                let changed = true;
+                try {
+                    changed = JSON.stringify(normalized) !== JSON.stringify(fc27Database);
+                } catch (e) {
+                    changed = true; // if comparison fails for any reason, be safe and update
+                }
+
+                if (changed) {
+                    fc27Database = normalized;
+                    computePositionFitBaselines();
+                    window.updateDatabaseStats();
+                    populateManagerDropdown();
+                    window.runSquadOptimizer();
+                    await persistDatabaseCache(normalized);
+                    scrapeLog(`Database synced with ${normalized.length} players from EasySBC` + (failures > 0 ? ` (${failures} page(s) failed and were skipped).` : '.'), 'ok');
+                } else {
+                    scrapeLog(`Checked EasySBC — ${normalized.length} players, no changes since last sync.`, 'ok');
+                }
             } else {
                 scrapeLog('No players were retrieved. Use the "How do I find the real data endpoint?" guide above to re-check the URL, or paste JSON directly into the Import box.', 'warn');
             }
@@ -9104,18 +9296,31 @@
             }, 200);
         });
 
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
             window.renderPresetPoints();
             window.calculatePackReturns();
             updateUndoButtonState();
             updateBuildFilterControlsState();
-            // Player database defaults to a LIVE pull from EasySBC's API — no
-            // more hardcoded list. Render once immediately (empty state,
-            // shows "Empty Slot" placeholders + dashes in stats) so the UI
-            // isn't blank while the fetch is in flight, then scrape runs and
-            // re-renders both once real data arrives.
-            window.updateDatabaseStats();
-            window.runSquadOptimizer();
+            // Restore the page count the user last chose (if any) so a
+            // background revalidation pulls the amount they actually want,
+            // not always the 200-page default.
+            const savedPages = loadSavedPageCount();
+            const pagesInput = document.getElementById('scrape-pages-input');
+            if (pagesInput && savedPages) pagesInput.value = savedPages;
+            // Try the local cache first so real player data (and squad
+            // building) is usable the instant the page opens, instead of
+            // "Empty Slot" placeholders while EasySBC is fetched. Falls back
+            // to the old empty-state render if there's no cache yet (first
+            // ever load, or IndexedDB is unavailable).
+            const hadCache = await loadCachedDatabase();
+            if (!hadCache) {
+                window.updateDatabaseStats();
+                window.runSquadOptimizer();
+            }
+            // Always revalidate against EasySBC in the background, using
+            // whichever page count is now in the field (saved or default).
+            // scrapeEasySBCPlayers() only re-renders/re-caches if the
+            // fetched data is actually different from what's on screen.
             window.scrapeEasySBCPlayers();
         });
     </script>
