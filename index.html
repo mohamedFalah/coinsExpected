@@ -2139,7 +2139,7 @@
             let newXI = { ...lockedPlacement.assigned };
             let retainedCount = Object.keys(lockedPlacement.assigned).length;
 
-            let availablePlayers = Object.values(oldXI).filter(p => p && !lockedPlacement.usedPlayerIds.has(p.id));
+            let availablePlayers = Object.values(oldXI).filter(p => p && !lockedPlacement.usedPlayerIds.has(playerIdentityKey(p)));
 
             // Pass 1: exact position matches only, across every slot first,
             // so a player isn't consumed by an alt-position slot when a real
@@ -2152,7 +2152,7 @@
                     exact.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                     const chosen = exact[0];
                     newXI[idx] = chosen;
-                    availablePlayers = availablePlayers.filter(p => p.id !== chosen.id);
+                    availablePlayers = availablePlayers.filter(p => playerIdentityKey(p) !== playerIdentityKey(chosen));
                     retainedCount++;
                 } else {
                     stillNeeded.push(idx);
@@ -2168,7 +2168,7 @@
                     altMatch.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                     const chosen = altMatch[0];
                     newXI[idx] = chosen;
-                    availablePlayers = availablePlayers.filter(p => p.id !== chosen.id);
+                    availablePlayers = availablePlayers.filter(p => playerIdentityKey(p) !== playerIdentityKey(chosen));
                     retainedCount++;
                 } else {
                     stillNeeded2.push(idx);
@@ -2182,7 +2182,7 @@
             // tiered strict-fit -> tolerance -> cheapest-fallback logic the
             // main optimizer uses, scoped to only the slots that actually
             // need a new player.
-            const usedIds = new Set(Object.values(newXI).filter(Boolean).map(p => p.id));
+            const usedIds = new Set(Object.values(newXI).filter(Boolean).map(p => playerIdentityKey(p)));
             const budget = squadState.budget;
             const BUDGET_TOLERANCE = 50000;
             const hardCap = budget + BUDGET_TOLERANCE;
@@ -2190,7 +2190,7 @@
             let candidateMap = {};
             neededSlotIndices.forEach(idx => {
                 const slot = newSlots[idx];
-                const eligible = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(p.id));
+                const eligible = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(playerIdentityKey(p)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
             });
@@ -2198,7 +2198,7 @@
             function cheapestAvailablePrice(slotIdx) {
                 let min = Infinity;
                 for (const cand of candidateMap[slotIdx]) {
-                    if (!usedIds.has(cand.id) && cand.price < min) min = cand.price;
+                    if (!usedIds.has(playerIdentityKey(cand)) && cand.price < min) min = cand.price;
                 }
                 return isFinite(min) ? min : 0;
             }
@@ -2224,7 +2224,7 @@
                 const collectFitting = (cap) => {
                     const fitting = [];
                     for (const cand of candidates) {
-                        if (usedIds.has(cand.id)) continue;
+                        if (usedIds.has(playerIdentityKey(cand))) continue;
                         const remainingMinCost = remaining.reduce((sum, ri) => sum + cheapestAvailablePrice(ri), 0);
                         if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                     }
@@ -2240,7 +2240,7 @@
                 } else {
                     let cheapest = null;
                     for (const cand of candidates) {
-                        if (usedIds.has(cand.id)) continue;
+                        if (usedIds.has(playerIdentityKey(cand))) continue;
                         if (!cheapest || cand.price < cheapest.price) cheapest = cand;
                     }
                     chosen = cheapest;
@@ -2248,7 +2248,7 @@
 
                 if (chosen) {
                     newXI[slotIdx] = chosen;
-                    usedIds.add(chosen.id);
+                    usedIds.add(playerIdentityKey(chosen));
                     currentSpent += chosen.price;
                     newlyPicked.push({ slot, player: chosen });
                 }
@@ -2721,9 +2721,28 @@
         // on fc27Database itself — a player already in the squad must
         // stay findable even if the filter changes afterward.
         function getActiveDatabase() {
-            if (!squadState.leagueFilter || !LEAGUE_FILTER_GROUPS[squadState.leagueFilter]) return fc27Database;
+            // Players with price 0 mean EasySBC hasn't priced that card yet
+            // (not "free") — never suggest/select them anywhere until a
+            // real price comes in on a later sync. Applied here, the single
+            // shared candidate-pool source, so it's enforced everywhere at
+            // once (optimizer, alternatives, budget reinvestment, next-best
+            // upgrade, manual search) without needing a check at every call
+            // site.
+            const priced = fc27Database.filter(p => typeof p.price === 'number' && p.price > 0);
+            if (!squadState.leagueFilter || !LEAGUE_FILTER_GROUPS[squadState.leagueFilter]) return priced;
             const ids = LEAGUE_FILTER_GROUPS[squadState.leagueFilter].ids;
-            return fc27Database.filter(p => p.leagueId != null && ids.includes(p.leagueId));
+            return priced.filter(p => p.leagueId != null && ids.includes(p.leagueId));
+        }
+
+        // A real-world player's identity, stable across their different
+        // cards (specials/upgrades/evolutions — EasySBC lists each as its
+        // own row with its own id/price/rating, but they're still the same
+        // human). The API gives no card-type/base-player field to key off
+        // of, so normalized name is the practical identity: used everywhere
+        // a squad must never contain the same person twice, even via two
+        // different cards.
+        function playerIdentityKey(player) {
+            return player && player.name ? player.name.trim().toLowerCase() : '';
         }
 
         const ATTRIBUTE_LABELS = {
@@ -3053,13 +3072,13 @@
                     const currentChem = (chem.perSlot[idx] && chem.perSlot[idx].points) || 0;
                     if (currentChem >= 2) return; // 2 is acceptable per spec — only fix 0/1
 
-                    const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+                    const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
                     const restOfSquadCost = squadState.totalCost - currentPlayer.price;
                     const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
 
                     const candidates = getActiveDatabase().filter(p =>
                         (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
-                        !usedIds.has(p.id) &&
+                        !usedIds.has(playerIdentityKey(p)) &&
                         p.price <= priceCeiling
                     );
 
@@ -3115,7 +3134,7 @@
                 const leftover = squadState.budget - squadState.totalCost;
                 if (leftover <= 0) break;
 
-                const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+                const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
                 let bestSlotIdx = null, bestCandidate = null, bestGain = 0;
 
                 slots.forEach((slot, idx) => {
@@ -3134,7 +3153,7 @@
 
                     getActiveDatabase().forEach(cand => {
                         if (cand.id === currentPlayer.id) return;
-                        if (usedIds.has(cand.id)) return;
+                        if (usedIds.has(playerIdentityKey(cand))) return;
                         if (!(cand.pos === slot.pos || (cand.alt && cand.alt.includes(slot.pos)))) return;
                         if (cand.price > priceCeiling) return;
                         const candRawScore = calculatePlayerScore(cand, slot.pos);
@@ -4183,7 +4202,7 @@
                 if (bestIdx !== -1) {
                     assigned[bestIdx] = player;
                     usedSlot.add(bestIdx);
-                    usedPlayerIds.add(player.id);
+                    usedPlayerIds.add(playerIdentityKey(player));
                 } else {
                     // No real/alt-eligible slot for them in this formation
                     // — auto-unlock rather than force them into a position
@@ -4297,7 +4316,7 @@
             function cheapestAvailablePrice(slotIdx, usedIds) {
                 let min = Infinity;
                 for (const cand of candidateMap[slotIdx]) {
-                    if (!usedIds.has(cand.id) && cand.price < min) min = cand.price;
+                    if (!usedIds.has(playerIdentityKey(cand)) && cand.price < min) min = cand.price;
                 }
                 return isFinite(min) ? min : 0;
             }
@@ -4356,7 +4375,7 @@
                     const collectFitting = (cap) => {
                         const fitting = [];
                         for (const cand of candidates) {
-                            if (usedPlayerIds.has(cand.id)) continue;
+                            if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
                             const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
                             if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                         }
@@ -4383,7 +4402,7 @@
                     } else {
                         let cheapest = null;
                         for (const cand of candidates) {
-                            if (usedPlayerIds.has(cand.id)) continue;
+                            if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
                             if (!cheapest || cand.price < cheapest.price) cheapest = cand;
                         }
                         chosen = cheapest;
@@ -4392,7 +4411,7 @@
 
                     if (chosen) {
                         selectedXI[slotIdx] = chosen;
-                        usedPlayerIds.add(chosen.id);
+                        usedPlayerIds.add(playerIdentityKey(chosen));
                         currentSpent += chosen.price;
                         localLog.push({ slot, chosen, usedTolerance, unavoidableOvershoot });
                     }
@@ -4583,7 +4602,7 @@
             function cheapestAvailablePrice(slotIdx, usedIds) {
                 let min = Infinity;
                 for (const cand of candidateMap[slotIdx]) {
-                    if (!usedIds.has(cand.id) && cand.price < min) min = cand.price;
+                    if (!usedIds.has(playerIdentityKey(cand)) && cand.price < min) min = cand.price;
                 }
                 return isFinite(min) ? min : 0;
             }
@@ -4608,7 +4627,7 @@
                 const collectFitting = (cap) => {
                     const fitting = [];
                     for (const cand of candidates) {
-                        if (usedPlayerIds.has(cand.id)) continue;
+                        if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
                         const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
                         if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                     }
@@ -4629,7 +4648,7 @@
                 } else {
                     let cheapest = null;
                     for (const cand of candidates) {
-                        if (usedPlayerIds.has(cand.id)) continue;
+                        if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
                         if (!cheapest || cand.price < cheapest.price) cheapest = cand;
                     }
                     chosen = cheapest;
@@ -4637,7 +4656,7 @@
 
                 if (chosen) {
                     selectedXI[slotIdx] = chosen;
-                    usedPlayerIds.add(chosen.id);
+                    usedPlayerIds.add(playerIdentityKey(chosen));
                     currentSpent += chosen.price;
                 }
             }
@@ -5051,7 +5070,7 @@
 
         function computeSlotAlternatives() {
             const slots = formationSlots[squadState.formation];
-            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
             const alternatives = {};
             slots.forEach((slot, idx) => {
                 const currentPlayer = squadState.selectedXI[idx];
@@ -5063,7 +5082,7 @@
 
                 const eligible = getActiveDatabase().filter(p =>
                     (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
-                    !usedIds.has(p.id) &&
+                    !usedIds.has(playerIdentityKey(p)) &&
                     (!currentPlayer || p.id !== currentPlayer.id) &&
                     p.price <= priceCeiling
                 );
@@ -5153,8 +5172,8 @@
             const existingCount = Object.values(squadState.selectedXI).filter(Boolean).length;
             if (existingCount === 0) { container.innerHTML = ''; return; }
 
-            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
-            const eligible = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(p.id));
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
+            const eligible = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(playerIdentityKey(p)));
             const scored = eligible.map(p => ({ player: p, chem: getResultingChemPoints(slotIdx, p) }));
             scored.sort((a, b) => (b.chem - a.chem) || (getMetaValue(b.player) - getMetaValue(a.player)));
             const top = scored.slice(0, 3);
@@ -5173,8 +5192,8 @@
             const q = query.trim().toLowerCase();
             if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
 
-            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
-            const matches = getActiveDatabase().filter(p => p.name.toLowerCase().includes(q) && !usedIds.has(p.id)).slice(0, 8);
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
+            const matches = getActiveDatabase().filter(p => p.name.toLowerCase().includes(q) && !usedIds.has(playerIdentityKey(p))).slice(0, 8);
             if (matches.length === 0) {
                 resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
                 return;
@@ -6446,8 +6465,19 @@
                 const currentPlayer = squadState.selectedXI[idx];
                 if (!currentPlayer) return;
 
+                // Never suggest "upgrading" into a real player who already
+                // occupies a different slot (via another card) — that would
+                // create a duplicate. The current slot's own occupant is
+                // excluded from this set so a different, better card of the
+                // very same player can still be suggested for their own slot.
+                const usedElsewhere = new Set(
+                    Object.values(squadState.selectedXI)
+                        .filter(p => p && p.id !== currentPlayer.id)
+                        .map(p => playerIdentityKey(p))
+                );
+
                 const currentMeta = getMetaValue(currentPlayer);
-                const alternatives = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && getMetaValue(p) > currentMeta);
+                const alternatives = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && getMetaValue(p) > currentMeta && !usedElsewhere.has(playerIdentityKey(p)));
 
                 // Best per slot = biggest meta gain; ties broken by whichever
                 // costs less, so the shown pick is always the most efficient
@@ -6587,13 +6617,13 @@
             const slots = formationSlots[squadState.formation];
             const slot = slots[slotIdx];
             const currentPlayer = squadState.selectedXI[slotIdx];
-            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => p.id));
+            const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
             const restOfSquadCost = squadState.totalCost - (currentPlayer ? currentPlayer.price : 0);
             const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
 
             const pool = getActiveDatabase().filter(p =>
                 (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
-                !usedIds.has(p.id) &&
+                !usedIds.has(playerIdentityKey(p)) &&
                 p.price <= priceCeiling
             );
             if (currentPlayer) pool.push(currentPlayer);
