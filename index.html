@@ -1703,23 +1703,36 @@
                 const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
                 const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
                 const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
+                let rawTop, left;
                 if (zones) {
                     const target = zones[mode];
                     const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
-                    return {
-                        idx,
-                        baseTop: slot.top,
-                        rawTop: slot.top + (target.top - slot.top) * HEATMAP_BLEND.top,
-                        left: Math.min(96, Math.max(4, slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left))
-                    };
+                    rawTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
+                    left = Math.min(96, Math.max(4, slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left));
+                } else {
+                    const fallback = computeShapeOffsetFallback(slot, idx, mode);
+                    rawTop = slot.top + fallback.dTop;
+                    left = Math.min(96, Math.max(4, slot.left + fallback.dLeft));
                 }
-                const { dTop, dLeft } = computeShapeOffsetFallback(slot, idx, mode);
-                return {
-                    idx,
-                    baseTop: slot.top,
-                    rawTop: slot.top + dTop,
-                    left: Math.min(96, Math.max(4, slot.left + dLeft))
-                };
+
+                // A genuine out-and-out attacker's heat map can be so
+                // concentrated in advanced areas that even its "less
+                // advanced" half still sits ahead of the SLOT's own
+                // formation-template resting spot (e.g. an Inside
+                // Forward barely tracks back at all) — which, run through
+                // the blend unguarded, would show the DEFEND button
+                // pushing that player MORE forward than they start,
+                // exactly backwards from what the button means. Users
+                // expect a direction, not just a data point: Attacking
+                // never moves a player behind their own resting spot,
+                // Defending never moves them ahead of it. Roles that
+                // already move in the expected direction (the vast
+                // majority) are unaffected by this — it only catches the
+                // rare case where the raw data would invert it.
+                if (mode === 'attack') rawTop = Math.min(rawTop, slot.top);
+                else rawTop = Math.max(rawTop, slot.top);
+
+                return { idx, baseTop: slot.top, rawTop, left };
             });
 
             // Sort by natural depth (most advanced/lowest top first) —
@@ -7625,13 +7638,13 @@
                     ar: 'ضعف قدرته الدفاعية يعني أن قيمته بالكامل في الهجوم، فالدخول للداخل يعظّم أثره الفعلي.' }
             ];
             if (pos === 'LW' || pos === 'RW') return [
-                { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.45 + 10,
+                { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.38 + a.dri * 0.15 + 12,
                     en: 'Striker-level shooting means cutting inside onto their stronger foot to shoot is the highest-value use of their attributes.',
                     ar: 'قدرته التسديدية بمستوى المهاجمين، فالدخول للداخل نحو قدمه الأقوى للتسديد هو الاستغلال الأمثل.' },
-                { role: 'Wide Playmaker', focus: 'Build-Up', score: a.pas * 0.35 + a.dri * 0.3 + 6,
+                { role: 'Wide Playmaker', focus: 'Build-Up', score: a.pas * 0.35 + a.dri * 0.22 + 12,
                     en: "Passing and dribbling rival a creator's, with shooting to match — better used drifting infield to build play than waiting for a shot that isn't their main threat.",
                     ar: 'تمريره ومراوغته بمستوى صانع الألعاب، مع تسديد محدود نسبياً — أفضل استغلاله بالانزلاق للداخل لبناء اللعب بدلاً من انتظار تسديدة ليست تهديده الأساسي.' },
-                { role: 'Winger', focus: 'Attack', score: a.dri * 0.35 + a.pac * 0.25 + 15,
+                { role: 'Winger', focus: 'Attack', score: a.dri * 0.28 + a.pac * 0.22 + 12,
                     en: 'Dribbling/pace-led profile is best used holding width and beating the fullback outside.',
                     ar: 'ملفه القائم على المراوغة والسرعة يجعله الأفضل في الثبات على الجناح وتخطي الظهير من الخارج.' }
             ];
