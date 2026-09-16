@@ -4944,7 +4944,12 @@
             beginSquadWorking('optimize-btn', workingLabel);
             setTimeout(() => {
                 runSquadOptimizerImpl();
-                endSquadWorking();
+                // The real squad is already fully decided and rendered at
+                // this point — animateSquadReveal() just plays a cosmetic
+                // "players flicking by before settling" sequence on top of
+                // the already-correct final cards, then hands off to
+                // endSquadWorking() once it's done.
+                animateSquadReveal(endSquadWorking);
             }, 20);
         };
 
@@ -4953,9 +4958,78 @@
             beginSquadWorking('regenerate-btn', workingLabel);
             setTimeout(() => {
                 regenerateSquadImpl();
-                endSquadWorking();
+                animateSquadReveal(endSquadWorking);
             }, 20);
         };
+
+        // Purely cosmetic "the squad is being assembled" reveal: the final
+        // XI was already fully computed and rendered onto the pitch by the
+        // time this runs (renderFootballPitch already drew the correct
+        // final card for every slot). This just drops a small overlay on
+        // top of each slot that rapidly cycles a few random candidate
+        // photos for that position, then fades away to reveal the real
+        // card already sitting underneath it — staggered slot to slot so
+        // it reads as the team being built in front of the user instead of
+        // the whole XI just snapping in at once. Locked players (the user
+        // deliberately pinned them) and empty slots are skipped and appear
+        // immediately — there's nothing to "reveal" there.
+        function animateSquadReveal(callback) {
+            const container = document.getElementById('pitch-container');
+            const wrappers = container ? Array.from(container.querySelectorAll('[data-slot-idx]')) : [];
+            if (wrappers.length === 0) { if (callback) callback(); return; }
+
+            const slots = formationSlots[squadState.formation];
+            const STAGGER_MS = 90;
+            const SHUFFLE_TICK_MS = 90;
+            const SHUFFLE_TICKS = 6;
+
+            let pending = 0;
+            const done = () => { pending--; if (pending <= 0 && callback) callback(); };
+
+            wrappers.forEach((wrapper) => {
+                const slotIdx = parseInt(wrapper.dataset.slotIdx, 10);
+                const player = squadState.selectedXI[slotIdx];
+                const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
+                if (!player || isLocked) return; // nothing to shuffle — leave it showing immediately
+
+                const slot = slots[slotIdx];
+                // Prefer photos of players who could actually play this
+                // position, so the flicker looks like plausible candidates
+                // rather than a totally random goalkeeper flashing at ST —
+                // falls back to the whole database if that pool is thin.
+                let pool = getActiveDatabase({ requirePriced: false }).filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
+                if (pool.length < 4) pool = fc27Database;
+                if (pool.length === 0) return;
+
+                pending++;
+                setTimeout(() => {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'absolute inset-0 z-20 bg-fc-card border border-fc-accent/40 rounded-xl flex flex-col items-center justify-center overflow-hidden';
+                    wrapper.appendChild(overlay);
+
+                    let tick = 0;
+                    const shuffleTimer = setInterval(() => {
+                        const cand = pool[Math.floor(Math.random() * pool.length)];
+                        overlay.innerHTML = `
+                            <img src="${cand.photo}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover border border-fc-accent/40 bg-fc-dark" onerror="this.style.opacity='0'">
+                            <div class="text-[8px] text-fc-accent font-bold mt-1 animate-pulse">···</div>
+                        `;
+                        tick++;
+                        if (tick >= SHUFFLE_TICKS) {
+                            clearInterval(shuffleTimer);
+                            overlay.style.transition = 'opacity 0.15s ease';
+                            overlay.style.opacity = '0';
+                            setTimeout(() => { overlay.remove(); done(); }, 150);
+                        }
+                    }, SHUFFLE_TICK_MS);
+                }, wrappers.indexOf(wrapper) * STAGGER_MS);
+            });
+
+            // Every slot was locked/empty (nothing animated) — resolve
+            // immediately instead of waiting on a `pending` count that will
+            // never reach 0 the normal way.
+            if (pending === 0) { if (callback) callback(); }
+        }
 
         function updateRegenerateButtonState() {
             const btn = document.getElementById('regenerate-btn');
