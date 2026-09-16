@@ -1002,7 +1002,11 @@
                 <button onclick="closeCompareSquadsModal()" class="text-gray-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
-            <div id="compare-stats-grid" class="grid grid-cols-2 gap-4">
+            <div id="compare-stats-grid" class="space-y-1.5">
+                <!-- Populated by window.openSquadComparison() -->
+            </div>
+
+            <div id="compare-verdict" class="bg-fc-dark border border-fc-border rounded-2xl p-4">
                 <!-- Populated by window.openSquadComparison() -->
             </div>
 
@@ -3647,6 +3651,75 @@
             return shape;
         }
 
+        // Builds an actual written verdict for the comparison — not just
+        // highlighted numbers, but a sentence explaining WHY one squad is
+        // the better pick given what actually differs between them (cost,
+        // rating, chemistry, and — when it meaningfully differs — tactical
+        // shape). Scores each squad on how many of the three core metrics
+        // it wins; a clean sweep gets a direct "X is the stronger overall
+        // pick" recommendation, while a genuine tradeoff (one cheaper, the
+        // other better) is spelled out as a real choice rather than
+        // forcing a single winner where none clearly exists.
+        function buildComparisonVerdictHtml(a, b, costA, costB, ratingA, ratingB, chemA, chemB, shapeA, shapeB, isAr) {
+            const costDiff = costA - costB;
+            const ratingDiff = ratingA - ratingB;
+            const chemDiff = chemA - chemB;
+
+            const cheaper = costDiff < 0 ? 'A' : (costDiff > 0 ? 'B' : null);
+            const higherRated = ratingDiff > 0.05 ? 'A' : (ratingDiff < -0.05 ? 'B' : null);
+            const betterChem = chemDiff > 0 ? 'A' : (chemDiff < 0 ? 'B' : null);
+            const nameOf = side => side === 'A' ? a.name : b.name;
+            const otherOf = side => side === 'A' ? b.name : a.name;
+
+            let scoreA = 0, scoreB = 0;
+            if (cheaper === 'A') scoreA++; else if (cheaper === 'B') scoreB++;
+            if (higherRated === 'A') scoreA++; else if (higherRated === 'B') scoreB++;
+            if (betterChem === 'A') scoreA++; else if (betterChem === 'B') scoreB++;
+
+            const costAbs = Math.abs(costDiff).toLocaleString();
+            const ratingAbs = Math.abs(ratingDiff).toFixed(1);
+            const chemAbs = Math.abs(chemDiff);
+
+            let mainEn, mainAr;
+            if (scoreA === scoreB) {
+                if (cheaper && higherRated && cheaper !== higherRated) {
+                    mainEn = `These two are close to a toss-up overall — ${nameOf(cheaper)} is ${costAbs} coins cheaper, while ${nameOf(higherRated)} carries a higher average rating (+${ratingAbs}). Go with ${nameOf(cheaper)} if you're optimizing for budget, or ${nameOf(higherRated)} if you want the stronger XI regardless of cost.`;
+                    mainAr = `التشكيلتان متقاربتان جداً بشكل عام — ${nameOf(cheaper)} أرخص بـ${costAbs} كوينز، بينما ${nameOf(higherRated)} يتميز بتقييم أعلى (+${ratingAbs}). اختر ${nameOf(cheaper)} إن كنت تراعي الميزانية، أو ${nameOf(higherRated)} إن أردت التشكيلة الأقوى بغض النظر عن التكلفة.`;
+                } else {
+                    mainEn = `These two squads are close to a toss-up — no clear overall winner on cost, rating, or chemistry.`;
+                    mainAr = `التشكيلتان متقاربتان جداً — لا يوجد فائز واضح من حيث التكلفة أو التقييم أو الكيمياء.`;
+                }
+            } else {
+                const winner = scoreA > scoreB ? 'A' : 'B';
+                const winnerName = nameOf(winner);
+                const loserName = otherOf(winner);
+                const reasonsEn = [], reasonsAr = [];
+                if (cheaper === winner) { reasonsEn.push(`a lower cost (by ${costAbs} coins)`); reasonsAr.push(`تكلفة أقل (بفارق ${costAbs} كوينز)`); }
+                if (higherRated === winner) { reasonsEn.push(`a higher average rating (+${ratingAbs})`); reasonsAr.push(`تقييم أعلى (+${ratingAbs})`); }
+                if (betterChem === winner) { reasonsEn.push(`better chemistry (+${chemAbs})`); reasonsAr.push(`كيمياء أفضل (+${chemAbs})`); }
+                const joinEn = list => list.length > 1 ? list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1] : list[0];
+                const joinAr = list => list.length > 1 ? list.slice(0, -1).join('، ') + ' و' + list[list.length - 1] : list[0];
+                mainEn = `${winnerName} is the stronger overall pick here — it has ${joinEn(reasonsEn)} than ${loserName}.`;
+                mainAr = `${winnerName} هو الخيار الأقوى هنا بشكل عام — فهو يتميز بـ${joinAr(reasonsAr)} مقارنة بـ${loserName}.`;
+            }
+
+            let shapeEn = '', shapeAr = '';
+            if (shapeA && shapeB && shapeA.verdictKey !== shapeB.verdictKey) {
+                const labelEn = { attacking: 'attack-minded', defensive: 'defensive-minded', balanced: 'balanced' };
+                const labelAr = { attacking: 'هجومية الميول', defensive: 'دفاعية الميول', balanced: 'متوازنة' };
+                shapeEn = ` Tactically they differ too: ${a.name} plays ${labelEn[shapeA.verdictKey]} while ${b.name} is ${labelEn[shapeB.verdictKey]} — worth weighing alongside the numbers above.`;
+                shapeAr = ` تكتيكياً هما مختلفتان أيضاً: ${a.name} ${labelAr[shapeA.verdictKey]}، بينما ${b.name} ${labelAr[shapeB.verdictKey]} — عامل يستحق الأخذ بعين الاعتبار إلى جانب الأرقام أعلاه.`;
+            }
+
+            const text = isAr ? (mainAr + shapeAr) : (mainEn + shapeEn);
+            return `
+                <div class="flex items-start gap-2 ${isAr ? 'flex-row-reverse text-right' : ''}">
+                    <i class="fa-solid fa-lightbulb text-fc-gold mt-0.5 shrink-0"></i>
+                    <p class="text-sm text-gray-300 leading-relaxed">${text}</p>
+                </div>
+            `;
+        }
+
         // Builds the grass + markings + trapezoid-outline markup for one
         // comparison pitch — identical visual design to the Squad Builder/
         // View Squad pitches, just parameterized so it can be stamped out
@@ -3695,41 +3768,51 @@
             const shapeA = computeTacticalShapeForSaved(a);
             const shapeB = computeTacticalShapeForSaved(b);
 
+            const chemA = (a.chemistry && a.chemistry.total) || 0;
+            const chemB = (b.chemistry && b.chemistry.total) || 0;
+            const costA = a.totalCost || 0, costB = b.totalCost || 0;
+            const ratingA = a.avgRating || 0, ratingB = b.avgRating || 0;
+
             // Highlights whichever side "wins" a metric (cheaper cost,
             // higher rating, higher chemistry) in green — purely a visual
             // aid, doesn't imply one squad is objectively better overall.
             const betterClass = (valA, valB, lowerIsBetter) => {
                 if (valA === valB) return ['text-white', 'text-white'];
                 const aWins = lowerIsBetter ? valA < valB : valA > valB;
-                return aWins ? ['text-green-400', 'text-gray-400'] : ['text-gray-400', 'text-green-400'];
+                return aWins ? ['text-green-400', 'text-gray-500'] : ['text-gray-500', 'text-green-400'];
             };
-            const chemA = (a.chemistry && a.chemistry.total) || 0;
-            const chemB = (b.chemistry && b.chemistry.total) || 0;
-            const [costAc, costBc] = betterClass(a.totalCost || 0, b.totalCost || 0, true);
-            const [ratingAc, ratingBc] = betterClass(a.avgRating || 0, b.avgRating || 0, false);
+            const [costAc, costBc] = betterClass(costA, costB, true);
+            const [ratingAc, ratingBc] = betterClass(ratingA, ratingB, false);
             const [chemAc, chemBc] = betterClass(chemA, chemB, false);
 
+            // One INLINE row per metric — value / label / value across a
+            // single line, so the two numbers sit right next to each
+            // other for a direct glance-comparison instead of being
+            // stacked in separate blocks under repeated labels.
             const statRow = (label, valA, valB, classA, classB) => `
-                <div class="text-center">
-                    <div class="text-[10px] text-gray-500 uppercase tracking-wide">${label}</div>
-                    <div class="text-lg font-black ${classA}">${valA}</div>
-                </div>
-                <div class="text-center">
-                    <div class="text-[10px] text-gray-500 uppercase tracking-wide">${label}</div>
-                    <div class="text-lg font-black ${classB}">${valB}</div>
+                <div class="grid grid-cols-3 items-center gap-2 bg-fc-dark border border-fc-border rounded-xl px-3 py-2">
+                    <div class="text-base font-black text-right rtl:text-left ${classA}">${valA}</div>
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wide text-center">${label}</div>
+                    <div class="text-base font-black text-left rtl:text-right ${classB}">${valB}</div>
                 </div>
             `;
 
             const statsGrid = document.getElementById('compare-stats-grid');
             if (statsGrid) {
                 statsGrid.innerHTML = `
-                    <div class="text-center pb-1"><span class="text-xs font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${a.formation}</span></div>
-                    <div class="text-center pb-1"><span class="text-xs font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${b.formation}</span></div>
-                    ${statRow(isAr ? 'التكلفة' : 'Cost', (a.totalCost || 0).toLocaleString(), (b.totalCost || 0).toLocaleString(), costAc, costBc)}
-                    ${statRow(isAr ? 'التقييم' : 'Avg Rating', a.avgRating || '--', b.avgRating || '--', ratingAc, ratingBc)}
+                    <div class="grid grid-cols-3 items-center gap-2 pb-1">
+                        <div class="text-center"><span class="text-xs font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${a.formation}</span></div>
+                        <div></div>
+                        <div class="text-center"><span class="text-xs font-bold bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-fc-accent">${b.formation}</span></div>
+                    </div>
+                    ${statRow(isAr ? 'التكلفة' : 'Cost', costA.toLocaleString(), costB.toLocaleString(), costAc, costBc)}
+                    ${statRow(isAr ? 'التقييم' : 'Avg Rating', ratingA || '--', ratingB || '--', ratingAc, ratingBc)}
                     ${statRow(isAr ? 'الكيمياء' : 'Chemistry', `${chemA}/33`, `${chemB}/33`, chemAc, chemBc)}
                 `;
             }
+
+            const verdictEl = document.getElementById('compare-verdict');
+            if (verdictEl) verdictEl.innerHTML = buildComparisonVerdictHtml(a, b, costA, costB, ratingA, ratingB, chemA, chemB, shapeA, shapeB, isAr);
 
             const verdictMeta = {
                 attacking: { icon: 'fa-bolt', color: 'text-red-400', en: 'Attack-Minded', ar: 'ميول هجومية' },
