@@ -1595,6 +1595,27 @@
             return Math.min(100, Math.max(0, ((leftPct - leftEdge) / (rightEdge - leftEdge)) * 100));
         }
 
+        // Some positions appear MULTIPLE times in a formation (up to 3
+        // CBs, up to 2 CDMs) but on Futbin's own pitch every instance
+        // reads as the literal same text ("CDM"), with no way to tell
+        // left from right apart from screen position — so our scraper
+        // (correctly) treated repeats as "already captured" and skipped
+        // them, meaning HEATMAP_RAW only holds ONE instance's specific
+        // heat map per position code, not a true generic/symmetric one.
+        // That single captured instance happens to lean toward the left
+        // side of the pitch. Left-side and center slots can use it as-is;
+        // a RIGHT-side slot showing that same left-leaning zone verbatim
+        // would be showing the wrong side's tendency entirely — so it's
+        // mirrored around the pitch's center line instead. Positions that
+        // WERE scraped separately per side (LM vs RM are visually
+        // distinct labels, so each got its own real capture) are already
+        // correctly one-sided and must NOT be mirrored again here.
+        function mirrorTileLeftForSlot(slot, rawLeft) {
+            const MIRRORABLE = ['CB', 'CDM', 'CM'];
+            if (!MIRRORABLE.includes(slot.pos)) return rawLeft;
+            return slot.left > 55 ? (100 - rawLeft) : rawLeft;
+        }
+
         // Fallback only — used on the rare chance a role/focus our own
         // heuristic assigned has no match in the scraped heat-map catalog
         // (everything in getRoleSuggestion/getRoleCandidates normally
@@ -1640,7 +1661,8 @@
 
             if (zones) {
                 const target = zones[mode];
-                const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
+                const mirroredLeft = mirrorTileLeftForSlot(slot, target.left);
+                const targetLocalLeft = absoluteToLocalLeft(target.top, mirroredLeft);
                 const blendedTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
                 const blendedLeft = slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left;
                 return {
@@ -1723,8 +1745,22 @@
                 const op = OPACITY[focusEntry.levels[i]];
                 if (!op) continue;
                 const tile = grid[i];
-                const localLeft = absoluteToLocalLeft(tile.top, tile.left);
-                html += `<div class="absolute" style="top:${tile.top}%; left:${localLeft}%; width:150px; height:110px; transform:translate(-50%,-50%); background:radial-gradient(circle, rgba(255,100,20,${op}) 0%, rgba(255,100,20,0) 72%); filter:blur(4px);"></div>`;
+                // NOTE: grid tile coordinates are already absolute
+                // container-relative percentages (that's what Futbin's
+                // own viewBox gave us) — used directly here, NOT run
+                // through absoluteToLocalLeft. That conversion exists for
+                // the opposite direction (turning a point into the "local
+                // trapezoid fraction" formationSlots.left expects, so it
+                // can be re-expanded by getSlotPixelPosition later); using
+                // it here would apply that inward correction on data that
+                // was never expanded outward first, pulling every tile
+                // toward the pitch's narrow-top-trapezoid edges and
+                // pushing anything near the sides outside the visible
+                // grass entirely. Only the left/right MIRROR is needed
+                // here, for the same multi-instance-position reason
+                // documented on mirrorTileLeftForSlot.
+                const tileLeft = mirrorTileLeftForSlot(slot, tile.left);
+                html += `<div class="absolute" style="top:${tile.top}%; left:${tileLeft}%; width:150px; height:110px; transform:translate(-50%,-50%); background:radial-gradient(circle, rgba(255,100,20,${op}) 0%, rgba(255,100,20,0) 72%); filter:blur(4px);"></div>`;
             }
             container.innerHTML = html;
         }
