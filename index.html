@@ -1596,12 +1596,13 @@
         }
 
         // Some positions appear MULTIPLE times in a formation (up to 3
-        // CBs, up to 2 CDMs) but on Futbin's own pitch every instance
-        // reads as the literal same text ("CDM"), with no way to tell
-        // left from right apart from screen position — so our scraper
-        // (correctly) treated repeats as "already captured" and skipped
-        // them, meaning HEATMAP_RAW only holds ONE instance's specific
-        // heat map per position code, not a true generic/symmetric one.
+        // CBs, 2 CDMs/CMs/STs) but on Futbin's own pitch every instance
+        // reads as the literal same text ("CDM", "ST"), with no way to
+        // tell left from right apart from screen position — so our
+        // scraper (correctly) treated repeats as "already captured" and
+        // skipped them, meaning HEATMAP_RAW only holds ONE instance's
+        // specific heat map per position code, not a true generic/
+        // symmetric one.
         // That single captured instance happens to lean toward the left
         // side of the pitch. Left-side and center slots can use it as-is;
         // a RIGHT-side slot showing that same left-leaning zone verbatim
@@ -1611,7 +1612,7 @@
         // distinct labels, so each got its own real capture) are already
         // correctly one-sided and must NOT be mirrored again here.
         function mirrorTileLeftForSlot(slot, rawLeft) {
-            const MIRRORABLE = ['CB', 'CDM', 'CM'];
+            const MIRRORABLE = ['CB', 'CDM', 'CM', 'ST'];
             if (!MIRRORABLE.includes(slot.pos)) return rawLeft;
             return slot.left > 55 ? (100 - rawLeft) : rawLeft;
         }
