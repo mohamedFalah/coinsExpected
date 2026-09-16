@@ -1665,83 +1665,99 @@
         // grid offers.
         const HEATMAP_BLEND = { top: 0.7, left: 0.35 };
 
-        // How deep (highest `top`) each zone's own real heat-map target
-        // sits, unclamped — used only as a boundary for the zone in FRONT
-        // of it (see MIN_ZONE_GAP below). GK is deepest, then DEF, then
-        // MID, then ATT — a zone should never end up as deep or deeper
-        // than the zone naturally behind it, even if the raw data would
-        // put it there.
-        const ZONE_DEPTH_ORDER = ['GK', 'DEF', 'MID', 'ATT'];
-        const MIN_ZONE_GAP = 12;
+        // Prevents any two slots' shape-adjusted cards from visually
+        // colliding — computed for the WHOLE formation at once, not
+        // per-slot, because "does this card overlap another" is
+        // inherently a comparison between players, not a property of one
+        // player alone. An earlier version of this only compared the 4
+        // crude zone buckets (GK/DEF/MID/ATT) against each other, which
+        // caught a deep-dropping CDM crowding the back line — but missed
+        // e.g. a Playmaker-focus CM and an attack-focus CAM, which are
+        // BOTH bucketed as "MID" and so were never checked against each
+        // other, even though a Roaming CM can push forward enough to
+        // land almost exactly where the CAM already sits.
+        //
+        // The fix: sort all 11 slots by their own NATURAL (base) depth —
+        // the formation's own design already keeps those well separated
+        // — then walk from most-advanced to deepest, enforcing a minimum
+        // gap against whichever ALREADY-PLACED slot is closest. Two
+        // details matter here:
+        //  1. The gap is only enforced against slots that are also
+        //     horizontally close (HORIZONTAL_SAFE_DIST) — two players on
+        //     opposite wings can legitimately sit at similar depths
+        //     without needing artificial vertical separation between
+        //     them; forcing it anyway would needlessly stretch every
+        //     formation's whole depth range.
+        //  2. Each slot's position is clamped into pitch bounds
+        //     IMMEDIATELY as it's computed (inside the same pass), not
+        //     in a separate pass afterward — otherwise two different
+        //     slots can each independently clamp to the same edge value
+        //     (96) and collide anyway, since neither one "saw" that the
+        //     other had already claimed that exact spot.
+        const MIN_DEPTH_GAP = 10;
+        const HORIZONTAL_SAFE_DIST = 20;
 
-        function getZoneClampedFrontier(zone, mode) {
+        function computeAllShapeTargets(mode) {
             const slots = formationSlots[squadState.formation] || [];
-            const behindZone = ZONE_DEPTH_ORDER[ZONE_DEPTH_ORDER.indexOf(zone) - 1];
-            // Recurses toward GK first — each zone's frontier must reflect
-            // the zone behind it AFTER that zone's own clamp is applied,
-            // not its raw unclamped target. Using the raw value here would
-            // let both zones shift by the same amount and never actually
-            // close the gap between them (the bug this whole function
-            // exists to prevent).
-            const behindFrontier = behindZone ? getZoneClampedFrontier(behindZone, mode) : null;
-            let minTop = Infinity;
-            slots.forEach((s, i) => {
-                if (zoneOfPosition(s.pos) !== zone) return;
-                const roleInfo = squadState.teamRoles && squadState.teamRoles[i];
-                const focusEntry = roleInfo ? getHeatmapFocusEntry(s.pos, roleInfo.role, roleInfo.focus, i) : null;
+            const raw = slots.map((slot, idx) => {
+                const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
+                const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
                 const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
-                const targetTop = zones ? zones[mode].top : s.top;
-                let blendedTop = s.top + (targetTop - s.top) * HEATMAP_BLEND.top;
-                if (behindFrontier !== null) blendedTop = Math.min(blendedTop, behindFrontier - MIN_ZONE_GAP);
-                minTop = Math.min(minTop, blendedTop);
+                if (zones) {
+                    const target = zones[mode];
+                    const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
+                    return {
+                        idx,
+                        baseTop: slot.top,
+                        rawTop: slot.top + (target.top - slot.top) * HEATMAP_BLEND.top,
+                        left: Math.min(96, Math.max(4, slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left))
+                    };
+                }
+                const { dTop, dLeft } = computeShapeOffsetFallback(slot, idx, mode);
+                return {
+                    idx,
+                    baseTop: slot.top,
+                    rawTop: slot.top + dTop,
+                    left: Math.min(96, Math.max(4, slot.left + dLeft))
+                };
             });
-            return minTop === Infinity ? null : minTop;
+
+            // Sort by natural depth (most advanced/lowest top first) —
+            // this is the ordering being preserved, not whatever order
+            // the raw heat-map targets alone would suggest.
+            const sorted = [...raw].sort((a, b) => a.baseTop - b.baseTop);
+
+            let runningMin = -Infinity;
+            const result = {};
+            sorted.forEach(item => {
+                // Only inherit the running minimum from the cascade when
+                // this slot is horizontally close enough to the chain
+                // that produced it — checked against the most recent
+                // ALREADY-PLACED slot, which is enough since the chain
+                // only advances runningMin when a real constraint applied.
+                let constraint = -Infinity;
+                for (let j = sorted.indexOf(item) - 1; j >= 0; j--) {
+                    const prev = sorted[j];
+                    const prevFinal = result[prev.idx];
+                    if (!prevFinal) continue;
+                    if (Math.abs(item.left - prevFinal.left) < HORIZONTAL_SAFE_DIST) {
+                        constraint = Math.max(constraint, prevFinal.top + MIN_DEPTH_GAP);
+                        break; // nearest horizontally-close predecessor is enough
+                    }
+                }
+                const finalTop = Math.min(96, Math.max(6, Math.max(item.rawTop, constraint)));
+                result[item.idx] = { top: finalTop, left: item.left };
+            });
+            return result;
         }
 
         function getShapeAdjustedSlot(slot, idx) {
             const mode = squadState.pitchShapeMode || 'normal';
             if (mode === 'normal') return slot;
-
-            const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
-            const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
-            const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
-
-            if (zones) {
-                const target = zones[mode];
-                const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
-                let blendedTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
-                const blendedLeft = slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left;
-
-                // A Holding-focus CDM (or similar) genuinely drops very
-                // deep when defending — tactically accurate, but if that
-                // puts its CARD at nearly the same depth as the back
-                // line's own card, the two visually collide. Rather than
-                // stop the CDM from dropping deep at all (which would
-                // undersell exactly the tendency this feature exists to
-                // show), cap it at "as deep as the line behind it, minus
-                // a safety gap" — still meaningfully deeper than its own
-                // resting spot, just not literally on top of another
-                // card.
-                const zone = zoneOfPosition(slot.pos);
-                const behindZone = ZONE_DEPTH_ORDER[ZONE_DEPTH_ORDER.indexOf(zone) - 1];
-                if (behindZone) {
-                    const frontier = getZoneClampedFrontier(behindZone, mode);
-                    if (frontier !== null) blendedTop = Math.min(blendedTop, frontier - MIN_ZONE_GAP);
-                }
-
-                return {
-                    ...slot,
-                    top: Math.min(96, Math.max(6, blendedTop)),
-                    left: Math.min(96, Math.max(4, blendedLeft))
-                };
-            }
-
-            const { dTop, dLeft } = computeShapeOffsetFallback(slot, idx, mode);
-            return {
-                ...slot,
-                top: Math.min(96, Math.max(6, slot.top + dTop)),
-                left: Math.min(96, Math.max(4, slot.left + dLeft))
-            };
+            const targets = computeAllShapeTargets(mode);
+            const t = targets[idx];
+            if (!t) return slot;
+            return { ...slot, top: t.top, left: t.left };
         }
 
         // Switches the pitch between its normal formation grid and the
