@@ -7456,13 +7456,13 @@
                     ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' };
             }
             if (pos === 'LM' || pos === 'RM') {
-                if (a.pas >= 78 && a.dri >= 75 && a.def < 65) return { role: 'Wide Playmaker', focus: 'Build-Up',
+                if (a.pas >= 74 && a.dri >= 72 && a.def < 60) return { role: 'Wide Playmaker', focus: 'Build-Up',
                     en: 'Creative, low-defending profile is better drifting inside into pockets to create than holding the touchline.',
                     ar: 'ملفه الإبداعي وضعف دفاعه يجعلانه أفضل في الانزلاق للمساحات الداخلية للصناعة بدلاً من الثبات على الخط الجانبي.' };
-                if (a.def >= 60) return { role: 'Wide Midfielder', focus: 'Support',
+                if (a.def >= 55) return { role: 'Wide Midfielder', focus: 'Support',
                     en: 'Defending is actually usable here, so they can provide width and still track back into a flat defensive line.',
                     ar: 'قدرته الدفاعية قابلة للاستخدام فعلياً، فيمنح الاتساع مع تراجع دفاعي لتشكيل خط دفاعي مسطح عند الحاجة.' };
-                if (a.pac >= 82 && a.dri >= 75 && a.sho < 72) return { role: 'Winger', focus: 'Attack',
+                if (a.pac >= 86 && a.dri >= 78 && a.sho < 68) return { role: 'Winger', focus: 'Attack',
                     en: 'Pace and dribbling to beat the fullback outside, without the shooting that would justify cutting inside instead — stay wide and cross or drive at them.',
                     ar: 'سرعته ومراوغته تكفيان لتخطي الظهير من الخارج، دون تسديد يبرر الدخول للداخل — الأفضل البقاء عريضاً والعرض أو المواجهة المباشرة.' };
                 return { role: 'Inside Forward', focus: 'Attack',
@@ -7611,16 +7611,16 @@
                     ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' }
             ];
             if (pos === 'LM' || pos === 'RM') return [
-                { role: 'Wide Playmaker', focus: 'Build-Up', score: a.pas * 0.35 + a.dri * 0.25 - a.def * 0.2 + 10,
+                { role: 'Wide Playmaker', focus: 'Build-Up', score: a.pas * 0.35 + a.dri * 0.25 - a.def * 0.15 + 14,
                     en: 'Creative, low-defending profile is better drifting inside into pockets to create than holding the touchline.',
                     ar: 'ملفه الإبداعي وضعف دفاعه يجعلانه أفضل في الانزلاق للمساحات الداخلية للصناعة بدلاً من الثبات على الخط الجانبي.' },
-                { role: 'Wide Midfielder', focus: 'Support', score: a.def * 0.3 + a.pas * 0.2 + 12,
+                { role: 'Wide Midfielder', focus: 'Support', score: a.def * 0.35 + a.pas * 0.2 + 14,
                     en: 'Defending is actually usable here, so they can provide width and still track back into a flat defensive line.',
                     ar: 'قدرته الدفاعية قابلة للاستخدام فعلياً، فيمنح الاتساع مع تراجع دفاعي لتشكيل خط دفاعي مسطح عند الحاجة.' },
-                { role: 'Winger', focus: 'Attack', score: a.pac * 0.35 + a.dri * 0.25 + 6,
+                { role: 'Winger', focus: 'Attack', score: a.pac * 0.3 + a.dri * 0.22 + 8,
                     en: 'Pace and dribbling to beat the fullback outside, without the shooting that would justify cutting inside instead — stay wide and cross or drive at them.',
                     ar: 'سرعته ومراوغته تكفيان لتخطي الظهير من الخارج، دون تسديد يبرر الدخول للداخل — الأفضل البقاء عريضاً والعرض أو المواجهة المباشرة.' },
-                { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.3 + a.dri * 0.2 + 8,
+                { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.32 + a.dri * 0.2 + 12,
                     en: 'Low defending means their value is entirely in attack — cutting inside maximizes usable output.',
                     ar: 'ضعف قدرته الدفاعية يعني أن قيمته بالكامل في الهجوم، فالدخول للداخل يعظّم أثره الفعلي.' }
             ];
