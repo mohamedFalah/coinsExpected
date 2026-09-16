@@ -2720,18 +2720,27 @@
         // by-id lookups (finding a specific already-selected player) stay
         // on fc27Database itself — a player already in the squad must
         // stay findable even if the filter changes afterward.
-        function getActiveDatabase() {
+        function getActiveDatabase(options) {
             // Players with price 0 mean EasySBC hasn't priced that card yet
-            // (not "free") — never suggest/select them anywhere until a
-            // real price comes in on a later sync. Applied here, the single
-            // shared candidate-pool source, so it's enforced everywhere at
-            // once (optimizer, alternatives, budget reinvestment, next-best
-            // upgrade, manual search) without needing a check at every call
-            // site.
-            const priced = fc27Database.filter(p => typeof p.price === 'number' && p.price > 0);
-            if (!squadState.leagueFilter || !LEAGUE_FILTER_GROUPS[squadState.leagueFilter]) return priced;
+            // (not "free") — never suggest/select them for actual squad
+            // building until a real price comes in on a later sync. This is
+            // the single shared candidate-pool source, so the filter is
+            // enforced everywhere at once (optimizer, alternatives, budget
+            // reinvestment, next-best upgrade, manual search) by default.
+            //
+            // The standalone "Players" tab is a lookup/reference tool, not
+            // squad building — every scraped player, priced or not, and
+            // every duplicate card, should be visible there. It calls this
+            // with { requirePriced: false } to opt out of the price filter
+            // (there's no squad "candidate pool" concept to dedupe there
+            // either, so no identity filtering applies in that tab at all).
+            const requirePriced = !options || options.requirePriced !== false;
+            const base = requirePriced
+                ? fc27Database.filter(p => typeof p.price === 'number' && p.price > 0)
+                : fc27Database;
+            if (!squadState.leagueFilter || !LEAGUE_FILTER_GROUPS[squadState.leagueFilter]) return base;
             const ids = LEAGUE_FILTER_GROUPS[squadState.leagueFilter].ids;
-            return priced.filter(p => p.leagueId != null && ids.includes(p.leagueId));
+            return base.filter(p => p.leagueId != null && ids.includes(p.leagueId));
         }
 
         // A real-world player's identity, stable across their different
@@ -5214,7 +5223,7 @@
 
             const isAr = currentLanguage === 'ar';
             const coinLabel = isAr ? 'ك' : 'c';
-            const matches = getActiveDatabase().filter(p => p.name.toLowerCase().includes(q)).slice(0, 24);
+            const matches = getActiveDatabase({ requirePriced: false }).filter(p => p.name.toLowerCase().includes(q)).slice(0, 24);
             if (matches.length === 0) {
                 resultsContainer.innerHTML = `<p class="col-span-full text-sm text-gray-500 italic text-center py-6">${isAr ? i18n.ar.noPlayersFoundStandalone : i18n.en.noPlayersFoundStandalone}</p>`;
                 return;
@@ -5238,7 +5247,7 @@
         // names containing quotes/apostrophes can't break the onclick
         // attribute — same safe pattern as addPlayerToSlot('${id}').
         window.openStandalonePlayerModal = function(id) {
-            const player = getActiveDatabase().find(p => p.id === id) || fc27Database.find(p => p.id === id);
+            const player = getActiveDatabase({ requirePriced: false }).find(p => p.id === id) || fc27Database.find(p => p.id === id);
             if (!player) return;
             window.openPlayerModal(player, null, undefined, false, true);
         };
