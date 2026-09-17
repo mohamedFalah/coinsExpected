@@ -264,6 +264,10 @@
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <span data-i18n="navPlayers">Players</span>
                 </button>
+                <button onclick="switchTab('market')" id="nav-market" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-arrow-trend-up"></i>
+                    <span data-i18n="navMarket">Market</span>
+                </button>
             </div>
 
             <!-- Header Budget Widget, Language Switcher & Config Gear Button -->
@@ -310,6 +314,10 @@
             <button onclick="switchTab('players')" id="mob-nav-players" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-magnifying-glass text-base mb-0.5"></i>
                 <span data-i18n="navPlayers">Players</span>
+            </button>
+            <button onclick="switchTab('market')" id="mob-nav-market" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-arrow-trend-up text-base mb-0.5"></i>
+                <span data-i18n="navMarket">Market</span>
             </button>
         </div>
     </header>
@@ -874,6 +882,38 @@
             </div>
         </div>
 
+        <div id="view-market" class="hidden space-y-6">
+            <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-4">
+                <div>
+                    <h2 data-i18n="marketTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Market Flips</h2>
+                    <p data-i18n="marketDesc" class="text-gray-400 text-sm md:text-base">
+                        Scrapes Futbin's live market list and finds players currently priced well under their real value — buy low, wait for the price to settle back up, sell for a profit. Pulled fresh each time you run it, since prices move constantly.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-end gap-3">
+                    <div>
+                        <label data-i18n="marketBudgetLbl" class="block text-xs font-bold text-gray-300 mb-1">Coins available to spend</label>
+                        <input type="number" id="market-budget-input" value="3000" min="0" class="w-40 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div>
+                        <label data-i18n="marketMaxPagesLbl" class="block text-xs font-bold text-gray-300 mb-1">Pages to scan</label>
+                        <input type="number" id="market-maxpages-input" value="10" min="1" max="50" class="w-28 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <button id="market-scrape-btn" onclick="window.runMarketScrape()" class="px-5 py-2.5 rounded-xl bg-fc-accent text-fc-dark text-sm font-black hover:bg-fc-accentHover flex items-center gap-2">
+                        <i class="fa-solid fa-magnifying-glass-dollar"></i>
+                        <span data-i18n="marketScrapeBtn">Scan the Market</span>
+                    </button>
+                </div>
+                <p class="text-[11px] text-gray-500 italic" data-i18n="marketDisclaimer">
+                    Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.
+                </p>
+            </div>
+
+            <div id="market-status" class="hidden bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-1.5 text-xs text-gray-400 font-mono max-h-40 overflow-y-auto hide-scrollbar"></div>
+
+            <div id="market-results"></div>
+        </div>
+
     </main>
 
     <!-- ================= MODALS ================= -->
@@ -1195,6 +1235,13 @@
                 playersDesc: "Look up any player in the database on their own — no squad or slot needed.",
                 searchPlayerPlaceholder: "Type a player name…",
                 noPlayersFoundStandalone: "No matching players found.",
+                navMarket: "Market",
+                marketTitle: "Market Flips",
+                marketDesc: "Scrapes Futbin's live market list and finds players currently priced well under their real value — buy low, wait for the price to settle back up, sell for a profit. Pulled fresh each time you run it, since prices move constantly.",
+                marketBudgetLbl: "Coins available to spend",
+                marketMaxPagesLbl: "Pages to scan",
+                marketScrapeBtn: "Scan the Market",
+                marketDisclaimer: "Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
                 shapeDefendBtn: "DEFENDING",
@@ -1310,6 +1357,13 @@
                 playersDesc: "ابحث عن أي لاعب في قاعدة البيانات بشكل مستقل — دون الحاجة لتشكيلة أو مركز.",
                 searchPlayerPlaceholder: "اكتب اسم اللاعب…",
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
+                navMarket: "السوق",
+                marketTitle: "فرص السوق",
+                marketDesc: "يقوم بجلب قائمة السوق المباشرة من Futbin وإيجاد اللاعبين المُسعّرين حالياً أقل بكثير من قيمتهم الحقيقية — اشترِ بسعر منخفض، انتظر عودة السعر لمعدله، ثم بِعه بربح. يتم الجلب من جديد في كل مرة تشغّل فيها الأداة لأن الأسعار تتغير باستمرار.",
+                marketBudgetLbl: "الكوينز المتاحة للإنفاق",
+                marketMaxPagesLbl: "عدد الصفحات المراد فحصها",
+                marketScrapeBtn: "فحص السوق",
+                marketDisclaimer: "يتم الجلب من صفحة عامة لا تتطلب تسجيل دخول في Futbin. الأسعار تتغير بسرعة والبيع الفعلي عند متوسط EA غير مضمون أبداً، لذا تعامل مع كل رقم هنا كلقطة يجب التحقق منها على Futbin قبل الشراء الفعلي، وليس وعداً.",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
                 shapeDefendBtn: "الدفاع",
@@ -1997,7 +2051,7 @@
         };
 
         window.switchTab = function(tabId) {
-            ['calculator', 'squad', 'database', 'mysquads', 'players'].forEach(t => {
+            ['calculator', 'squad', 'database', 'mysquads', 'players', 'market'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
                 const nav = document.getElementById(`nav-${t}`);
                 const mobNav = document.getElementById(`mob-nav-${t}`);
@@ -9780,6 +9834,296 @@
                 if (squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0) renderFootballPitch();
             }, 200);
         });
+
+        // ===================================================================
+        // MARKET FLIPS — Futbin market scraper
+        // ===================================================================
+        // Scrapes Futbin's public market-player-list pages to find players
+        // currently listed well under their real value (EA's own average
+        // sale price), sized to a coin budget the user wants to flip for
+        // profit. This is a different site than EasySBC and needs its own
+        // fetch/parse logic (HTML table scraping, not a JSON API), but
+        // reuses the same CORS_PROXY as a fallback since a browser fetch()
+        // straight to futbin.com from this page's origin will very likely
+        // be blocked by CORS (and possibly Cloudflare bot protection) —
+        // proxy is tried FIRST here, unlike EasySBC's fetchEasySbcPage,
+        // because a direct cross-origin request to a full HTML site like
+        // this is far less likely to succeed than to a JSON API.
+        const FUTBIN_MARKET_URL = 'https://www.futbin.com/27/market-player-list';
+        const FUTBIN_EA_TAX = 0.05; // EA deducts 5% tax on every successful sale
+
+        function marketLog(msg, type) {
+            const box = document.getElementById('market-status');
+            if (!box) return;
+            box.classList.remove('hidden');
+            const colors = { info: 'text-gray-400', ok: 'text-green-400', warn: 'text-fc-gold', err: 'text-red-400' };
+            const line = document.createElement('div');
+            line.className = colors[type] || colors.info;
+            line.textContent = msg;
+            box.appendChild(line);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function resetMarketLog() {
+            const box = document.getElementById('market-status');
+            if (box) { box.innerHTML = ''; box.classList.add('hidden'); }
+        }
+
+        function parseFutbinCoins(str) {
+            if (!str) return null;
+            str = String(str).replace(/coin/i, '').trim().replace(/,/g, '');
+            const mult = /M$/i.test(str) ? 1e6 : /K$/i.test(str) ? 1e3 : 1;
+            const num = parseFloat(str);
+            return isNaN(num) ? null : Math.round(num * mult);
+        }
+
+        function findFutbinMarketTable(doc) {
+            return [...doc.querySelectorAll('table')]
+                .find(t => /player/i.test(t.querySelector('thead')?.textContent || t.rows[0]?.textContent || ''));
+        }
+
+        function buildFutbinColumnMap(table) {
+            const headerRow = table.querySelector('thead tr') || table.rows[0];
+            const cells = [...headerRow.children];
+            const map = {};
+            cells.forEach((c, i) => {
+                const t = c.textContent.trim().toLowerCase();
+                if (t.includes('player')) map.player = i;
+                else if (t.includes('difference')) map.difference = i;
+                else if (t.includes('ea average')) map.eaAverage = i;
+                else if (t.includes('after tax')) map.afterTax = i;
+                else if (t.includes('trend')) map.trend = i;
+                else if (t.includes('price')) map.price = i;
+            });
+            return map;
+        }
+
+        function extractFutbinRows(doc) {
+            const table = findFutbinMarketTable(doc);
+            if (!table) return [];
+            const colMap = buildFutbinColumnMap(table);
+            const body = table.tBodies[0] || table;
+            return [...body.rows].map(row => {
+                const cells = [...row.cells];
+                const text = (i) => (i != null && cells[i]) ? cells[i].textContent.trim() : null;
+                const name = (text(colMap.player) || '').split('\n')[0].trim();
+                return {
+                    name,
+                    price: parseFutbinCoins(text(colMap.price)),
+                    eaAverage: parseFutbinCoins(text(colMap.eaAverage)),
+                    diffText: text(colMap.difference),
+                    afterTax: parseFutbinCoins(text(colMap.afterTax)),
+                };
+            }).filter(r => r.name && r.price != null);
+        }
+
+        function getFutbinNextPageUrl(doc, currentUrl) {
+            const cur = new URL(currentUrl);
+            const curPage = parseInt(cur.searchParams.get('page') || '1', 10);
+            const candidates = [...doc.querySelectorAll('a[href*="page="]')];
+            for (const a of candidates) {
+                try {
+                    const u = new URL(a.getAttribute('href'), currentUrl);
+                    if (parseInt(u.searchParams.get('page'), 10) === curPage + 1) return u.href;
+                } catch (e) {}
+            }
+            cur.searchParams.set('page', curPage + 1);
+            return cur.href;
+        }
+
+        // Fetches one market page as parsed HTML, proxy-first (see comment
+        // above), falling back to a direct request in case the proxy is
+        // down and the browser happens to be able to reach futbin.com
+        // directly after all.
+        async function fetchFutbinPage(pageUrl) {
+            const strategies = [
+                { url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'proxy' },
+                { url: pageUrl, label: 'direct' }
+            ];
+            let lastErr = null;
+            for (const s of strategies) {
+                try {
+                    const res = await fetch(s.url);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const html = await res.text();
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    return { doc, usedProxy: s.label === 'proxy' };
+                } catch (err) {
+                    lastErr = err;
+                }
+            }
+            throw lastErr || new Error('All fetch strategies failed');
+        }
+
+        async function scrapeFutbinMarketPages(maxPages, delayMs) {
+            const delay = (ms) => new Promise(r => setTimeout(r, ms));
+            let url = FUTBIN_MARKET_URL;
+            let all = [];
+            const seen = new Set();
+
+            for (let i = 0; i < maxPages; i++) {
+                if (seen.has(url)) break;
+                seen.add(url);
+
+                let doc;
+                try {
+                    const result = await fetchFutbinPage(url);
+                    doc = result.doc;
+                    if (i === 0) {
+                        marketLog(result.usedProxy
+                            ? 'Reached Futbin via the CORS proxy.'
+                            : 'Reached Futbin directly.', 'ok');
+                    }
+                } catch (err) {
+                    marketLog(`Stopped at page ${i + 1}: couldn't reach Futbin (${err.message}). This can happen if Futbin's Cloudflare protection blocks the request, or the proxy is temporarily down.`, 'err');
+                    break;
+                }
+
+                const rows = extractFutbinRows(doc);
+                if (rows.length === 0) {
+                    marketLog(`No player rows found on page ${i + 1} — Futbin may have changed their page layout, or blocked this request with a challenge page instead of real content.`, 'warn');
+                    break;
+                }
+                all.push(...rows);
+                marketLog(`Page ${i + 1}: ${rows.length} players found (total: ${all.length}).`, 'info');
+
+                const next = getFutbinNextPageUrl(doc, url);
+                if (!next || next === url) break;
+                url = next;
+                if (i < maxPages - 1) await delay(delayMs);
+            }
+
+            return all;
+        }
+
+        // Turns the raw scraped numbers into an actionable flip: expected
+        // profit assumes selling back up near Futbin's own tracked EA
+        // average price, minus the 5% tax EA takes on every sale — the
+        // same math anyone doing this manually would do by hand. Sorted by
+        // this margin, not the scraped "Difference" column, since that
+        // column's exact basis varies and margin-on-your-money is what
+        // actually answers "is this worth doing".
+        function computeFlipOpportunities(rows, budget) {
+            return rows
+                .filter(r => r.price > 0 && r.price <= budget && typeof r.eaAverage === 'number' && r.eaAverage > 0)
+                .map(r => {
+                    const projectedSale = Math.round(r.eaAverage * (1 - FUTBIN_EA_TAX));
+                    const profit = projectedSale - r.price;
+                    const marginPct = (profit / r.price) * 100;
+                    return { ...r, projectedSale, profit, marginPct };
+                })
+                .filter(r => r.profit > 0)
+                .sort((a, b) => b.marginPct - a.marginPct);
+        }
+
+        // The "why" text — a real trading read, not a stat readout.
+        // Contextualizes the gap between what you'd pay now and what the
+        // card actually tends to sell for, in plain buy-low-sell-high
+        // terms, tiered by how strong the margin actually is.
+        function buildFlipNote(opp, isAr) {
+            const { name, price, eaAverage, projectedSale, profit, marginPct } = opp;
+            const pct = marginPct.toFixed(0);
+
+            let tierEn, tierAr;
+            if (marginPct >= 50) {
+                tierEn = `That's a rare gap — ${name} is sitting well below where it normally trades, the kind of listing that usually gets bought up fast.`;
+                tierAr = `هذه فجوة نادرة — ${name} مُدرج حالياً أقل بكثير من سعره المعتاد، وهذا النوع من العروض عادة ما يُشترى بسرعة.`;
+            } else if (marginPct >= 25) {
+                tierEn = `A genuinely strong flip — enough room here to comfortably absorb the price moving a little against you and still walk away ahead.`;
+                tierAr = `صفقة قوية فعلاً — هناك هامش كافٍ لتحمّل تحرك بسيط في السعر ضدك وتظل رابحاً في النهاية.`;
+            } else if (marginPct >= 10) {
+                tierEn = `A solid, workable margin — worth doing, though not the kind of gap you'd build your whole budget around.`;
+                tierAr = `هامش جيد وقابل للتنفيذ — يستحق المحاولة، لكنه ليس النوع الذي تبني عليه كامل ميزانيتك.`;
+            } else {
+                tierEn = `The margin is thin enough that a slow sale or a small dip in price could eat the profit entirely — treat this as a maybe, not a lock.`;
+                tierAr = `الهامش ضئيل بما يكفي لأن يمحوه بيع بطيء أو انخفاض بسيط في السعر — تعامل معها كخيار محتمل وليس مؤكداً.`;
+            }
+
+            return isAr
+                ? `مُدرج حالياً بسعر ${price.toLocaleString()} كوينز مقابل متوسط EA البالغ ${eaAverage.toLocaleString()} كوينز. لو باع قريباً من متوسطه — وبعد خصم ضريبة الـ5% من EA (صافي ${projectedSale.toLocaleString()} كوينز) — يبقى لك ربح صافٍ يقارب ${profit.toLocaleString()} كوينز، أي عائد نحو ${pct}% على مالك في هذه الصفقة وحدها. ${tierAr}`
+                : `Currently listed at ${price.toLocaleString()} coins against a ${eaAverage.toLocaleString()}-coin EA average. If it sells back up near that average — after EA's 5% cut (netting ${projectedSale.toLocaleString()} coins) — you'd clear roughly ${profit.toLocaleString()} coins, about a ${pct}% return on your money for this one flip. ${tierEn}`;
+        }
+
+        function renderMarketResults(opportunities, scannedCount, isAr) {
+            const container = document.getElementById('market-results');
+            if (!container) return;
+
+            if (opportunities.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-6 text-center text-sm text-gray-400">
+                        ${isAr
+                            ? `تم فحص ${scannedCount} لاعب لكن لم يتم إيجاد فرصة ربح ضمن ميزانيتك الحالية. جرّب زيادة عدد الصفحات أو رفع الميزانية قليلاً.`
+                            : `Scanned ${scannedCount} listings but found no profitable flip within your current budget. Try scanning more pages or raising the budget a bit.`}
+                    </div>
+                `;
+                return;
+            }
+
+            const rows = opportunities.slice(0, 40).map((opp, i) => `
+                <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-2">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-black text-gray-500 w-5 text-center">#${i + 1}</span>
+                            <span class="font-extrabold text-white text-sm">${opp.name}</span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-400">${isAr ? 'السعر' : 'Buy'}: <span class="font-bold text-white">${opp.price.toLocaleString()}c</span></span>
+                            <span class="text-gray-400">${isAr ? 'المتوسط' : 'EA Avg'}: <span class="font-bold text-fc-gold">${opp.eaAverage.toLocaleString()}c</span></span>
+                            <span class="font-black text-green-400">+${opp.profit.toLocaleString()}c (${opp.marginPct.toFixed(0)}%)</span>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-300 leading-relaxed">${buildFlipNote(opp, isAr)}</p>
+                </div>
+            `).join('');
+
+            container.innerHTML = `
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${Math.min(40, opportunities.length)} فرصة من أصل ${scannedCount} تم فحصهم` : `Top ${Math.min(40, opportunities.length)} of ${scannedCount} scanned`}</span>
+                </div>
+                <div class="space-y-2.5">${rows}</div>
+            `;
+        }
+
+        window.runMarketScrape = async function() {
+            const btn = document.getElementById('market-scrape-btn');
+            const budgetInput = document.getElementById('market-budget-input');
+            const maxPagesInput = document.getElementById('market-maxpages-input');
+            const isAr = currentLanguage === 'ar';
+
+            const budget = Math.max(0, parseInt(budgetInput && budgetInput.value) || 3000);
+            const maxPages = Math.max(1, Math.min(50, parseInt(maxPagesInput && maxPagesInput.value) || 10));
+
+            resetMarketLog();
+            const resultsContainer = document.getElementById('market-results');
+            if (resultsContainer) resultsContainer.innerHTML = '';
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-70', 'cursor-wait');
+                btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>${isAr ? 'جارٍ الفحص…' : 'Scanning…'}</span>`;
+            }
+
+            try {
+                const rows = await scrapeFutbinMarketPages(maxPages, 1200);
+                if (rows.length === 0) {
+                    marketLog(isAr ? 'لم يتم جلب أي بيانات — راجع الرسائل أعلاه.' : 'No data was retrieved at all — see the messages above.', 'err');
+                } else {
+                    const opportunities = computeFlipOpportunities(rows, budget);
+                    marketLog(isAr
+                        ? `اكتمل الفحص: ${rows.length} قائمة، ${opportunities.length} فرصة ربح ضمن ${budget.toLocaleString()} كوينز.`
+                        : `Done: ${rows.length} listings scanned, ${opportunities.length} profitable flip(s) found within ${budget.toLocaleString()} coins.`, 'ok');
+                    renderMarketResults(opportunities, rows.length, isAr);
+                }
+            } catch (err) {
+                marketLog((isAr ? 'خطأ غير متوقع: ' : 'Unexpected error: ') + err.message, 'err');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-70', 'cursor-wait');
+                    btn.innerHTML = `<i class="fa-solid fa-magnifying-glass-dollar"></i> <span data-i18n="marketScrapeBtn">${isAr ? 'فحص السوق' : 'Scan the Market'}</span>`;
+                }
+            }
+        };
+
 
         window.addEventListener('DOMContentLoaded', async () => {
             window.renderPresetPoints();
