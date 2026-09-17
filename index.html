@@ -5126,17 +5126,13 @@
             await delay(280); // matches the CSS animation's own duration
         }
 
-        // Puts every still-pending (not yet revealed) slot into its
-        // continuous spin loop. Has to be re-called after EVERY
-        // renderFootballPitch() during the sequence — a full render wipes
-        // the whole pitch's DOM and rebuilds it from scratch, so any class
-        // applied for pure animation state (not derived from squadState
-        // data) doesn't survive a render on its own.
-        function spinPendingSlots(container, pendingSlotIndices) {
-            pendingSlotIndices.forEach(idx => {
-                const wrapper = container.querySelector(`[data-slot-idx="${idx}"]`);
-                if (wrapper) wrapper.classList.add('anim-card-spinning');
-            });
+        // Starts the spin loop on exactly ONE slot — the one currently
+        // being decided. Never more than one at a time: that's the whole
+        // point of using the pitch itself as the "working" indicator
+        // instead of a generic spinner.
+        function spinOneSlot(container, slotIdx) {
+            const wrapper = container.querySelector(`[data-slot-idx="${slotIdx}"]`);
+            if (wrapper) wrapper.classList.add('anim-card-spinning');
         }
 
         async function animateSquadReveal(callback) {
@@ -5149,36 +5145,32 @@
             const slots = formationSlots[squadState.formation];
 
             // Starting point: only the players already there before this
-            // build (locked players) are shown normally — every OTHER slot
-            // starts empty AND immediately spinning, so the whole pitch
-            // reads as "working" from the very first frame, before the
-            // first real pick even lands.
+            // build (locked players) are shown — every other slot starts
+            // plainly empty, not yet spinning. Only the slot about to be
+            // decided spins, one at a time, as the sequence below reaches it.
             const startXI = {};
-            const pending = new Set();
             slots.forEach((slot, idx) => {
                 const p = trueFinalXI[idx];
-                if (p && squadState.lockedIds && squadState.lockedIds.has(p.id)) {
-                    startXI[idx] = p;
-                } else {
-                    pending.add(idx);
-                }
+                if (p && squadState.lockedIds && squadState.lockedIds.has(p.id)) startXI[idx] = p;
             });
             squadState.selectedXI = startXI;
             squadState.chemistry = calculateSquadChemistry();
             renderFootballPitch();
-            spinPendingSlots(container, pending);
-            await delay(500); // let the spin-up read clearly before the first reveal
 
-            const REVEAL_GAP_MS = 450;
-            const SWAP_INSERT_GAP_MS = 500;
+            const SPIN_MS = 500;
+            const REVEAL_GAP_MS = 350;
+            const SWAP_SPIN_MS = 450;
+            const SWAP_INSERT_GAP_MS = 400;
 
             for (const { slotIdx, player } of anim.initialLog) {
+                // This slot alone spins while its pick is "being decided"...
+                spinOneSlot(container, slotIdx);
+                await delay(SPIN_MS);
+                // ...then stops and flips to reveal the real player.
                 squadState.selectedXI[slotIdx] = player;
                 squadState.chemistry = calculateSquadChemistry();
                 renderFootballPitch();
-                pending.delete(slotIdx);
-                spinPendingSlots(container, pending); // re-spin everyone still waiting
-                flashCardIn(container, slotIdx); // this one stops spinning and flips to reveal
+                flashCardIn(container, slotIdx);
                 await delay(REVEAL_GAP_MS);
             }
 
@@ -5190,9 +5182,10 @@
                 squadState.selectedXI[slotIdx] = null;
                 squadState.chemistry = calculateSquadChemistry();
                 renderFootballPitch();
-                // ...then the real replacement the chemistry/budget pass
-                // swapped it for taking that same slot, with the same
-                // flip-reveal as every other pick.
+                // Spin that same now-empty slot briefly while its real
+                // replacement is "being decided", then reveal it.
+                spinOneSlot(container, slotIdx);
+                await delay(SWAP_SPIN_MS);
                 squadState.selectedXI[slotIdx] = to;
                 squadState.chemistry = calculateSquadChemistry();
                 renderFootballPitch();
