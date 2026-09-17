@@ -10204,34 +10204,6 @@
                 .sort((a, b) => b.marginPct - a.marginPct);
         }
 
-        // The "why" text — a real trading read, not a stat readout.
-        // Contextualizes the gap between what you'd pay now and what the
-        // card actually tends to sell for, in plain buy-low-sell-high
-        // terms, tiered by how strong the margin actually is.
-        function buildFlipNote(opp, isAr) {
-            const { name, price, eaAverage, projectedSale, profit, marginPct } = opp;
-            const pct = marginPct.toFixed(0);
-
-            let tierEn, tierAr;
-            if (marginPct >= 50) {
-                tierEn = `That's a rare gap — ${name} is sitting well below where it normally trades, the kind of listing that usually gets bought up fast.`;
-                tierAr = `هذه فجوة نادرة — ${name} مُدرج حالياً أقل بكثير من سعره المعتاد، وهذا النوع من العروض عادة ما يُشترى بسرعة.`;
-            } else if (marginPct >= 25) {
-                tierEn = `A genuinely strong flip — enough room here to comfortably absorb the price moving a little against you and still walk away ahead.`;
-                tierAr = `صفقة قوية فعلاً — هناك هامش كافٍ لتحمّل تحرك بسيط في السعر ضدك وتظل رابحاً في النهاية.`;
-            } else if (marginPct >= 10) {
-                tierEn = `A solid, workable margin — worth doing, though not the kind of gap you'd build your whole budget around.`;
-                tierAr = `هامش جيد وقابل للتنفيذ — يستحق المحاولة، لكنه ليس النوع الذي تبني عليه كامل ميزانيتك.`;
-            } else {
-                tierEn = `The margin is thin enough that a slow sale or a small dip in price could eat the profit entirely — treat this as a maybe, not a lock.`;
-                tierAr = `الهامش ضئيل بما يكفي لأن يمحوه بيع بطيء أو انخفاض بسيط في السعر — تعامل معها كخيار محتمل وليس مؤكداً.`;
-            }
-
-            return isAr
-                ? `مُدرج حالياً بسعر ${price.toLocaleString()} كوينز مقابل متوسط EA البالغ ${eaAverage.toLocaleString()} كوينز. لو باع قريباً من متوسطه — وبعد خصم ضريبة الـ5% من EA (صافي ${projectedSale.toLocaleString()} كوينز) — يبقى لك ربح صافٍ يقارب ${profit.toLocaleString()} كوينز، أي عائد نحو ${pct}% على مالك في هذه الصفقة وحدها. ${tierAr}`
-                : `Currently listed at ${price.toLocaleString()} coins against a ${eaAverage.toLocaleString()}-coin EA average. If it sells back up near that average — after EA's 5% cut (netting ${projectedSale.toLocaleString()} coins) — you'd clear roughly ${profit.toLocaleString()} coins, about a ${pct}% return on your money for this one flip. ${tierEn}`;
-        }
-
         function renderMarketResults(opportunities, scannedCount, isAr) {
             const container = document.getElementById('market-results');
             if (!container) return;
@@ -10247,28 +10219,57 @@
                 return;
             }
 
-            const rows = opportunities.slice(0, 40).map((opp, i) => `
-                <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-2">
-                    <div class="flex items-center justify-between flex-wrap gap-2">
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-black text-gray-500 w-5 text-center">#${i + 1}</span>
-                            <span class="font-extrabold text-white text-sm">${opp.name}</span>
-                        </div>
-                        <div class="flex items-center gap-3 text-xs">
-                            <span class="text-gray-400">${isAr ? 'السعر' : 'Buy'}: <span class="font-bold text-white">${opp.price.toLocaleString()}c</span></span>
-                            <span class="text-gray-400">${isAr ? 'المتوسط' : 'EA Avg'}: <span class="font-bold text-fc-gold">${opp.eaAverage.toLocaleString()}c</span></span>
-                            <span class="font-black text-green-400">+${opp.profit.toLocaleString()}c (${opp.marginPct.toFixed(0)}%)</span>
-                        </div>
-                    </div>
-                    <p class="text-xs text-gray-300 leading-relaxed">${buildFlipNote(opp, isAr)}</p>
-                </div>
-            `).join('');
+            // Numbers-first table — a name plus five aligned columns, no
+            // prose per row. Margin color-scaled (green = strong, gray =
+            // thin) is the only "read this at a glance" cue; a fuller take
+            // on any one flip is a click away in the player modal/Futbin
+            // itself, not something to force everyone to read past here.
+            const shown = opportunities.slice(0, 60);
+            const rowsHtml = shown.map((opp, i) => {
+                const marginColor = opp.marginPct >= 50 ? 'text-green-400' : opp.marginPct >= 25 ? 'text-green-400' : opp.marginPct >= 10 ? 'text-fc-gold' : 'text-gray-400';
+                return `
+                <tr class="border-b border-fc-border/60 hover:bg-fc-cardHover/40">
+                    <td class="py-2 pr-2 text-[11px] font-black text-gray-500 text-center">${i + 1}</td>
+                    <td class="py-2 px-2 font-bold text-white text-xs truncate max-w-[160px]">${opp.name}</td>
+                    <td class="py-2 px-2 text-xs text-right font-bold text-white whitespace-nowrap">${opp.price.toLocaleString()}</td>
+                    <td class="py-2 px-2 text-xs text-right font-bold text-fc-gold whitespace-nowrap">${opp.eaAverage.toLocaleString()}</td>
+                    <td class="py-2 px-2 text-xs text-right text-gray-400 whitespace-nowrap">${opp.projectedSale.toLocaleString()}</td>
+                    <td class="py-2 px-2 text-xs text-right font-black text-green-400 whitespace-nowrap">+${opp.profit.toLocaleString()}</td>
+                    <td class="py-2 pl-2 text-xs text-right font-black ${marginColor} whitespace-nowrap">${opp.marginPct.toFixed(0)}%</td>
+                </tr>
+            `;
+            }).join('');
+
+            const headBuy = isAr ? 'الشراء' : 'Buy';
+            const headEaAvg = isAr ? 'متوسط EA' : 'EA Avg';
+            const headNet = isAr ? 'صافي البيع' : 'Net Sale';
+            const headProfit = isAr ? 'الربح' : 'Profit';
+            const headMargin = isAr ? 'الهامش' : 'Margin';
+            const headName = isAr ? 'اللاعب' : 'Player';
 
             container.innerHTML = `
                 <div class="flex items-center justify-between mb-3">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${Math.min(40, opportunities.length)} فرصة من أصل ${scannedCount} تم فحصهم` : `Top ${Math.min(40, opportunities.length)} of ${scannedCount} scanned`}</span>
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${shown.length} فرصة من أصل ${scannedCount} تم فحصهم` : `Top ${shown.length} of ${scannedCount} scanned`}</span>
+                    <span class="text-[10px] text-gray-500">${isAr ? 'صافي البيع = متوسط EA بعد خصم ضريبة 5%' : 'Net Sale = EA Avg after 5% EA tax'}</span>
                 </div>
-                <div class="space-y-2.5">${rows}</div>
+                <div class="bg-fc-dark/80 border border-fc-border rounded-2xl overflow-hidden">
+                    <div class="overflow-x-auto hide-scrollbar">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="border-b border-fc-border bg-fc-dark">
+                                    <th class="py-2 pr-2 text-[10px] font-bold text-gray-500 uppercase text-center">#</th>
+                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-left rtl:text-right">${headName}</th>
+                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headBuy}</th>
+                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headEaAvg}</th>
+                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headNet}</th>
+                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headProfit}</th>
+                                    <th class="py-2 pl-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headMargin}</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
             `;
         }
 
