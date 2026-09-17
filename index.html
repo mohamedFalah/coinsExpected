@@ -911,6 +911,31 @@
 
             <div id="market-status" class="hidden bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-1.5 text-xs text-gray-400 font-mono max-h-40 overflow-y-auto hide-scrollbar"></div>
 
+            <!-- Fallback for when Futbin blocks the automated fetch (its
+                 Cloudflare protection often blocks requests coming from
+                 public proxy IPs, even though the same page loads fine in
+                 a real browser). Pasting the page's own HTML sidesteps
+                 that entirely — it's the user's real browser session
+                 doing the fetch, not a datacenter proxy, so it always
+                 works whenever the automated scan doesn't. -->
+            <details id="market-paste-fallback" class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4">
+                <summary class="text-xs font-bold text-gray-400 cursor-pointer select-none" data-i18n="marketPasteSummary">Scan blocked? Paste the page's HTML instead</summary>
+                <div class="mt-3 space-y-2">
+                    <p class="text-[11px] text-gray-500" data-i18n="marketPasteHelp">
+                        Open the market page in a normal browser tab, right-click anywhere on it → "View Page Source" (or press Ctrl/Cmd+U), select all, copy, and paste it below. This uses your own browser to load the page, so it isn't affected by whatever is blocking the automated scan above.
+                    </p>
+                    <a href="https://www.futbin.com/27/market-player-list" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-fc-accent hover:underline">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                        <span data-i18n="marketOpenFutbinLink">Open the Futbin market page</span>
+                    </a>
+                    <textarea id="market-paste-input" rows="4" placeholder="Paste page HTML here…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-fc-accent"></textarea>
+                    <button onclick="window.parseMarketPaste()" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-200 hover:text-fc-accent hover:border-fc-accent/50">
+                        <i class="fa-solid fa-code"></i>
+                        <span data-i18n="marketParsePasteBtn">Parse This Page</span>
+                    </button>
+                </div>
+            </details>
+
             <div id="market-results"></div>
         </div>
 
@@ -1242,6 +1267,10 @@
                 marketMaxPagesLbl: "Pages to scan",
                 marketScrapeBtn: "Scan the Market",
                 marketDisclaimer: "Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.",
+                marketPasteSummary: "Scan blocked? Paste the page's HTML instead",
+                marketPasteHelp: "Open the market page in a normal browser tab, right-click anywhere on it → \"View Page Source\" (or press Ctrl/Cmd+U), select all, copy, and paste it below. This uses your own browser to load the page, so it isn't affected by whatever is blocking the automated scan above.",
+                marketOpenFutbinLink: "Open the Futbin market page",
+                marketParsePasteBtn: "Parse This Page",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
                 shapeDefendBtn: "DEFENDING",
@@ -1364,6 +1393,10 @@
                 marketMaxPagesLbl: "عدد الصفحات المراد فحصها",
                 marketScrapeBtn: "فحص السوق",
                 marketDisclaimer: "يتم الجلب من صفحة عامة لا تتطلب تسجيل دخول في Futbin. الأسعار تتغير بسرعة والبيع الفعلي عند متوسط EA غير مضمون أبداً، لذا تعامل مع كل رقم هنا كلقطة يجب التحقق منها على Futbin قبل الشراء الفعلي، وليس وعداً.",
+                marketPasteSummary: "تم حظر الفحص؟ الصق كود HTML للصفحة بدلاً من ذلك",
+                marketPasteHelp: "افتح صفحة السوق في تبويب متصفح عادي، انقر بزر الفأرة الأيمن في أي مكان فيها ← «عرض مصدر الصفحة» (أو اضغط Ctrl/Cmd+U)، حدد الكل، انسخ، والصق أدناه. هذا يستخدم متصفحك الخاص لتحميل الصفحة، لذا لا يتأثر بما يمنع الفحص التلقائي أعلاه.",
+                marketOpenFutbinLink: "افتح صفحة سوق Futbin",
+                marketParsePasteBtn: "تحليل هذه الصفحة",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
                 shapeDefendBtn: "الدفاع",
@@ -9931,13 +9964,25 @@
             return cur.href;
         }
 
-        // Fetches one market page as parsed HTML, proxy-first (see comment
-        // above), falling back to a direct request in case the proxy is
-        // down and the browser happens to be able to reach futbin.com
-        // directly after all.
+        // Fetches one market page as parsed HTML. Tries several public
+        // CORS proxies in turn (Futbin's Cloudflare protection sometimes
+        // blocks one proxy's IP range but not another's, and public
+        // proxies themselves go down or get rate-limited independently of
+        // each other), then a direct request as a last resort. A "success"
+        // that's actually a Cloudflare challenge page (not real market
+        // data) is detected and treated as a failure so the caller gets an
+        // honest error instead of silently parsing zero rows.
+        function looksLikeCloudflareChallenge(html) {
+            if (!html) return false;
+            const markers = ['Just a moment', 'cf-chl', 'Attention Required', 'cf-browser-verification', 'Checking your browser'];
+            return markers.some(m => html.includes(m));
+        }
+
         async function fetchFutbinPage(pageUrl) {
             const strategies = [
-                { url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'proxy' },
+                { url: 'https://corsproxy.io/?url=' + encodeURIComponent(pageUrl), label: 'corsproxy.io' },
+                { url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'allorigins' },
+                { url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(pageUrl), label: 'codetabs' },
                 { url: pageUrl, label: 'direct' }
             ];
             let lastErr = null;
@@ -9946,8 +9991,11 @@
                     const res = await fetch(s.url);
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const html = await res.text();
+                    if (looksLikeCloudflareChallenge(html)) {
+                        throw new Error(`${s.label} reached Futbin, but got a Cloudflare "are you human" challenge page instead of real content`);
+                    }
                     const doc = new DOMParser().parseFromString(html, 'text/html');
-                    return { doc, usedProxy: s.label === 'proxy' };
+                    return { doc, usedProxy: s.label };
                 } catch (err) {
                     lastErr = err;
                 }
@@ -9970,9 +10018,9 @@
                     const result = await fetchFutbinPage(url);
                     doc = result.doc;
                     if (i === 0) {
-                        marketLog(result.usedProxy
-                            ? 'Reached Futbin via the CORS proxy.'
-                            : 'Reached Futbin directly.', 'ok');
+                        marketLog(result.usedProxy === 'direct'
+                            ? 'Reached Futbin directly.'
+                            : `Reached Futbin via the ${result.usedProxy} proxy.`, 'ok');
                     }
                 } catch (err) {
                     marketLog(`Stopped at page ${i + 1}: couldn't reach Futbin (${err.message}). This can happen if Futbin's Cloudflare protection blocks the request, or the proxy is temporarily down.`, 'err');
@@ -10083,6 +10131,45 @@
                 <div class="space-y-2.5">${rows}</div>
             `;
         }
+
+        // Parses a manually pasted copy of the market page's HTML — the
+        // reliable fallback when the automated fetch gets blocked. Since
+        // this is the user's own browser loading the real page (not a
+        // datacenter proxy IP), it's never subject to whatever is blocking
+        // the automated scan, and reuses the exact same row-extraction and
+        // profit-scoring logic so results are identical either way.
+        window.parseMarketPaste = function() {
+            const isAr = currentLanguage === 'ar';
+            const pasteInput = document.getElementById('market-paste-input');
+            const budgetInput = document.getElementById('market-budget-input');
+            const html = pasteInput ? pasteInput.value.trim() : '';
+
+            resetMarketLog();
+            const resultsContainer = document.getElementById('market-results');
+            if (resultsContainer) resultsContainer.innerHTML = '';
+
+            if (!html) {
+                marketLog(isAr ? 'الصق كود HTML أولاً.' : 'Paste the page HTML first.', 'warn');
+                return;
+            }
+
+            const budget = Math.max(0, parseInt(budgetInput && budgetInput.value) || 3000);
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const rows = extractFutbinRows(doc);
+
+            if (rows.length === 0) {
+                marketLog(isAr
+                    ? 'لم يتم إيجاد أي صفوف لاعبين في الكود الملصق — تأكد من نسخ كود المصدر الكامل لصفحة قائمة السوق (وليس صفحة أخرى)، أو أن Futbin غيّر شكل الصفحة.'
+                    : "No player rows found in the pasted HTML — make sure you copied the full page source of the market list page (not a different page), or Futbin may have changed their layout.", 'err');
+                return;
+            }
+
+            const opportunities = computeFlipOpportunities(rows, budget);
+            marketLog(isAr
+                ? `تم تحليل الصفحة الملصقة: ${rows.length} قائمة، ${opportunities.length} فرصة ربح ضمن ${budget.toLocaleString()} كوينز.`
+                : `Parsed the pasted page: ${rows.length} listings, ${opportunities.length} profitable flip(s) found within ${budget.toLocaleString()} coins.`, 'ok');
+            renderMarketResults(opportunities, rows.length, isAr);
+        };
 
         window.runMarketScrape = async function() {
             const btn = document.getElementById('market-scrape-btn');
