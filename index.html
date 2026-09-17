@@ -914,25 +914,35 @@
             <!-- Fallback for when Futbin blocks the automated fetch (its
                  Cloudflare protection often blocks requests coming from
                  public proxy IPs, even though the same page loads fine in
-                 a real browser). Pasting the page's own HTML sidesteps
-                 that entirely — it's the user's real browser session
-                 doing the fetch, not a datacenter proxy, so it always
-                 works whenever the automated scan doesn't. -->
+                 a real browser). Running a script directly on Futbin's own
+                 site sidesteps that entirely — same-origin, the user's
+                 real session, no proxy involved — and does EVERY page in
+                 one run, unlike pasting one page's HTML at a time. The
+                 script ends by copying its full result to the clipboard,
+                 so the whole fallback is one script run + one paste. -->
             <details id="market-paste-fallback" class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4">
-                <summary class="text-xs font-bold text-gray-400 cursor-pointer select-none" data-i18n="marketPasteSummary">Scan blocked? Paste the page's HTML instead</summary>
-                <div class="mt-3 space-y-2">
-                    <p class="text-[11px] text-gray-500" data-i18n="marketPasteHelp">
-                        Open the market page in a normal browser tab, right-click anywhere on it → "View Page Source" (or press Ctrl/Cmd+U), select all, copy, and paste it below. This uses your own browser to load the page, so it isn't affected by whatever is blocking the automated scan above.
-                    </p>
-                    <a href="https://www.futbin.com/27/market-player-list" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-fc-accent hover:underline">
-                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                        <span data-i18n="marketOpenFutbinLink">Open the Futbin market page</span>
-                    </a>
-                    <textarea id="market-paste-input" rows="4" placeholder="Paste page HTML here…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-fc-accent"></textarea>
+                <summary class="text-xs font-bold text-gray-400 cursor-pointer select-none" data-i18n="marketPasteSummary">Scan blocked? Scrape it yourself in one step</summary>
+                <div class="mt-3 space-y-3">
+                    <div class="space-y-1.5">
+                        <p class="text-[11px] font-bold text-gray-300" data-i18n="marketPasteStep1">1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:</p>
+                        <div class="relative">
+                            <textarea id="market-console-script" readonly rows="3" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-400 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
+                            <button onclick="window.copyMarketConsoleScript()" class="absolute top-2 right-2 rtl:right-auto rtl:left-2 px-2.5 py-1 rounded-lg bg-fc-dark border border-fc-border text-[10px] font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50">
+                                <i class="fa-solid fa-copy"></i> <span id="market-copy-script-label" data-i18n="marketCopyScriptBtn">Copy Script</span>
+                            </button>
+                        </div>
+                        <a href="https://www.futbin.com/27/market-player-list" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-fc-accent hover:underline">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            <span data-i18n="marketOpenFutbinLink">Open the Futbin market page</span>
+                        </a>
+                    </div>
+                    <p class="text-[11px] text-gray-500" data-i18n="marketPasteStep2">2. It scrapes every page automatically (same as the scan above, just running from Futbin's own site — no proxy needed) and copies the result to your clipboard when it's done. Then just paste it here:</p>
+                    <textarea id="market-paste-input" rows="3" placeholder="Paste the copied result here…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-fc-accent"></textarea>
                     <button onclick="window.parseMarketPaste()" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-200 hover:text-fc-accent hover:border-fc-accent/50">
                         <i class="fa-solid fa-code"></i>
-                        <span data-i18n="marketParsePasteBtn">Parse This Page</span>
+                        <span data-i18n="marketParsePasteBtn">Parse This</span>
                     </button>
+                    <p class="text-[10px] text-gray-600 italic" data-i18n="marketPasteHtmlNote">(Also works if you paste a single page's raw HTML instead — right-click → "View Page Source" — but the script above covers every page in one go, which is almost always less work.)</p>
                 </div>
             </details>
 
@@ -1267,10 +1277,13 @@
                 marketMaxPagesLbl: "Pages to scan",
                 marketScrapeBtn: "Scan the Market",
                 marketDisclaimer: "Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.",
-                marketPasteSummary: "Scan blocked? Paste the page's HTML instead",
-                marketPasteHelp: "Open the market page in a normal browser tab, right-click anywhere on it → \"View Page Source\" (or press Ctrl/Cmd+U), select all, copy, and paste it below. This uses your own browser to load the page, so it isn't affected by whatever is blocking the automated scan above.",
+                marketPasteSummary: "Scan blocked? Scrape it yourself in one step",
+                marketPasteStep1: "1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:",
+                marketCopyScriptBtn: "Copy Script",
                 marketOpenFutbinLink: "Open the Futbin market page",
-                marketParsePasteBtn: "Parse This Page",
+                marketPasteStep2: "2. It scrapes every page automatically (same as the scan above, just running from Futbin's own site — no proxy needed) and copies the result to your clipboard when it's done. Then just paste it here:",
+                marketParsePasteBtn: "Parse This",
+                marketPasteHtmlNote: "(Also works if you paste a single page's raw HTML instead — right-click → \"View Page Source\" — but the script above covers every page in one go, which is almost always less work.)",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
                 shapeDefendBtn: "DEFENDING",
@@ -1393,10 +1406,13 @@
                 marketMaxPagesLbl: "عدد الصفحات المراد فحصها",
                 marketScrapeBtn: "فحص السوق",
                 marketDisclaimer: "يتم الجلب من صفحة عامة لا تتطلب تسجيل دخول في Futbin. الأسعار تتغير بسرعة والبيع الفعلي عند متوسط EA غير مضمون أبداً، لذا تعامل مع كل رقم هنا كلقطة يجب التحقق منها على Futbin قبل الشراء الفعلي، وليس وعداً.",
-                marketPasteSummary: "تم حظر الفحص؟ الصق كود HTML للصفحة بدلاً من ذلك",
-                marketPasteHelp: "افتح صفحة السوق في تبويب متصفح عادي، انقر بزر الفأرة الأيمن في أي مكان فيها ← «عرض مصدر الصفحة» (أو اضغط Ctrl/Cmd+U)، حدد الكل، انسخ، والصق أدناه. هذا يستخدم متصفحك الخاص لتحميل الصفحة، لذا لا يتأثر بما يمنع الفحص التلقائي أعلاه.",
+                marketPasteSummary: "تم حظر الفحص؟ افحصه بنفسك بخطوة واحدة",
+                marketPasteStep1: "1. افتح صفحة سوق Futbin، ثم افتح وحدة تحكم المتصفح (F12 أو Ctrl/Cmd+Shift+J) والصق هذا الكود فيها:",
+                marketCopyScriptBtn: "نسخ الكود",
                 marketOpenFutbinLink: "افتح صفحة سوق Futbin",
-                marketParsePasteBtn: "تحليل هذه الصفحة",
+                marketPasteStep2: "2. سيقوم بفحص كل الصفحات تلقائياً (نفس الفحص أعلاه، لكن من موقع Futbin نفسه — دون الحاجة لوسيط) وينسخ النتيجة إلى الحافظة عند الانتهاء. ثم الصقها هنا:",
+                marketParsePasteBtn: "تحليل هذا",
+                marketPasteHtmlNote: "(يعمل أيضاً إذا لصقت كود HTML لصفحة واحدة فقط — بالنقر بزر الفأرة الأيمن ← «عرض مصدر الصفحة» — لكن الكود أعلاه يغطي كل الصفحات دفعة واحدة، وهو غالباً أقل جهداً.)",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
                 shapeDefendBtn: "الدفاع",
@@ -9885,6 +9901,130 @@
         const FUTBIN_MARKET_URL = 'https://www.futbin.com/27/market-player-list';
         const FUTBIN_EA_TAX = 0.05; // EA deducts 5% tax on every successful sale
 
+        // The console-run counterpart to the app's own scraper — same
+        // extraction logic, but running same-origin on Futbin's own site
+        // (paste into the browser console there), so it never hits the
+        // CORS/Cloudflare issues the app's cross-origin proxy fetch can.
+        // Deliberately written with no backticks/template literals inside
+        // it, since it's embedded as one here in the app's own source.
+        // Walks every page automatically and copies the full JSON result
+        // to the clipboard when done — one script run covers the whole
+        // market list, not one page at a time.
+        const FUTBIN_CONSOLE_SCRIPT = `(async () => {
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  function parseCoins(str) {
+    if (!str) return null;
+    str = str.replace(/coin/i, '').trim().replace(/,/g, '');
+    const mult = /M$/i.test(str) ? 1e6 : /K$/i.test(str) ? 1e3 : 1;
+    const num = parseFloat(str);
+    return isNaN(num) ? null : Math.round(num * mult);
+  }
+  function findMarketTable(doc) {
+    return [...doc.querySelectorAll('table')].find(function(t) {
+      return /player/i.test((t.querySelector('thead') && t.querySelector('thead').textContent) || (t.rows[0] && t.rows[0].textContent) || '');
+    });
+  }
+  function buildColumnMap(table) {
+    const headerRow = table.querySelector('thead tr') || table.rows[0];
+    const cells = [...headerRow.children];
+    const map = {};
+    cells.forEach(function(c, i) {
+      const t = c.textContent.trim().toLowerCase();
+      if (t.indexOf('player') !== -1) map.player = i;
+      else if (t.indexOf('difference') !== -1) map.difference = i;
+      else if (t.indexOf('ea average') !== -1) map.eaAverage = i;
+      else if (t.indexOf('after tax') !== -1) map.afterTax = i;
+      else if (t.indexOf('trend') !== -1) map.trend = i;
+      else if (t.indexOf('price') !== -1) map.price = i;
+    });
+    return map;
+  }
+  function extractRows(doc) {
+    const table = findMarketTable(doc);
+    if (!table) return [];
+    const colMap = buildColumnMap(table);
+    const body = table.tBodies[0] || table;
+    return [...body.rows].map(function(row) {
+      const cells = [...row.cells];
+      function text(i) { return (i != null && cells[i]) ? cells[i].textContent.trim() : null; }
+      const name = (text(colMap.player) || '').split('\\n')[0].trim();
+      return {
+        name: name,
+        price: parseCoins(text(colMap.price)),
+        eaAverage: parseCoins(text(colMap.eaAverage)),
+        diffText: text(colMap.difference),
+        afterTax: parseCoins(text(colMap.afterTax))
+      };
+    }).filter(function(r) { return r.name && r.price != null; });
+  }
+  function getNextPageUrl(doc, currentUrl) {
+    const cur = new URL(currentUrl);
+    const curPage = parseInt(cur.searchParams.get('page') || '1', 10);
+    const candidates = [...doc.querySelectorAll('a[href*="page="]')];
+    for (const a of candidates) {
+      try {
+        const u = new URL(a.getAttribute('href'), currentUrl);
+        if (parseInt(u.searchParams.get('page'), 10) === curPage + 1) return u.href;
+      } catch (e) {}
+    }
+    cur.searchParams.set('page', curPage + 1);
+    return cur.href;
+  }
+
+  const maxPages = 30;
+  const delayMs = 1200;
+  let url = location.href;
+  let all = [];
+  const seen = new Set();
+
+  for (let i = 0; i < maxPages; i++) {
+    if (seen.has(url)) break;
+    seen.add(url);
+    let doc;
+    if (i === 0 && url === location.href) {
+      doc = document;
+    } else {
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) { console.warn('Stopped at', url, res.status); break; }
+      doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+    }
+    const rows = extractRows(doc);
+    if (rows.length === 0) { console.warn('No rows parsed on', url); break; }
+    all = all.concat(rows);
+    console.log('Page ' + (i + 1) + ': ' + rows.length + ' players (total: ' + all.length + ')');
+    const next = getNextPageUrl(doc, url);
+    if (!next || next === url) break;
+    url = next;
+    await wait(delayMs);
+  }
+
+  const json = JSON.stringify(all);
+  try {
+    await navigator.clipboard.writeText(json);
+    console.log('%cDone! ' + all.length + ' players scraped and COPIED TO CLIPBOARD. Go paste it into the Market tab.', 'color:lime;font-weight:bold;font-size:13px;');
+  } catch (e) {
+    console.log('Done! ' + all.length + ' players scraped. Clipboard copy failed, copy this manually:');
+    console.log(json);
+  }
+  window.__futbinScrapeResult = all;
+})();`;
+
+        window.copyMarketConsoleScript = function() {
+            const isAr = currentLanguage === 'ar';
+            const labelEl = document.getElementById('market-copy-script-label');
+            const revert = () => { if (labelEl) setTimeout(() => { labelEl.textContent = isAr ? 'نسخ الكود' : 'Copy Script'; }, 1500); };
+            const done = () => { if (labelEl) labelEl.textContent = isAr ? 'تم النسخ ✓' : 'Copied ✓'; revert(); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(FUTBIN_CONSOLE_SCRIPT).then(done).catch(() => {
+                    const ta = document.getElementById('market-console-script');
+                    if (ta) { ta.select(); document.execCommand('copy'); done(); }
+                });
+            } else {
+                const ta = document.getElementById('market-console-script');
+                if (ta) { ta.select(); document.execCommand('copy'); done(); }
+            }
+        };
+
         function marketLog(msg, type) {
             const box = document.getElementById('market-status');
             if (!box) return;
@@ -10154,13 +10294,30 @@
             }
 
             const budget = Math.max(0, parseInt(budgetInput && budgetInput.value) || 3000);
-            const doc = new DOMParser().parseFromString(html, 'text/html');
-            const rows = extractFutbinRows(doc);
+
+            // The console script's clipboard output is a JSON array of
+            // already-extracted rows — try that first (covers every page
+            // in one paste). Falls back to treating the input as raw page
+            // HTML (single page, extracted the same way the automated
+            // scan does) for anyone who still pastes View Page Source
+            // output instead.
+            let rows = null;
+            try {
+                const parsed = JSON.parse(html);
+                if (Array.isArray(parsed) && parsed.every(r => r && typeof r.name === 'string')) {
+                    rows = parsed;
+                }
+            } catch (e) { /* not JSON — fall through to HTML parsing below */ }
+
+            if (!rows) {
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                rows = extractFutbinRows(doc);
+            }
 
             if (rows.length === 0) {
                 marketLog(isAr
-                    ? 'لم يتم إيجاد أي صفوف لاعبين في الكود الملصق — تأكد من نسخ كود المصدر الكامل لصفحة قائمة السوق (وليس صفحة أخرى)، أو أن Futbin غيّر شكل الصفحة.'
-                    : "No player rows found in the pasted HTML — make sure you copied the full page source of the market list page (not a different page), or Futbin may have changed their layout.", 'err');
+                    ? 'لم يتم إيجاد أي صفوف لاعبين في الكود الملصق — تأكد من نسخ نتيجة الكود بالكامل من وحدة التحكم، أو كود المصدر الكامل لصفحة قائمة السوق، أو أن Futbin غيّر شكل الصفحة.'
+                    : "No player rows found in what was pasted — make sure you copied the full console script output, or the full page source of the market list page, or Futbin may have changed their layout.", 'err');
                 return;
             }
 
@@ -10213,6 +10370,8 @@
 
 
         window.addEventListener('DOMContentLoaded', async () => {
+            const marketScriptEl = document.getElementById('market-console-script');
+            if (marketScriptEl) marketScriptEl.value = FUTBIN_CONSOLE_SCRIPT;
             window.renderPresetPoints();
             window.calculatePackReturns();
             updateUndoButtonState();
