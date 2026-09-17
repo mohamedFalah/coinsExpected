@@ -925,6 +925,7 @@
                 <div class="mt-3 space-y-3">
                     <div class="space-y-1.5">
                         <p class="text-[11px] font-bold text-gray-300" data-i18n="marketPasteStep1">1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:</p>
+                        <p class="text-[10px] text-gray-500" data-i18n="marketPasteStep1Note">Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.</p>
                         <div class="relative">
                             <textarea id="market-console-script" readonly rows="3" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-400 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
                             <button onclick="window.copyMarketConsoleScript()" class="absolute top-2 right-2 rtl:right-auto rtl:left-2 px-2.5 py-1 rounded-lg bg-fc-dark border border-fc-border text-[10px] font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50">
@@ -1279,6 +1280,7 @@
                 marketDisclaimer: "Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.",
                 marketPasteSummary: "Scan blocked? Scrape it yourself in one step",
                 marketPasteStep1: "1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:",
+                marketPasteStep1Note: "Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.",
                 marketCopyScriptBtn: "Copy Script",
                 marketOpenFutbinLink: "Open the Futbin market page",
                 marketPasteStep2: "2. It scrapes every page automatically (same as the scan above, just running from Futbin's own site — no proxy needed) and copies the result to your clipboard when it's done. Then just paste it here:",
@@ -1408,6 +1410,7 @@
                 marketDisclaimer: "يتم الجلب من صفحة عامة لا تتطلب تسجيل دخول في Futbin. الأسعار تتغير بسرعة والبيع الفعلي عند متوسط EA غير مضمون أبداً، لذا تعامل مع كل رقم هنا كلقطة يجب التحقق منها على Futbin قبل الشراء الفعلي، وليس وعداً.",
                 marketPasteSummary: "تم حظر الفحص؟ افحصه بنفسك بخطوة واحدة",
                 marketPasteStep1: "1. افتح صفحة سوق Futbin، ثم افتح وحدة تحكم المتصفح (F12 أو Ctrl/Cmd+Shift+J) والصق هذا الكود فيها:",
+                marketPasteStep1Note: "تريد نطاق صفحات مختلف؟ عدّل رقمي START_PAGE و END_PAGE بالقرب من بداية الكود المنسوخ قبل لصقه — انسخه من جديد أدناه في أي وقت لإعادة ضبطهما.",
                 marketCopyScriptBtn: "نسخ الكود",
                 marketOpenFutbinLink: "افتح صفحة سوق Futbin",
                 marketPasteStep2: "2. سيقوم بفحص كل الصفحات تلقائياً (نفس الفحص أعلاه، لكن من موقع Futbin نفسه — دون الحاجة لوسيط) وينسخ النتيجة إلى الحافظة عند الانتهاء. ثم الصقها هنا:",
@@ -9971,27 +9974,25 @@
     return cur.href;
   }
 
-  const maxPages = 30;
+  // ====== EDIT THESE TWO NUMBERS TO CHANGE WHICH PAGES IT SCRAPES ======
+  const START_PAGE = 1;
+  const END_PAGE = 30;
+  // =======================================================================
   const delayMs = 1200;
-  let url = location.href;
+  let url = 'https://www.futbin.com/27/market-player-list?page=' + START_PAGE;
   let all = [];
   const seen = new Set();
 
-  for (let i = 0; i < maxPages; i++) {
+  for (let i = 0; i < (END_PAGE - START_PAGE + 1); i++) {
     if (seen.has(url)) break;
     seen.add(url);
-    let doc;
-    if (i === 0 && url === location.href) {
-      doc = document;
-    } else {
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) { console.warn('Stopped at', url, res.status); break; }
-      doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-    }
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) { console.warn('Stopped at', url, res.status); break; }
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
     const rows = extractRows(doc);
     if (rows.length === 0) { console.warn('No rows parsed on', url); break; }
     all = all.concat(rows);
-    console.log('Page ' + (i + 1) + ': ' + rows.length + ' players (total: ' + all.length + ')');
+    console.log('Page ' + (START_PAGE + i) + ': ' + rows.length + ' players (total: ' + all.length + ')');
     const next = getNextPageUrl(doc, url);
     if (!next || next === url) break;
     url = next;
