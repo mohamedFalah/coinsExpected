@@ -2239,13 +2239,11 @@
             const neededSlotIndices = stillNeeded2;
 
             // Fill whatever's left with a fresh, budget-aware pick — same
-            // tiered strict-fit -> tolerance -> cheapest-fallback logic the
-            // main optimizer uses, scoped to only the slots that actually
-            // need a new player.
+            // strict budget logic the main optimizer uses (no tolerance
+            // margin), scoped to only the slots that actually need a new
+            // player.
             const usedIds = new Set(Object.values(newXI).filter(Boolean).map(p => playerIdentityKey(p)));
             const budget = squadState.budget;
-            const BUDGET_TOLERANCE = 50000;
-            const hardCap = budget + BUDGET_TOLERANCE;
 
             let candidateMap = {};
             neededSlotIndices.forEach(idx => {
@@ -2292,19 +2290,14 @@
                 };
 
                 let fitting = collectFitting(budget);
-                if (fitting.length === 0) fitting = collectFitting(hardCap);
 
                 let chosen = null;
                 if (fitting.length > 0) {
                     chosen = fitting[0];
-                } else {
-                    let cheapest = null;
-                    for (const cand of candidates) {
-                        if (usedIds.has(playerIdentityKey(cand))) continue;
-                        if (!cheapest || cand.price < cheapest.price) cheapest = cand;
-                    }
-                    chosen = cheapest;
                 }
+                // No fitting candidate within budget — slot stays empty;
+                // fillRemainingGapSlots() below and reportUnfillableSlots()
+                // after handle it from there.
 
                 if (chosen) {
                     newXI[slotIdx] = chosen;
@@ -2326,6 +2319,7 @@
             if (squadState.budget > 0) {
                 improveSquadChemistry();
                 spendLeftoverBudget();
+                fillRemainingGapSlots(newSlots);
             }
 
             let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
@@ -2377,6 +2371,8 @@
                     : `No slot for them in <span class="text-white font-bold">${newFormationKey}</span>, so they left the squad: ${names}.`;
                 squadState.explanationLog.push(releaseLine);
             }
+
+            if (squadState.budget > 0) reportUnfillableSlots(newSlots);
 
             computeSlotAlternatives();
             populateManagerDropdown();
@@ -3246,6 +3242,50 @@
                     break;
                 }
             }
+        }
+
+        // Called after the main fill (and chemistry-fix/leftover-budget
+        // passes) as a last attempt to complete the squad. A slot can end
+        // up empty even when something affordable exists for it, because
+        // the greedy fill reserves budget for slots still to come and can
+        // skip a candidate purely for that reason — leftover budget freed
+        // up by later passes sometimes makes that candidate affordable
+        // again by the time we get here. This is deliberately simple (best
+        // score that fits, no reserve math) since there's nothing left to
+        // reserve FOR at this point.
+        function fillRemainingGapSlots(slots) {
+            slots.forEach((slot, idx) => {
+                if (squadState.selectedXI[idx]) return; // already filled
+                const remaining = squadState.budget - squadState.totalCost;
+                if (remaining <= 0) return;
+                const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
+                const eligible = getActiveDatabase().filter(p =>
+                    (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) &&
+                    !usedIds.has(playerIdentityKey(p)) &&
+                    p.price <= remaining
+                );
+                if (eligible.length === 0) return;
+                eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
+                const chosen = eligible[0];
+                squadState.selectedXI[idx] = chosen;
+                squadState.totalCost += chosen.price;
+            });
+        }
+
+        // A budget too tight to fill every slot is a real, expected outcome
+        // now that there's no tolerance margin papering over it — this
+        // pushes one clear explanation-log message naming exactly which
+        // slots couldn't be filled, instead of silently leaving gaps on the
+        // pitch with no indication why.
+        function reportUnfillableSlots(slots) {
+            const emptySlots = slots.filter((slot, idx) => !squadState.selectedXI[idx]);
+            if (emptySlots.length === 0) return;
+            const labels = emptySlots.map(s => s.label).join(', ');
+            const remaining = Math.max(0, squadState.budget - squadState.totalCost);
+            const warnText = currentLanguage === 'ar'
+                ? `<span class="text-red-400 font-semibold">تنبيه:</span> الميزانية غير كافية لإكمال التشكيلة بالكامل. تم ملء كل مركز ممكن؛ المراكز التالية بقيت فارغة: <span class="text-white font-bold">${labels}</span> (المتبقي: ${remaining.toLocaleString()} كوينز — لا يوجد لاعب مؤهل ضمن هذا المبلغ).`
+                : `<span class="text-red-400 font-semibold">Heads up:</span> Your budget wasn't enough to complete the full squad. Every slot that could be filled was — these are still empty: <span class="text-white font-bold">${labels}</span> (${remaining.toLocaleString()} coins left, but no eligible player fits within that).`;
+            squadState.explanationLog.push(warnText);
         }
 
         // Builds Nation/League manager dropdown options from whatever IDs
@@ -4348,17 +4388,13 @@
                 `Starting optimization for formation <span class="text-white font-bold">${squadState.formation}</span> with total coin budget of <span class="text-fc-gold font-bold">${budget.toLocaleString()} coins</span>.`;
             squadState.explanationLog.push(startingLogText);
 
-            // Budget policy: build a squad that costs <= budget whenever a
-            // viable one exists. Only if that's impossible (not enough
-            // affordable eligible players to fill every slot) do we allow
-            // going over — capped at BUDGET_TOLERANCE coins over budget. If
-            // even that tolerance isn't enough, we still complete the squad
-            // (can't leave slots empty) but the log calls out the overshoot.
-            const BUDGET_TOLERANCE = 50000;
-            const hardCap = budget + BUDGET_TOLERANCE;
-
-            // Locked players are placed first and never touched by the
-            // optimizer below — only the remaining slots are actually built.
+            // Budget policy: build the best squad that costs <= budget.
+            // There's no tolerance margin — if a slot genuinely can't be
+            // filled within budget (even after chemistry-fix, leftover-
+            // budget reinvestment, and one final gap-filling pass all run),
+            // it's left empty and reportUnfillableSlots() below explains
+            // exactly why, rather than quietly overspending to force a
+            // complete XI.
             const lockedPlacement = placeLockedPlayers(slots);
             const lockedSlotIndices = lockedPlacement.usedSlot;
             if (Object.keys(lockedPlacement.assigned).length > 0) {
@@ -4407,16 +4443,11 @@
             const lockedCost = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + p.price, 0);
             const totalMinCost = lockedCost + sortedSlotIndices.reduce((sum, idx) => sum + cheapestAvailablePrice(idx, new Set()), 0);
 
-            if (totalMinCost > hardCap) {
+            if (totalMinCost > budget) {
                 const overBy = (totalMinCost - budget).toLocaleString();
                 const warnText = currentLanguage === 'ar' ?
-                    `<span class="text-red-400 font-semibold">تحذير:</span> حتى بأرخص تشكيلة ممكنة، وحتى مع هامش تجاوز 50,000 كوينز، تتجاوز التكلفة ميزانيتك بحوالي ${overBy} كوينز. سيتم بناء أرخص تشكيلة متاحة رغم ذلك.` :
-                    `<span class="text-red-400 font-semibold">Warning:</span> Even the cheapest possible squad exceeds your budget by roughly ${overBy} coins — beyond the 50,000 coin tolerance. Building the cheapest available squad anyway.`;
-                squadState.explanationLog.push(warnText);
-            } else if (totalMinCost > budget) {
-                const warnText = currentLanguage === 'ar' ?
-                    `<span class="text-amber-400 font-semibold">ملاحظة:</span> الحد الأدنى لتكلفة التشكيلة يتجاوز ميزانيتك قليلاً. سيُسمح للمحسن بتجاوز الميزانية حتى 50,000 كوينز فقط لإكمال التشكيلة.` :
-                    `<span class="text-amber-400 font-semibold">Note:</span> The minimum possible squad cost slightly exceeds your budget. The optimizer is allowed to go up to 50,000 coins over budget to complete a viable squad.`;
+                    `<span class="text-amber-400 font-semibold">ملاحظة:</span> حتى بأرخص تشكيلة ممكنة، التكلفة تتجاوز ميزانيتك بحوالي ${overBy} كوينز. سيتم ملء كل مركز يمكن تحمّل تكلفته، وستبقى المراكز الأخرى فارغة.` :
+                    `<span class="text-amber-400 font-semibold">Note:</span> Even the cheapest possible squad costs about ${overBy} coins more than your budget. Every affordable slot will be filled — the rest will stay empty.`;
                 squadState.explanationLog.push(warnText);
             }
 
@@ -4457,14 +4488,9 @@
                         return fitting;
                     };
 
-                    let fitting = collectFitting(budget);
-                    let usedTolerance = false;
-                    if (fitting.length === 0) {
-                        fitting = collectFitting(hardCap);
-                        usedTolerance = fitting.length > 0;
-                    }
+                    const fitting = collectFitting(budget);
 
-                    let chosen = null, unavoidableOvershoot = false;
+                    let chosen = null;
                     if (fitting.length > 0) {
                         // fitting[] preserves the descending-score order
                         // inherited from candidateMap, so index 0 is the
@@ -4474,21 +4500,19 @@
                         // combinations, same as Regenerate.
                         const n = Math.min(poolSize, fitting.length);
                         chosen = fitting[Math.floor(Math.random() * n)];
-                    } else {
-                        let cheapest = null;
-                        for (const cand of candidates) {
-                            if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
-                            if (!cheapest || cand.price < cheapest.price) cheapest = cand;
-                        }
-                        chosen = cheapest;
-                        unavoidableOvershoot = !!cheapest;
                     }
+                    // No fitting candidate within budget (even accounting for
+                    // what's reserved for later slots) — the slot is left
+                    // empty here. fillRemainingGapSlots() gets one more shot
+                    // at it later, after chemistry-fix/leftover-budget passes
+                    // may have freed up room; if it's still empty after that,
+                    // reportUnfillableSlots() explains why.
 
                     if (chosen) {
                         selectedXI[slotIdx] = chosen;
                         usedPlayerIds.add(playerIdentityKey(chosen));
                         currentSpent += chosen.price;
-                        localLog.push({ slotIdx, slot, chosen, usedTolerance, unavoidableOvershoot });
+                        localLog.push({ slotIdx, slot, chosen });
                     }
                 }
                 return { selectedXI, totalCost: currentSpent, localLog };
@@ -4505,6 +4529,7 @@
                 squadState.totalCost = Object.values(squadState.selectedXI).reduce((s, p) => s + (p ? p.price : 0), 0);
                 improveSquadChemistry();
                 spendLeftoverBudget();
+                fillRemainingGapSlots(slots);
                 const chem = calculateSquadChemistry();
                 let qualitySum = 0, chemSum = 0;
                 slots.forEach((slot, idx) => {
@@ -4582,40 +4607,33 @@
             squadState.selectedXI = bestAttempt.selectedXI;
             squadState.totalCost = bestAttempt.totalCost;
 
-            // Real build-event log for the "watch it get built" animation:
-            // the winning attempt's true fillSlots order (first ST, then
-            // CBs, etc, per the position weighting above), followed by
-            // whichever slots the chemistry-fix/leftover-budget passes
-            // genuinely swapped afterward — a real before/after diff of
-            // what those passes actually changed, not a simulated one.
-            {
+            reportUnfillableSlots(slots);
+            const swapEventsForAnim = (() => {
                 const rawXI = bestAttemptRawXI || {};
                 const finalXI = squadState.selectedXI;
-                const swapEvents = [];
+                const events = [];
                 slots.forEach((slot, idx) => {
                     const before = rawXI[idx];
                     const after = finalXI[idx];
-                    if (before && after && before.id !== after.id) {
-                        swapEvents.push({ slotIdx: idx, to: after });
+                    if (after && (!before || before.id !== after.id)) {
+                        events.push({ slotIdx: idx, to: after });
                     }
                 });
-                squadState.buildAnimation = {
-                    initialLog: bestAttemptLog.map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
-                    swapEvents
-                };
-            }
+                return events;
+            })();
+            squadState.buildAnimation = {
+                initialLog: bestAttemptLog.map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
+                swapEvents: swapEventsForAnim
+            };
 
             // Log the winning attempt's per-slot picks in the same format
             // as before, so the explanation panel reads exactly like a
             // single deterministic build even though several were tried.
-            bestAttemptLog.forEach(({ slot, chosen, usedTolerance, unavoidableOvershoot }) => {
+            bestAttemptLog.forEach(({ slot, chosen }) => {
                 const metaTag = typeof chosen.meta === 'number' ? ` · MR ${chosen.meta.toFixed(1)}` : '';
-                const noteTag = unavoidableOvershoot
-                    ? (currentLanguage === 'ar' ? ' ⚠️ تجاوز غير قابل للتفادي' : ' ⚠️ unavoidable overshoot')
-                    : (usedTolerance ? (currentLanguage === 'ar' ? ' (ضمن هامش الـ50,000)' : ' (within 50,000 tolerance)') : '');
                 const selectionLogText = currentLanguage === 'ar' ?
-                    `تم اختيار <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) مقابل <span class="text-fc-gold">${chosen.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>${noteTag}.` :
-                    `Selected <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) for <span class="text-fc-gold">${chosen.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>${noteTag}.`;
+                    `تم اختيار <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) مقابل <span class="text-fc-gold">${chosen.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>.` :
+                    `Selected <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) for <span class="text-fc-gold">${chosen.price.toLocaleString()} coins</span> at <span class="text-fc-accent">${slot.label}</span>.`;
                 squadState.explanationLog.push(selectionLogText);
             });
 
@@ -4674,17 +4692,16 @@
             return Object.values(xi).filter(Boolean).map(p => p.id).sort().join(',');
         }
 
-        // One randomized build attempt: same tiered budget logic as the main
-        // optimizer (strict fit -> +50,000 tolerance -> cheapest-available
-        // fallback so no slot is left empty), but instead of always taking
-        // the single highest-scoring affordable candidate per slot, picks
-        // randomly among the top few affordable candidates — real variation
-        // while keeping quality and budget usage high.
+        // One randomized build attempt: same strict budget logic as the main
+        // optimizer (no tolerance margin — a slot with nothing affordable
+        // is left empty; fillRemainingGapSlots/reportUnfillableSlots in
+        // regenerateSquadImpl handle that afterward), but instead of always
+        // taking the single highest-scoring affordable candidate per slot,
+        // picks randomly among the top few affordable candidates — real
+        // variation while keeping quality and budget usage high.
         function buildRandomizedXI() {
             const slots = formationSlots[squadState.formation];
             const budget = squadState.budget;
-            const BUDGET_TOLERANCE = 50000;
-            const hardCap = budget + BUDGET_TOLERANCE;
             const RANDOM_POOL_SIZE = 3;
 
             // Locked players are fixed before any randomization happens —
@@ -4737,7 +4754,6 @@
                 };
 
                 let fitting = collectFitting(budget);
-                if (fitting.length === 0) fitting = collectFitting(hardCap);
 
                 let chosen = null;
                 if (fitting.length > 0) {
@@ -4747,14 +4763,12 @@
                     // still varying the outcome run to run.
                     const poolSize = Math.min(RANDOM_POOL_SIZE, fitting.length);
                     chosen = fitting[Math.floor(Math.random() * poolSize)];
-                } else {
-                    let cheapest = null;
-                    for (const cand of candidates) {
-                        if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
-                        if (!cheapest || cand.price < cheapest.price) cheapest = cand;
-                    }
-                    chosen = cheapest;
                 }
+                // No fitting candidate within budget — slot stays empty here;
+                // fillRemainingGapSlots() (called from regenerateSquadImpl
+                // after chemistry-fix/leftover-budget run) gets one more shot
+                // at it before reportUnfillableSlots() explains any that are
+                // still empty.
 
                 if (chosen) {
                     selectedXI[slotIdx] = chosen;
@@ -4819,6 +4833,7 @@
                 // chemistry-sound and budget-maximized as the original build.
                 improveSquadChemistry();
                 spendLeftoverBudget();
+                fillRemainingGapSlots(slots);
 
                 const signature = computeSquadSignature(squadState.selectedXI);
                 if (squadState.history.has(signature)) continue; // already shown this session — try again
@@ -4895,10 +4910,14 @@
             squadState.totalCost = bestUnique.totalCost;
             squadState.history.add(found);
 
+            reportUnfillableSlots(slots);
+
             // Same real before/after event log as the main optimizer (see
             // runSquadOptimizerImpl) — the winning attempt's true pick
-            // order, plus whatever the chemistry-fix/leftover-budget passes
-            // genuinely swapped afterward.
+            // order, plus whatever the chemistry-fix/leftover-budget/gap-
+            // fill passes genuinely changed afterward. A slot going from
+            // empty to filled (a gap-fill catching what buildRandomizedXI
+            // itself couldn't afford) counts as a change here too.
             {
                 const rawXI = bestUnique.rawXI || {};
                 const finalXI = squadState.selectedXI;
@@ -4906,7 +4925,7 @@
                 slots.forEach((slot, idx) => {
                     const before = rawXI[idx];
                     const after = finalXI[idx];
-                    if (before && after && before.id !== after.id) {
+                    if (after && (!before || before.id !== after.id)) {
                         swapEvents.push({ slotIdx: idx, to: after });
                     }
                 });
@@ -5554,7 +5573,10 @@
             const isAr = currentLanguage === 'ar';
             const coinLabel = isAr ? 'ك' : 'c';
 
-            const matches = getActiveDatabase().filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
+            const matches = getActiveDatabase().filter(p =>
+                p.name.toLowerCase().includes(q) &&
+                (p.pos === effectivePos || (p.alt && p.alt.includes(effectivePos)))
+            ).slice(0, 8);
             if (matches.length === 0) {
                 resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${isAr ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
                 return;
@@ -5562,7 +5584,6 @@
 
             resultsContainer.innerHTML = matches.map(candidate => {
                 const isSamePlayer = currentPlayer && candidate.id === currentPlayer.id;
-                const posMatch = candidate.pos === effectivePos || (candidate.alt && candidate.alt.includes(effectivePos));
                 const metaDelta = getMetaValue(candidate) - getMetaValue(currentPlayer);
                 const priceDelta = candidate.price - currentPlayer.price;
                 const candMetaTag = typeof candidate.meta === 'number' ? ` · MR ${candidate.meta.toFixed(1)}` : '';
@@ -5571,9 +5592,6 @@
                 if (isSamePlayer) {
                     verdictIcon = 'fa-circle-info'; verdictColor = 'text-gray-400';
                     verdictText = isAr ? 'هذا هو لاعبك الحالي في هذا المركز.' : 'This is already your current player here.';
-                } else if (!posMatch) {
-                    verdictIcon = 'fa-triangle-exclamation'; verdictColor = 'text-red-400';
-                    verdictText = isAr ? `خارج مركزه — سيسجل 0 كيمياء في ${effectivePos}.` : `Out of position — would score 0 chemistry at ${effectivePos}.`;
                 } else if (metaDelta >= 3) {
                     verdictIcon = 'fa-circle-check'; verdictColor = 'text-green-400';
                     verdictText = isAr
