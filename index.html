@@ -7255,21 +7255,21 @@
         // ballControl/dribbling, which stay irrelevant for a keeper's role.
         const MOVEMENT_CLUSTER = ['acceleration', 'sprintSpeed', 'agility', 'balance', 'ballControl', 'dribbling'];
         const POSITION_GRANULAR_ATTRS = {
-            GK:  ['gkDiving', 'gkHandling', 'gkKicking', 'gkPositioning', 'gkReflexes', 'acceleration', 'sprintSpeed', 'agility', 'composure'],
-            CB:  [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            RB:  [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            LB:  [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            RWB: [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
-            LWB: [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength'],
+            GK:  ['gkDiving', 'gkHandling', 'gkKicking', 'gkPositioning', 'gkReflexes', 'acceleration', 'sprintSpeed', 'agility', 'composure', 'shortPassing'],
+            CB:  [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength', 'shortPassing'],
+            RB:  [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength', 'shortPassing'],
+            LB:  [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength', 'shortPassing'],
+            RWB: [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength', 'shortPassing'],
+            LWB: [...MOVEMENT_CLUSTER, 'composure', 'defensiveAwareness', 'headingAccuracy', 'interceptions', 'jumping', 'slidingTackles', 'standingTackles', 'strength', 'shortPassing'],
             CM:  [...MOVEMENT_CLUSTER, 'composure', 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
             CDM: [...MOVEMENT_CLUSTER, 'composure', 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
             CAM: [...MOVEMENT_CLUSTER, 'composure', 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
             RM:  [...MOVEMENT_CLUSTER, 'composure', 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
             LM:  [...MOVEMENT_CLUSTER, 'composure', 'aggression', 'crossing', 'curve', 'longPassing', 'shortPassing', 'stamina', 'vision'],
-            ST:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys'],
-            CF:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys'],
-            RW:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys'],
-            LW:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys']
+            ST:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys', 'shortPassing'],
+            CF:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys', 'shortPassing'],
+            RW:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys', 'shortPassing'],
+            LW:  [...MOVEMENT_CLUSTER, 'composure', 'finishing', 'freeKickAccuracy', 'longShots', 'penalties', 'positioning', 'reactions', 'shotPower', 'volleys', 'shortPassing']
         };
 
         // Normalizes an attribute key so naming-convention differences
@@ -7559,6 +7559,62 @@
             `).join('');
         }
 
+        // Turns real short-passing and vision values into a scouting-style
+        // read, not a stat readout — vision is the closest real FC/FIFA
+        // attribute to "through-ball ability" (the games have never had a
+        // separate through-pass stat; vision governs whether a player
+        // spots and executes the incisive pass, short passing governs the
+        // simple/tempo passing execution), so this is a genuine
+        // interpretation of real data, not an invented category.
+        function buildPassingNote(shortPassingVal, visionVal, isAr) {
+            if (typeof shortPassingVal !== 'number' && typeof visionVal !== 'number') return null;
+
+            let spSentence = '';
+            if (typeof shortPassingVal === 'number') {
+                if (shortPassingVal >= 85) {
+                    spSentence = isAr
+                        ? `تمريره القصير على مستوى استثنائي (${shortPassingVal}) — يُخرج الكرة بلمسة واحدة تحت الضغط دون أن يفقد إيقاعه، بالضبط النوع الذي تبني حوله لعب الاستحواذ.`
+                        : `His short passing is elite (${shortPassingVal}) — he releases the ball first-time under pressure without breaking stride, exactly the kind of player you build possession play around.`;
+                } else if (shortPassingVal >= 75) {
+                    spSentence = isAr
+                        ? `تمريره القصير جيد جداً (${shortPassingVal}) — يُبقي الكرة متحركة بتمريرات مرتبة ومنخفضة المخاطر، ونادراً ما يفقدها في المساحات الضيقة.`
+                        : `His short passing is very good (${shortPassingVal}) — he keeps the ball moving with tidy, low-risk passes and rarely gives it away in tight areas.`;
+                } else if (shortPassingVal >= 65) {
+                    spSentence = isAr
+                        ? `تمريره القصير مقبول (${shortPassingVal}) — ينجح غالباً في التمريرة البسيطة، لكنها قد تبدو ثقيلة قليلاً تحت ضغط حقيقي.`
+                        : `His short passing is decent (${shortPassingVal}) — he gets the simple pass right most of the time, though it can look a touch heavy under real pressure.`;
+                } else {
+                    spSentence = isAr
+                        ? `تمريره القصير نقطة ضعف حقيقية (${shortPassingVal}) — توقّع أن تُفقد بعض التمريرات في التركيبات الضيقة تحت الضغط.`
+                        : `His short passing is a genuine weakness (${shortPassingVal}) — expect the occasional misplaced pass in tight combinations under pressure.`;
+                }
+            }
+
+            let visSentence = '';
+            if (typeof visionVal === 'number') {
+                if (visionVal >= 85) {
+                    visSentence = isAr
+                        ? `أما رؤيته للتمريرة الحاسمة بين الخطوط فاستثنائية (${visionVal}) — يرى وينفّذ تمريرة نافذة عبر دفاع مرصوص قبل أن يلاحظ معظم اللاعبين وجود المساحة أصلاً.`
+                        : `His vision for the incisive pass is exceptional (${visionVal}) — he spots and threads a ball through a packed defensive line before most players would even see the gap.`;
+                } else if (visionVal >= 75) {
+                    visSentence = isAr
+                        ? `ورؤيته للتمريرة الحاسمة جيدة (${visionVal}) — يستطيع اختيار تمريرة نافذة عندما تكون المساحة متاحة، وهو مصدر إبداع حقيقي في بناء الهجمات.`
+                        : `His vision for the killer pass is good (${visionVal}) — he can pick out an incisive ball when the space is there, a genuine creative outlet in build-up.`;
+                } else if (visionVal >= 65) {
+                    visSentence = isAr
+                        ? `لكن رؤيته للتمريرة النافذة متوسطة (${visionVal}) — يلعب غالباً ما هو أمامه مباشرة، فالتمريرة الحاسمة ليست جزءاً أساسياً من أسلوبه.`
+                        : `His vision for the through-ball is average (${visionVal}) — he mostly plays what's directly in front of him; the killer pass isn't really part of his game.`;
+                } else {
+                    visSentence = isAr
+                        ? `ورؤيته للتمريرة النافذة ضعيفة (${visionVal}) — لا تتوقع منه أن يفكك دفاعاً منظماً بتمريرة حاسمة.`
+                        : `His vision for the through-ball is weak (${visionVal}) — don't expect him to unlock a set defense with an incisive pass.`;
+                }
+            }
+
+            return [spSentence, visSentence].filter(Boolean).join(' ');
+        }
+
+
         function loadPlayerDeepDive(player, effectivePos) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
@@ -7579,6 +7635,24 @@
                 // real height, body type) regardless of what happens with
                 // AcceleRATE below.
                 renderVulnerabilityReport(player, effectivePos, detail);
+
+                // Real short-passing + vision commentary — independent of
+                // AcceleRATE too, since it only needs the granular
+                // attributes (which come from this same detail fetch).
+                const passingNoteEl = document.getElementById('passing-whypick-note');
+                if (passingNoteEl) {
+                    if (!detail || !detail.inGameAttributes) {
+                        passingNoteEl.classList.remove('animate-pulse');
+                        passingNoteEl.textContent = isAr ? 'تعذّر التحقق من إحصائيات التمرير الحقيقية لهذا اللاعب.' : "Couldn't verify this player's real passing data.";
+                    } else {
+                        const spVal = getGranularValue(detail, GRANULAR_ATTR_DEFS.shortPassing.candidates, GRANULAR_ATTR_DEFS.shortPassing.en);
+                        const visionVal = getGranularValue(detail, GRANULAR_ATTR_DEFS.vision.candidates, GRANULAR_ATTR_DEFS.vision.en);
+                        const passingNote = buildPassingNote(spVal, visionVal, isAr);
+                        passingNoteEl.classList.remove('animate-pulse', 'italic', 'text-gray-500');
+                        passingNoteEl.classList.add('text-gray-300');
+                        passingNoteEl.textContent = passingNote || (isAr ? 'لا تتوفر بيانات تمرير دقيقة إضافية لهذه البطاقة.' : 'No additional passing data available for this card.');
+                    }
+                }
 
                 if (!detail) {
                     // Fetch failed — say so plainly rather than leaving a
@@ -7700,6 +7774,11 @@
                 const feelEl = document.getElementById('movement-feel-live');
                 const isAr = currentLanguage === 'ar';
                 renderGranularAttrs(effectivePos, null);
+                const passingNoteEl = document.getElementById('passing-whypick-note');
+                if (passingNoteEl) {
+                    passingNoteEl.classList.remove('animate-pulse');
+                    passingNoteEl.textContent = isAr ? 'تعذّر التحقق من إحصائيات التمرير الحقيقية لهذا اللاعب.' : "Couldn't verify this player's real passing data.";
+                }
                 if (badgeEl) badgeEl.remove();
                 if (feelEl) {
                     feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
@@ -8980,6 +9059,7 @@
                             <span class="text-xs font-bold text-fc-accent uppercase tracking-wider">${whyText}</span>
                             <p class="text-xs text-gray-300">${whyDesc}</p>
                             <div id="bodytype-whypick-note" class="text-xs text-gray-300"></div>
+                            <p id="passing-whypick-note" class="text-xs text-gray-500 italic animate-pulse">${currentLanguage === 'ar' ? 'جارٍ التحقق من قدرات التمرير الحقيقية...' : 'Checking real passing data...'}</p>
                             ${focusProfileHtml}
                         </div>
 
