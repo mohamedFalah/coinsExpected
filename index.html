@@ -1386,6 +1386,12 @@
             // every read site can access .nationId/.leagueId directly.
             manager: { nationId: null, leagueId: null },
             explanationLog: [],
+            // Real before/after event log from the most recent
+            // optimize/regenerate run, used to replay the actual build
+            // process on the pitch (see animateSquadReveal) — null means
+            // no animation to play (nothing built yet, or the last action
+            // took an early-return path like manual budget mode).
+            buildAnimation: null,
             // Regeneration tracking: every unique squad (by player-id set)
             // already generated for the current formation+budget, plus
             // whether we've run out of realistic unique alternatives. Reset
@@ -4269,6 +4275,12 @@
 
         function runSquadOptimizerImpl() {
             snapshotSquadForUndo();
+            // Cleared up front so every early-return path below (manual
+            // budget mode) leaves no stale animation data behind for
+            // animateSquadReveal to incorrectly replay against a squad it
+            // doesn't actually describe. Only repopulated once a real
+            // optimizer run completes successfully, further down.
+            squadState.buildAnimation = null;
             if (squadState.budget <= 0) {
                 initializeManualBuildSquad();
                 return;
@@ -4422,7 +4434,7 @@
                         selectedXI[slotIdx] = chosen;
                         usedPlayerIds.add(playerIdentityKey(chosen));
                         currentSpent += chosen.price;
-                        localLog.push({ slot, chosen, usedTolerance, unavoidableOvershoot });
+                        localLog.push({ slotIdx, slot, chosen, usedTolerance, unavoidableOvershoot });
                     }
                 }
                 return { selectedXI, totalCost: currentSpent, localLog };
@@ -4458,6 +4470,7 @@
             const OPTIMIZER_ATTEMPTS = 6;
             let bestAttempt = null;
             let bestAttemptLog = null;
+            let bestAttemptRawXI = null;
             for (let a = 0; a < OPTIMIZER_ATTEMPTS; a++) {
                 const poolSize = a === 0 ? 1 : 3; // first attempt = pure deterministic best-fit; rest explore like Regenerate
                 const built = fillSlots(poolSize);
@@ -4465,6 +4478,7 @@
                 if (!bestAttempt || evaluated.value > bestAttempt.value) {
                     bestAttempt = evaluated;
                     bestAttemptLog = built.localLog;
+                    bestAttemptRawXI = built.selectedXI;
                 }
             }
 
@@ -4492,6 +4506,7 @@
                     if (better) {
                         bestAttempt = evaluated;
                         bestAttemptLog = built.localLog;
+                        bestAttemptRawXI = built.selectedXI;
                     }
                     if (bestAttempt.chemSum >= MIN_USABLE_CHEMISTRY) break; // good enough — stop searching
                 }
@@ -4512,6 +4527,29 @@
             // Commit the winning attempt as the live squad.
             squadState.selectedXI = bestAttempt.selectedXI;
             squadState.totalCost = bestAttempt.totalCost;
+
+            // Real build-event log for the "watch it get built" animation:
+            // the winning attempt's true fillSlots order (first ST, then
+            // CBs, etc, per the position weighting above), followed by
+            // whichever slots the chemistry-fix/leftover-budget passes
+            // genuinely swapped afterward — a real before/after diff of
+            // what those passes actually changed, not a simulated one.
+            {
+                const rawXI = bestAttemptRawXI || {};
+                const finalXI = squadState.selectedXI;
+                const swapEvents = [];
+                slots.forEach((slot, idx) => {
+                    const before = rawXI[idx];
+                    const after = finalXI[idx];
+                    if (before && after && before.id !== after.id) {
+                        swapEvents.push({ slotIdx: idx, to: after });
+                    }
+                });
+                squadState.buildAnimation = {
+                    initialLog: bestAttemptLog.map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
+                    swapEvents
+                };
+            }
 
             // Log the winning attempt's per-slot picks in the same format
             // as before, so the explanation panel reads exactly like a
@@ -4626,6 +4664,7 @@
             let selectedXI = { ...lockedPlacement.assigned };
             let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
             let currentSpent = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + p.price, 0);
+            const localLog = [];
 
             for (let i = 0; i < sortedSlotIndices.length; i++) {
                 const slotIdx = sortedSlotIndices[i];
@@ -4667,13 +4706,19 @@
                     selectedXI[slotIdx] = chosen;
                     usedPlayerIds.add(playerIdentityKey(chosen));
                     currentSpent += chosen.price;
+                    localLog.push({ slotIdx, slot, chosen });
                 }
             }
 
-            return { selectedXI, totalCost: currentSpent, unlockedPlayers: lockedPlacement.unlockedPlayers };
+            return { selectedXI, totalCost: currentSpent, unlockedPlayers: lockedPlacement.unlockedPlayers, localLog };
         }
 
         function regenerateSquadImpl() {
+            // Same reasoning as runSquadOptimizerImpl: clear stale
+            // animation data up front so every early-return path here
+            // (manual mode no-op, "no more unique squads") leaves nothing
+            // for animateSquadReveal to incorrectly replay.
+            squadState.buildAnimation = null;
             // Manual Build Mode (budget = 0): nothing to randomize — every
             // pick was deliberate. Regenerating here would just silently
             // throw away hand-picked players, so this is a no-op with a
@@ -4701,6 +4746,14 @@
 
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                 const built = buildRandomizedXI();
+                // Snapshot BEFORE improveSquadChemistry/spendLeftoverBudget
+                // run below — unlike evaluateAttempt() in the main
+                // optimizer, this loop points squadState.selectedXI at the
+                // SAME object built.selectedXI returns, so those passes
+                // would otherwise mutate built.selectedXI in place too,
+                // destroying the "raw, pre-pass" state we need later for
+                // the build animation's real before/after diff.
+                const rawXI = { ...built.selectedXI };
                 squadState.selectedXI = built.selectedXI;
                 squadState.totalCost = built.totalCost;
                 if (built.unlockedPlayers && built.unlockedPlayers.length > 0) {
@@ -4728,7 +4781,9 @@
                     signature, chemSum,
                     value: qualitySum + chemSum * CHEM_VALUE_WEIGHT,
                     selectedXI: { ...squadState.selectedXI },
-                    totalCost: squadState.totalCost
+                    totalCost: squadState.totalCost,
+                    rawXI,
+                    localLog: built.localLog
                 };
 
                 // Same priority as Optimize's chemistry-floor rescue: a
@@ -4785,6 +4840,27 @@
             squadState.selectedXI = bestUnique.selectedXI;
             squadState.totalCost = bestUnique.totalCost;
             squadState.history.add(found);
+
+            // Same real before/after event log as the main optimizer (see
+            // runSquadOptimizerImpl) — the winning attempt's true pick
+            // order, plus whatever the chemistry-fix/leftover-budget passes
+            // genuinely swapped afterward.
+            {
+                const rawXI = bestUnique.rawXI || {};
+                const finalXI = squadState.selectedXI;
+                const swapEvents = [];
+                slots.forEach((slot, idx) => {
+                    const before = rawXI[idx];
+                    const after = finalXI[idx];
+                    if (before && after && before.id !== after.id) {
+                        swapEvents.push({ slotIdx: idx, to: after });
+                    }
+                });
+                squadState.buildAnimation = {
+                    initialLog: (bestUnique.localLog || []).map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
+                    swapEvents
+                };
+            }
 
             if (bestUnique.chemSum < MIN_USABLE_CHEMISTRY) {
                 const warnText = currentLanguage === 'ar'
@@ -4964,61 +5040,71 @@
 
         function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-        // Purely cosmetic "the squad is being assembled" reveal: the final
-        // XI was already fully computed and rendered onto the pitch by the
-        // time this runs (renderFootballPitch already drew the correct
-        // final card for every slot). This drops a small overlay on top of
-        // one slot at a time that rapidly cycles a few random candidate
-        // photos for that position, then fades away to reveal the real
-        // card already sitting underneath it — fully finishing one slot
-        // before the next one even starts, so it reads as the team being
-        // assembled player by player rather than everything flickering
-        // together. Locked players (the user deliberately pinned them) and
-        // empty slots are skipped and appear immediately.
+        // Replays the REAL sequence of events that built this squad,
+        // instead of a cosmetic random shuffle: locked players (already
+        // there from before) show immediately, then each slot the
+        // optimizer/regenerator actually picked appears one at a time in
+        // its true fill order (e.g. ST first, then the CBs, matching the
+        // position weighting fillSlots/buildRandomizedXI use), and finally
+        // any slot the chemistry-fix or leftover-budget pass genuinely
+        // swapped afterward is shown being removed and replaced — a real
+        // before/after diff of what actually happened, not a simulation.
+        // Falls back to just showing the already-correct final pitch with
+        // no animation if squadState.buildAnimation wasn't populated (e.g.
+        // an unexpected path that never ran the optimizer).
         async function animateSquadReveal(callback) {
+            const anim = squadState.buildAnimation;
             const container = document.getElementById('pitch-container');
-            const wrappers = container ? Array.from(container.querySelectorAll('[data-slot-idx]')) : [];
-            if (wrappers.length === 0) { if (callback) callback(); return; }
+            if (!anim || !container) { if (callback) callback(); return; }
 
+            const trueFinalXI = { ...squadState.selectedXI };
+            const trueFinalChemistry = squadState.chemistry;
             const slots = formationSlots[squadState.formation];
-            const SHUFFLE_TICK_MS = 70;
-            const SHUFFLE_TICKS = 4;
-            const GAP_BETWEEN_SLOTS_MS = 50;
 
-            for (const wrapper of wrappers) {
-                const slotIdx = parseInt(wrapper.dataset.slotIdx, 10);
-                const player = squadState.selectedXI[slotIdx];
-                const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
-                if (!player || isLocked) continue; // nothing to shuffle — already showing
+            // Starting point: only the players already there before this
+            // build (locked players) are shown — everything this build
+            // actually picked starts empty and gets revealed step by step.
+            const startXI = {};
+            slots.forEach((slot, idx) => {
+                const p = trueFinalXI[idx];
+                if (p && squadState.lockedIds && squadState.lockedIds.has(p.id)) startXI[idx] = p;
+            });
+            squadState.selectedXI = startXI;
+            squadState.chemistry = calculateSquadChemistry();
+            renderFootballPitch();
+            await delay(250);
 
-                const slot = slots[slotIdx];
-                // Prefer photos of players who could actually play this
-                // position, so the flicker looks like plausible candidates
-                // rather than a random goalkeeper flashing at ST — falls
-                // back to the whole database if that pool is thin.
-                let pool = getActiveDatabase({ requirePriced: false }).filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
-                if (pool.length < 4) pool = fc27Database;
-                if (pool.length === 0) continue;
+            const REVEAL_GAP_MS = 450;
+            const SWAP_REMOVE_GAP_MS = 300;
+            const SWAP_INSERT_GAP_MS = 500;
 
-                const overlay = document.createElement('div');
-                overlay.className = 'absolute inset-0 z-20 bg-fc-card border border-fc-accent/40 rounded-xl flex flex-col items-center justify-center overflow-hidden';
-                wrapper.appendChild(overlay);
-
-                for (let tick = 0; tick < SHUFFLE_TICKS; tick++) {
-                    const cand = pool[Math.floor(Math.random() * pool.length)];
-                    overlay.innerHTML = `
-                        <img src="${cand.photo}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover border border-fc-accent/40 bg-fc-dark" onerror="this.style.opacity='0'">
-                        <div class="text-[8px] text-fc-accent font-bold mt-1 animate-pulse">···</div>
-                    `;
-                    await delay(SHUFFLE_TICK_MS);
-                }
-
-                overlay.style.transition = 'opacity 0.15s ease';
-                overlay.style.opacity = '0';
-                await delay(150);
-                overlay.remove();
-                await delay(GAP_BETWEEN_SLOTS_MS);
+            for (const { slotIdx, player } of anim.initialLog) {
+                squadState.selectedXI[slotIdx] = player;
+                squadState.chemistry = calculateSquadChemistry();
+                renderFootballPitch();
+                await delay(REVEAL_GAP_MS);
             }
+
+            for (const { slotIdx, to } of anim.swapEvents) {
+                // Show the slot's previous pick actually being removed...
+                squadState.selectedXI[slotIdx] = null;
+                squadState.chemistry = calculateSquadChemistry();
+                renderFootballPitch();
+                await delay(SWAP_REMOVE_GAP_MS);
+                // ...then the real replacement the chemistry/budget pass
+                // swapped it for taking that same slot.
+                squadState.selectedXI[slotIdx] = to;
+                squadState.chemistry = calculateSquadChemistry();
+                renderFootballPitch();
+                await delay(SWAP_INSERT_GAP_MS);
+            }
+
+            // Restore the exact, already-correct final state (belt and
+            // braces against any subtle mismatch in the replay above)
+            // rather than trusting the reconstruction to be pixel-perfect.
+            squadState.selectedXI = trueFinalXI;
+            squadState.chemistry = trueFinalChemistry;
+            renderFootballPitch();
 
             if (callback) callback();
         }
