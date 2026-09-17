@@ -170,6 +170,39 @@
             display: block;
             text-align: right;
         }
+        /* Pitch-card build/reveal animations (see animateSquadReveal) —
+           applied to ONE slot wrapper at a time right after it's
+           re-rendered, never baked into the card markup itself, so a full
+           pitch re-render never replays these on cards that didn't
+           actually change. cardPopIn is a springy scale+fade with a brief
+           green glow pulse (chemistry-green, matches the rest of the UI's
+           accent) for a newly-revealed pick; cardFadeOut is a quick
+           shrink+fade for a slot about to be swapped out. */
+        @keyframes cardPopIn {
+            0%   { opacity: 0; transform: scale(0.55) translateY(10px); }
+            55%  { opacity: 1; transform: scale(1.1) translateY(-3px); }
+            80%  { transform: scale(0.97) translateY(0); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes cardGlowPulse {
+            0%   { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+            35%  { box-shadow: 0 0 16px 5px rgba(74, 222, 128, 0.55); }
+            100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+        }
+        @keyframes cardFadeOut {
+            0%   { opacity: 1; transform: scale(1) rotate(0deg); }
+            100% { opacity: 0; transform: scale(0.6) rotate(-6deg); }
+        }
+        .anim-card-in {
+            animation: cardPopIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+                       cardGlowPulse 0.7s ease-out both;
+            border-radius: 0.75rem;
+            transition: none !important;
+        }
+        .anim-card-out {
+            animation: cardFadeOut 0.28s ease-in both;
+            transition: none !important;
+        }
     </style>
 </head>
 <body class="bg-fc-dark text-gray-100 font-sans min-h-screen selection:bg-fc-accent selection:text-fc-dark">
@@ -5052,6 +5085,26 @@
         // Falls back to just showing the already-correct final pitch with
         // no animation if squadState.buildAnimation wasn't populated (e.g.
         // an unexpected path that never ran the optimizer).
+        // Adds the "just revealed" pop-in effect to exactly one slot's
+        // wrapper after a render — never baked into the card markup itself
+        // (renderFootballPitch rebuilds every slot every call), so only the
+        // slot that actually just changed visibly animates; the other 10
+        // freshly-rebuilt-but-unchanged cards sit still.
+        function flashCardIn(container, slotIdx) {
+            const wrapper = container.querySelector(`[data-slot-idx="${slotIdx}"]`);
+            if (wrapper) wrapper.classList.add('anim-card-in');
+        }
+
+        // Fades the CURRENT card at a slot out in place, before the caller
+        // mutates squadState and re-renders — so the outgoing player is
+        // seen leaving, not just instantly gone.
+        async function flashCardOut(container, slotIdx) {
+            const wrapper = container.querySelector(`[data-slot-idx="${slotIdx}"]`);
+            if (!wrapper) return;
+            wrapper.classList.add('anim-card-out');
+            await delay(280); // matches the CSS animation's own duration
+        }
+
         async function animateSquadReveal(callback) {
             const anim = squadState.buildAnimation;
             const container = document.getElementById('pitch-container');
@@ -5075,27 +5128,31 @@
             await delay(250);
 
             const REVEAL_GAP_MS = 450;
-            const SWAP_REMOVE_GAP_MS = 300;
             const SWAP_INSERT_GAP_MS = 500;
 
             for (const { slotIdx, player } of anim.initialLog) {
                 squadState.selectedXI[slotIdx] = player;
                 squadState.chemistry = calculateSquadChemistry();
                 renderFootballPitch();
+                flashCardIn(container, slotIdx);
                 await delay(REVEAL_GAP_MS);
             }
 
             for (const { slotIdx, to } of anim.swapEvents) {
-                // Show the slot's previous pick actually being removed...
+                // Show the slot's previous pick actually leaving — a real
+                // fade/shrink of the outgoing card, not an instant swap —
+                // before it's replaced in state.
+                await flashCardOut(container, slotIdx);
                 squadState.selectedXI[slotIdx] = null;
                 squadState.chemistry = calculateSquadChemistry();
                 renderFootballPitch();
-                await delay(SWAP_REMOVE_GAP_MS);
                 // ...then the real replacement the chemistry/budget pass
-                // swapped it for taking that same slot.
+                // swapped it for taking that same slot, with the same
+                // eye-catching pop-in as every other reveal.
                 squadState.selectedXI[slotIdx] = to;
                 squadState.chemistry = calculateSquadChemistry();
                 renderFootballPitch();
+                flashCardIn(container, slotIdx);
                 await delay(SWAP_INSERT_GAP_MS);
             }
 
@@ -5692,11 +5749,28 @@
                     wrapper.onclick = () => window.openPlayerModal(player, slot.label, idx);
                 } else {
                     const emptyTxt = currentLanguage === 'ar' ? 'اضغط لإضافة لاعب' : 'Tap to Add Player';
+                    // Mirrors the FILLED card's exact structure — same
+                    // corner-badge spots, photo-circle size, name row, chem
+                    // row, and price row (all blank/invisible), plus the
+                    // same bottom role strip — so the wrapper's total
+                    // height is identical whether a slot is empty or
+                    // filled. Without this, a slot toggling between the two
+                    // (e.g. during the build animation, or just normal
+                    // add/remove) visibly changes size and jumps around the
+                    // fixed pitch instead of just fading content in place.
                     wrapper.innerHTML = `
-                        <div class="bg-fc-card/95 hover:bg-fc-cardHover border border-dashed ${borderClasses} rounded-xl p-1.5 text-center transition-all">
-                            <i class="fa-solid fa-circle-plus text-gray-500 text-base mt-1"></i>
-                            <div class="text-[9px] text-gray-500 font-bold mt-1 leading-tight">${emptyTxt}</div>
-                            <div class="text-[9px] text-gray-400 leading-tight">${slot.label}</div>
+                        <div class="bg-fc-card/95 hover:bg-fc-cardHover border border-dashed ${borderClasses} rounded-t-lg p-1 sm:p-1.5 text-center flex flex-col items-center relative transition-all">
+                            <div class="absolute top-1 left-1.5 text-[9px] font-black text-transparent leading-none">00</div>
+                            <div class="absolute top-1 right-1.5 text-[9px] font-bold text-transparent leading-none">XX</div>
+                            <div class="w-7 h-7 sm:w-9 sm:h-9 rounded-full mt-3 mb-0.5 border border-dashed border-gray-600 bg-fc-dark/40 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-circle-plus text-gray-500 text-xs sm:text-sm"></i>
+                            </div>
+                            <div class="font-bold text-[10px] sm:text-[11px] text-gray-500 truncate w-full leading-tight">${emptyTxt}</div>
+                            <div class="flex items-center justify-center gap-0.5 mt-0.5 opacity-0"><span class="inline-block w-1.5 h-1.5 rotate-45 border border-gray-500"></span><span class="inline-block w-1.5 h-1.5 rotate-45 border border-gray-500"></span><span class="inline-block w-1.5 h-1.5 rotate-45 border border-gray-500"></span></div>
+                            <div class="text-[9px] font-semibold text-transparent leading-tight">0</div>
+                        </div>
+                        <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-lg px-1 py-0.5 transition-all relative">
+                            <span class="block text-center text-[8px] sm:text-[9px] font-bold text-gray-500 truncate leading-tight">${slot.label}</span>
                         </div>
                     `;
                     wrapper.onclick = () => window.openAddPlayerModal(idx);
