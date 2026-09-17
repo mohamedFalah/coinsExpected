@@ -1464,6 +1464,15 @@
             // even if fc27Database's live list ever changes shape).
             lockedIds: new Set(),
             lockedPlayers: {},
+            // Players the user already owns (marked via toggleOwnedPlayer)
+            // — their real market price stays in the database untouched
+            // (search, comparisons, and the Players tab all still show it
+            // truthfully), but every squad-cost calculation treats them as
+            // free via effectivePrice() below, since the user doesn't need
+            // to spend anything to have them. Marking a player Owned always
+            // locks them too (see toggleOwnedPlayer) — there's no reason to
+            // let the optimizer swap out a player already owned.
+            ownedIds: new Set(),
             // Undo history: a stack of full squad snapshots taken right
             // before any squad-altering action (Optimize, Regenerate,
             // formation change, or a manual/upgrade/search swap), so a
@@ -2265,7 +2274,7 @@
             const weight = { 'ST': 1, 'CB': 2, 'CM': 3, 'GK': 4, 'LW': 5, 'RW': 5, 'CAM': 6, 'LB': 7, 'RB': 7, 'CDM': 3, 'LM': 5, 'RM': 5 };
             order.sort((a, b) => (weight[newSlots[a].pos] || 9) - (weight[newSlots[b].pos] || 9));
 
-            let currentSpent = Object.values(newXI).filter(Boolean).reduce((sum, p) => sum + p.price, 0);
+            let currentSpent = Object.values(newXI).filter(Boolean).reduce((sum, p) => sum + effectivePrice(p), 0);
             const newlyPicked = [];
 
             // In Manual Build Mode (budget = 0) we don't auto-fill the
@@ -2302,7 +2311,7 @@
                 if (chosen) {
                     newXI[slotIdx] = chosen;
                     usedIds.add(playerIdentityKey(chosen));
-                    currentSpent += chosen.price;
+                    currentSpent += effectivePrice(chosen);
                     newlyPicked.push({ slot, player: chosen });
                 }
                 });
@@ -2810,6 +2819,20 @@
             return player && player.name ? player.name.trim().toLowerCase() : '';
         }
 
+        // The price a player counts as for squad-cost/budget purposes. A
+        // player the user has marked Owned (squadState.ownedIds) always
+        // counts as 0 here, regardless of their real market price — the
+        // user already has them, so building the squad shouldn't need to
+        // "spend" on them. This never touches the player object's actual
+        // `price` field: that stays their true market value everywhere
+        // else (search results, the Players tab, a future re-sync), only
+        // the SQUAD'S running total treats an owned player as free.
+        function effectivePrice(player) {
+            if (!player) return 0;
+            if (squadState.ownedIds && squadState.ownedIds.has(player.id)) return 0;
+            return player.price;
+        }
+
         const ATTRIBUTE_LABELS = {
             pac: { en: 'Pace', ar: 'السرعة' },
             sho: { en: 'Shooting', ar: 'التسديد' },
@@ -3138,7 +3161,7 @@
                     if (currentChem >= 2) return; // 2 is acceptable per spec — only fix 0/1
 
                     const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
-                    const restOfSquadCost = squadState.totalCost - currentPlayer.price;
+                    const restOfSquadCost = squadState.totalCost - effectivePrice(currentPlayer);
                     const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
 
                     const candidates = getActiveDatabase().filter(p =>
@@ -3170,7 +3193,7 @@
 
                     if (best && bestValue > currentValue) {
                         squadState.selectedXI[idx] = best;
-                        squadState.totalCost = squadState.totalCost - originalPlayer.price + best.price;
+                        squadState.totalCost = squadState.totalCost - effectivePrice(originalPlayer) + effectivePrice(best);
                         const logText = currentLanguage === 'ar'
                             ? `تحسين الكيمياء في مركز <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${originalPlayer.name}</span> ← <span class="text-white font-bold">${best.name}</span> (كيمياء ${currentChem} ← ${bestChem}).`
                             : `Chemistry fix at <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${originalPlayer.name}</span> → <span class="text-white font-bold">${best.name}</span> (chemistry ${currentChem} → ${bestChem}).`;
@@ -3206,7 +3229,7 @@
                     const currentPlayer = squadState.selectedXI[idx];
                     if (!currentPlayer) return;
                     if (squadState.lockedIds.has(currentPlayer.id)) return; // locked — never auto-swapped
-                    const priceCeiling = currentPlayer.price + leftover;
+                    const priceCeiling = effectivePrice(currentPlayer) + leftover;
                     const currentRawScore = calculatePlayerScore(currentPlayer, slot.pos);
                     // Flat 2% here, not the chem-level-aware object above —
                     // this pass isn't specifically about fixing broken
@@ -3232,7 +3255,7 @@
                 if (bestCandidate && bestSlotIdx !== null) {
                     const outgoing = squadState.selectedXI[bestSlotIdx];
                     squadState.selectedXI[bestSlotIdx] = bestCandidate;
-                    squadState.totalCost += (bestCandidate.price - outgoing.price);
+                    squadState.totalCost += (effectivePrice(bestCandidate) - effectivePrice(outgoing));
                     const slot = slots[bestSlotIdx];
                     const logText = currentLanguage === 'ar'
                         ? `استغلال الميزانية المتبقية في مركز <span class="text-fc-accent">${slot.label}</span>: <span class="text-white font-bold">${outgoing.name}</span> ← <span class="text-white font-bold">${bestCandidate.name}</span> (+${(bestCandidate.price - outgoing.price).toLocaleString()} كوينز).`
@@ -3268,7 +3291,7 @@
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 const chosen = eligible[0];
                 squadState.selectedXI[idx] = chosen;
-                squadState.totalCost += chosen.price;
+                squadState.totalCost += effectivePrice(chosen);
             });
         }
 
@@ -4251,6 +4274,40 @@
             renderFootballPitch();
         };
 
+        // Marks a player as already owned — their price counts as 0 in
+        // every squad-cost calculation from here on (see effectivePrice),
+        // since the user doesn't need to spend anything to field a card
+        // they already have. Their real market price is untouched
+        // everywhere else (search, comparisons, the Players tab). Marking
+        // someone Owned also locks them (there's no reason to let the
+        // optimizer swap out a card that's already free), but un-marking
+        // them does NOT auto-unlock — those stay independent once set, so
+        // the user can still keep them locked at full price if they want.
+        window.toggleOwnedPlayer = function(slotIdx) {
+            const player = squadState.selectedXI[slotIdx];
+            if (!player) return;
+            if (squadState.ownedIds.has(player.id)) {
+                squadState.ownedIds.delete(player.id);
+            } else {
+                squadState.ownedIds.add(player.id);
+                if (!squadState.lockedIds.has(player.id)) {
+                    squadState.lockedIds.add(player.id);
+                    squadState.lockedPlayers[player.id] = player;
+                }
+            }
+            // Recompute the squad's running cost now that this player's
+            // effective price just changed.
+            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + effectivePrice(p), 0);
+            renderFootballPitch();
+            renderSquadSummary();
+            // If the player modal is currently open showing this exact
+            // slot, refresh it in place so the Owned badge/button update
+            // immediately instead of only reflecting on the next open.
+            if (analystContext && analystContext.slotIdx === slotIdx && squadState.selectedXI[slotIdx]) {
+                window.openPlayerModal(squadState.selectedXI[slotIdx], analystContext.slot.label, slotIdx);
+            }
+        };
+
         function zoneOfPosition(pos) {
             if (['ST', 'CF', 'LW', 'RW'].includes(pos)) return 'ATT';
             if (['CM', 'CDM', 'CAM', 'LM', 'RM'].includes(pos)) return 'MID';
@@ -4340,7 +4397,7 @@
             const lockedPlacement = placeLockedPlayers(slots);
             squadState.selectedXI = { ...lockedPlacement.assigned };
             squadState.alternatives = {};
-            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + p.price, 0);
+            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + effectivePrice(p), 0);
             squadState.history = new Set();
             squadState.exhausted = false;
 
@@ -4440,7 +4497,7 @@
                 return (weight[pA] || 9) - (weight[pB] || 9);
             });
 
-            const lockedCost = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + p.price, 0);
+            const lockedCost = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + effectivePrice(p), 0);
             const totalMinCost = lockedCost + sortedSlotIndices.reduce((sum, idx) => sum + cheapestAvailablePrice(idx, new Set()), 0);
 
             if (totalMinCost > budget) {
@@ -4511,7 +4568,7 @@
                     if (chosen) {
                         selectedXI[slotIdx] = chosen;
                         usedPlayerIds.add(playerIdentityKey(chosen));
-                        currentSpent += chosen.price;
+                        currentSpent += effectivePrice(chosen);
                         localLog.push({ slotIdx, slot, chosen });
                     }
                 }
@@ -4526,7 +4583,7 @@
             // against alternatives for.
             function evaluateAttempt(xi) {
                 squadState.selectedXI = { ...xi };
-                squadState.totalCost = Object.values(squadState.selectedXI).reduce((s, p) => s + (p ? p.price : 0), 0);
+                squadState.totalCost = Object.values(squadState.selectedXI).reduce((s, p) => s + effectivePrice(p), 0);
                 improveSquadChemistry();
                 spendLeftoverBudget();
                 fillRemainingGapSlots(slots);
@@ -4734,7 +4791,7 @@
 
             let selectedXI = { ...lockedPlacement.assigned };
             let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
-            let currentSpent = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + p.price, 0);
+            let currentSpent = Object.values(lockedPlacement.assigned).reduce((sum, p) => sum + effectivePrice(p), 0);
             const localLog = [];
 
             for (let i = 0; i < sortedSlotIndices.length; i++) {
@@ -4773,7 +4830,7 @@
                 if (chosen) {
                     selectedXI[slotIdx] = chosen;
                     usedPlayerIds.add(playerIdentityKey(chosen));
-                    currentSpent += chosen.price;
+                    currentSpent += effectivePrice(chosen);
                     localLog.push({ slotIdx, slot, chosen });
                 }
             }
@@ -5252,7 +5309,8 @@
                 totalCost: squadState.totalCost,
                 budget: squadState.budget,
                 lockedIds: new Set(squadState.lockedIds),
-                lockedPlayers: { ...squadState.lockedPlayers }
+                lockedPlayers: { ...squadState.lockedPlayers },
+                ownedIds: new Set(squadState.ownedIds)
             });
             if (squadState.undoStack.length > UNDO_STACK_LIMIT) squadState.undoStack.shift();
             updateUndoButtonState();
@@ -5271,6 +5329,9 @@
             squadState.budget = prev.budget;
             squadState.lockedIds = prev.lockedIds;
             squadState.lockedPlayers = prev.lockedPlayers;
+            // Older snapshots taken before Owned existed won't have this
+            // field — default to an empty set rather than undefined.
+            squadState.ownedIds = prev.ownedIds || new Set();
             squadState.exhausted = false;
 
             const formationSelect = document.getElementById('formation-select');
@@ -5351,7 +5412,7 @@
                 // Cost of every OTHER already-selected slot (excluding this
                 // one's own current player) — whatever's left of the budget
                 // after that is the most this slot can spend.
-                const restOfSquadCost = squadState.totalCost - (currentPlayer ? currentPlayer.price : 0);
+                const restOfSquadCost = squadState.totalCost - (currentPlayer ? effectivePrice(currentPlayer) : 0);
                 const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
 
                 const eligible = getActiveDatabase().filter(p =>
@@ -5542,7 +5603,7 @@
             if (!player) return;
 
             squadState.selectedXI[addPlayerSlotIdx] = player;
-            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + (p ? p.price : 0), 0);
+            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + effectivePrice(p), 0);
 
             let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
             Object.values(squadState.selectedXI).forEach(p => {
@@ -5585,7 +5646,7 @@
             resultsContainer.innerHTML = matches.map(candidate => {
                 const isSamePlayer = currentPlayer && candidate.id === currentPlayer.id;
                 const metaDelta = getMetaValue(candidate) - getMetaValue(currentPlayer);
-                const priceDelta = candidate.price - currentPlayer.price;
+                const priceDelta = candidate.price - effectivePrice(currentPlayer);
                 const candMetaTag = typeof candidate.meta === 'number' ? ` · MR ${candidate.meta.toFixed(1)}` : '';
 
                 let verdictIcon, verdictColor, verdictText;
@@ -5647,6 +5708,10 @@
             // A deliberate manual swap overrides a lock — the player being
             // benched here is removed from the locked set so they don't
             // reappear (out of position) on the next formation change.
+            // Note: their Owned status is NOT cleared — owning a card is a
+            // standing fact independent of whether it's currently fielded,
+            // so benching them here doesn't mean the user no longer owns
+            // them (see effectivePrice/toggleOwnedPlayer).
             if (outgoing && squadState.lockedIds.has(outgoing.id)) {
                 squadState.lockedIds.delete(outgoing.id);
                 delete squadState.lockedPlayers[outgoing.id];
@@ -5655,7 +5720,7 @@
             let currentSpent = 0, totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
             Object.values(squadState.selectedXI).forEach(p => {
                 if (p) {
-                    currentSpent += p.price;
+                    currentSpent += effectivePrice(p);
                     totalRating += p.rating;
                     count++;
                     if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; }
@@ -5720,6 +5785,7 @@
             slots.forEach((slot, idx) => {
                 const player = squadState.selectedXI[idx];
                 const isLocked = player && squadState.lockedIds && squadState.lockedIds.has(player.id);
+                const isOwned = player && squadState.ownedIds && squadState.ownedIds.has(player.id);
                 const borderClasses = isLocked ? 'border-fc-gold' : 'border-fc-border group-hover:border-fc-accent';
                 const coinLabel = currentLanguage === 'ar' ? 'ك' : 'c';
                 const pos = getSlotPixelPosition(getShapeAdjustedSlot(slot, idx));
@@ -5788,7 +5854,8 @@
                             <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover mt-3 mb-0.5 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                             <div class="font-bold text-[10px] sm:text-[11px] text-white truncate w-full leading-tight">${player.name}</div>
                             <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
-                            <div class="text-[9px] font-semibold text-fc-gold leading-tight">${player.price.toLocaleString()}${coinLabel}</div>
+                            <div class="text-[9px] font-semibold leading-tight ${isOwned ? 'text-green-400' : 'text-fc-gold'}" title="${isOwned ? (currentLanguage === 'ar' ? 'مملوك بالفعل — لا يُحتسب من الميزانية' : 'Already owned — not counted against budget') : ''}">${isOwned ? (currentLanguage === 'ar' ? 'مملوك' : 'Owned') : `${player.price.toLocaleString()}${coinLabel}`}</div>
+                            ${isOwned ? `<i class="fa-solid fa-circle-check absolute top-1 left-1/2 -translate-x-1/2 text-green-400 text-[8px]" title="${currentLanguage === 'ar' ? 'مملوك بالفعل' : 'Already owned'}"></i>` : ''}
                             <button onclick="event.stopPropagation(); window.toggleLockPlayer(${idx})" title="${lockTitle}" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
                                 <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'} text-[7px]"></i>
                             </button>
@@ -6774,7 +6841,7 @@
                 // one for that exact gain, not just the priciest option.
                 let best = null;
                 alternatives.forEach(alt => {
-                    const costDiff = alt.price - currentPlayer.price;
+                    const costDiff = alt.price - effectivePrice(currentPlayer);
                     if (costDiff > 0 && costDiff <= (remainingBudget + 50000)) {
                         const metaDiff = getMetaValue(alt) - currentMeta;
                         if (!best || metaDiff > best.metaDiff || (metaDiff === best.metaDiff && costDiff < best.costDiff)) {
@@ -6908,7 +6975,7 @@
             const slot = slots[slotIdx];
             const currentPlayer = squadState.selectedXI[slotIdx];
             const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
-            const restOfSquadCost = squadState.totalCost - (currentPlayer ? currentPlayer.price : 0);
+            const restOfSquadCost = squadState.totalCost - (currentPlayer ? effectivePrice(currentPlayer) : 0);
             const priceCeiling = Math.max(0, squadState.budget - restOfSquadCost);
 
             const pool = getActiveDatabase().filter(p =>
@@ -8512,7 +8579,7 @@
                 // budget — skip it in standalone mode, same reasoning as
                 // the alternatives clause above.
                 if (!standalone) {
-                    const budgetShare = squadState.budget > 0 ? (evalPlayer.price / squadState.budget) * 100 : 0;
+                    const budgetShare = squadState.budget > 0 ? (effectivePrice(evalPlayer) / squadState.budget) * 100 : 0;
                     if (budgetShare >= 15) {
                         sentences.push(isAr
                             ? `استثمار كبير في هذا المركز — يستهلك نحو ${budgetShare.toFixed(0)}% من إجمالي الميزانية.`
@@ -8746,6 +8813,10 @@
 
             const ratingLbl = currentLanguage === 'ar' ? 'التقييم' : 'Rating';
             const metaLbl = currentLanguage === 'ar' ? 'ميتا' : 'Meta';
+            const isOwnedInModal = typeof slotIdx === 'number' && squadState.ownedIds && squadState.ownedIds.has(player.id);
+            const ownedTag = isOwnedInModal
+                ? (currentLanguage === 'ar' ? ` <span class="text-green-400 font-bold">(مملوك بالفعل — 0 من الميزانية)</span>` : ` <span class="text-green-400 font-bold">(Owned — counts as 0)</span>`)
+                : '';
             // Built as ONE fully-localized string per language rather than
             // translating only some fragments (Meta/Price) while leaving
             // English scaffolding ("Rating:", the "|" separators) mixed
@@ -8757,8 +8828,21 @@
             // pipe separators between them render in a stable position
             // regardless of which script is on either side.
             const statsLine = currentLanguage === 'ar'
-                ? `<bdi>${ratingLbl}: <span class="text-fc-gold font-bold">${player.rating}</span> OVR</bdi>${hasMeta ? ` <bdi>| ${metaLbl}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span></bdi>` : ''} <bdi>| ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()}</span> ${coinLbl}</bdi>`
-                : `${ratingLbl}: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span>`;
+                ? `<bdi>${ratingLbl}: <span class="text-fc-gold font-bold">${player.rating}</span> OVR</bdi>${hasMeta ? ` <bdi>| ${metaLbl}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span></bdi>` : ''} <bdi>| ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()}</span> ${coinLbl}</bdi>${ownedTag}`
+                : `${ratingLbl}: <span class="text-fc-gold font-bold">${player.rating} OVR</span>${metaLine} | ${priceLbl}: <span class="text-white font-bold">${player.price.toLocaleString()} ${coinLbl}</span>${ownedTag}`;
+
+            // Only shown when this modal is anchored to an actual squad
+            // slot (not the standalone Players-tab lookup, where "owned"
+            // has no meaning since there's no squad to be free within).
+            const ownToggleBtn = (typeof slotIdx === 'number' && !standalone) ? `
+                <button onclick="window.toggleOwnedPlayer(${slotIdx})"
+                    class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${isOwnedInModal ? 'bg-green-500/20 text-green-400 border border-green-500/40 hover:bg-green-500/30' : 'bg-fc-dark text-gray-400 border border-fc-border hover:text-green-400 hover:border-green-500/40'}">
+                    <i class="fa-solid ${isOwnedInModal ? 'fa-circle-check' : 'fa-wallet'}"></i>
+                    ${isOwnedInModal
+                        ? (currentLanguage === 'ar' ? 'مملوك بالفعل — إلغاء' : 'Already Owned — Unmark')
+                        : (currentLanguage === 'ar' ? 'وضع علامة كمملوك بالفعل' : 'Mark as Already Owned')}
+                </button>
+            ` : '';
 
             content.innerHTML = `
                 <div class="space-y-5">
@@ -8785,6 +8869,7 @@
                         ` : ''}
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">${statsLine}</p>
+                        ${ownToggleBtn}
                         ${(getNationFlag(player.nationId) || getLeagueLogoUrl(player.leagueId)) ? `
                             <div class="flex items-center gap-1.5 mt-1.5">
                                 ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white shadow-sm text-sm leading-none overflow-hidden shrink-0" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
