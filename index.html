@@ -270,19 +270,8 @@
                 </button>
             </div>
 
-            <!-- Header Budget Widget, Language Switcher & Config Gear Button -->
+            <!-- Language Switcher & Config Gear Button -->
             <div class="flex items-center space-x-3 rtl:space-x-reverse">
-                <!-- Bounded chip (icon + stacked label/value) instead of
-                     loose floating text — a growing number now only grows
-                     within this chip's own width instead of visually
-                     drifting into the rest of the header. -->
-                <div class="hidden sm:flex items-center gap-2 bg-fc-dark border border-fc-border rounded-xl px-3 py-2">
-                    <i class="fa-solid fa-coins text-fc-gold text-sm shrink-0"></i>
-                    <div class="flex flex-col leading-tight">
-                        <span data-i18n="activeBudget" class="text-[9px] text-gray-500 uppercase tracking-wide">Active Budget</span>
-                        <span id="header-budget-display" class="text-sm font-black text-fc-gold whitespace-nowrap" title="0 Coins">0</span>
-                    </div>
-                </div>
                 <!-- Language Selector -->
                 <select id="language-selector" onchange="changeLanguage(this.value)" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
                     <option value="en">English</option>
@@ -1155,7 +1144,6 @@
                 navSquad: "Squad",
                 navDatabase: "Database",
                 navMySquads: "My Squads",
-                activeBudget: "Active Budget",
                 step12: "STEP 1 & 2",
                 calcTitle: "FC Points & Premium Gold Pack Calculator",
                 calcDesc: "Calculate your exact expected coin returns from purchasing Premium Gold Packs and quick-selling all received items. Modify pack costs or quick-sell bounds anytime via settings.",
@@ -1282,7 +1270,6 @@
                 navSquad: "التشكيلة",
                 navDatabase: "قاعدة البيانات",
                 navMySquads: "تشكيلاتي",
-                activeBudget: "الميزانية الحالية",
                 step12: "الخطوة ١ و ٢",
                 calcTitle: "حاسبة نقاط FC وباكجات الجولد المميزة",
                 calcDesc: "احسب عائدات الكوينز المتوقعة بدقة من شراء باكجات الجولد المميزة والبيع السريع لجميع العناصر. يمكنك تعديل تكلفة الباكجات أو حدود البيع السريع في أي وقت.",
@@ -2143,16 +2130,6 @@
             }
         };
 
-        // Keeps the header budget chip a stable width regardless of how
-        // large the number gets (a raw "3,924,700 Coins" string was the
-        // messy case the header redesign below is specifically for) — the
-        // exact full value is still available via the title tooltip.
-        function formatCompactCoins(value) {
-            if (value >= 1000000) return (value / 1000000).toFixed(2) + 'M';
-            if (value >= 100000) return Math.round(value / 1000) + 'K';
-            return value.toLocaleString();
-        }
-
         window.calculatePackReturns = function() {
             const packsCount = Math.floor(currentSelectedPoints / appConfig.packCost);
             const remainingPts = currentSelectedPoints % (packsCount > 0 ? (currentSelectedPoints / packsCount) : appConfig.packCost);
@@ -2172,7 +2149,6 @@
             const cfgMin = document.getElementById('cfg-min-display');
             const cfgMax = document.getElementById('cfg-max-display');
             const cfgExp = document.getElementById('cfg-expected-display');
-            const headerBudget = document.getElementById('header-budget-display');
 
             const coinLabel = currentLanguage === 'ar' ? 'كوينز' : 'Coins';
 
@@ -2186,10 +2162,6 @@
             if (cfgMin) cfgMin.innerText = appConfig.qsMin.toLocaleString();
             if (cfgMax) cfgMax.innerText = appConfig.qsMax.toLocaleString();
             if (cfgExp) cfgExp.innerText = appConfig.qsExpected.toLocaleString();
-            if (headerBudget) {
-                headerBudget.innerText = formatCompactCoins(expectedCoins);
-                headerBudget.title = expectedCoins.toLocaleString() + ' ' + coinLabel;
-            }
         };
 
         window.transferCoinsToSquadBuilder = function() {
