@@ -1238,7 +1238,7 @@
                 searchAnyPlayer: "Search Any Player",
                 buildFromPoolBtn: "BUILD FROM POOL",
                 poolModalTitle: "Build From Player Pool",
-                poolModalDesc: "Add 11 or more players you own or want to consider, then hit Build — the best formation and starting XI will be picked from the pool automatically.",
+                poolModalDesc: "Add 11 or more players you own or want to consider, then hit Build — the best formation and starting XI will be picked from the pool automatically. Once 11+ are queued here, Optimize and Regenerate will also favor these players for any slot they suit.",
                 poolSearchLabel: "Search Any Player",
                 poolStackLabel: "Player Pool",
                 poolEmptyStack: "No players added yet. Search above and add at least 11.",
@@ -1372,7 +1372,7 @@
                 searchAnyPlayer: "ابحث عن أي لاعب",
                 buildFromPoolBtn: "بناء من مجموعة لاعبين",
                 poolModalTitle: "بناء التشكيلة من مجموعة لاعبين",
-                poolModalDesc: "أضف 11 لاعبًا أو أكثر تملكهم أو تفكر فيهم، ثم اضغط بناء — سيتم اختيار أفضل تشكيلة وأفضل تشكيلة أساسية من المجموعة تلقائيًا.",
+                poolModalDesc: "أضف 11 لاعبًا أو أكثر تملكهم أو تفكر فيهم، ثم اضغط بناء — سيتم اختيار أفضل تشكيلة وأفضل تشكيلة أساسية من المجموعة تلقائيًا. وبمجرد إضافة 11 لاعبًا أو أكثر هنا، ستفضّلهم أزرار (تحسين) و(إعادة توليد) أيضًا في أي مركز يناسبهم.",
                 poolSearchLabel: "ابحث عن أي لاعب",
                 poolStackLabel: "مجموعة اللاعبين",
                 poolEmptyStack: "لم تتم إضافة أي لاعب بعد. ابحث أعلاه وأضف 11 لاعبًا على الأقل.",
@@ -3119,6 +3119,25 @@
                 base -= 200;
             }
 
+            // Player Pool preference: once the user has queued up 11+
+            // candidates in the Build From Pool list, Optimize and
+            // Regenerate should lean toward actually using them instead of
+            // ignoring the pool entirely outside the dedicated "Build From
+            // Pool" button. This is a bounded nudge (comparable in size to
+            // the exact-position bonus just above), not a hard override —
+            // a pool player only wins a slot here if they're a genuinely
+            // close/suitable candidate; a database player who's clearly
+            // better (big meta/rating gap) still wins normally. Every
+            // candidate-ranking call site (chemistry-fix swaps, leftover-
+            // budget reinvestment, gap-filling, and the initial fill in
+            // both runSquadOptimizerImpl and buildRandomizedXI) sorts by
+            // this same function, so applying it once here is enough to
+            // make the preference consistent everywhere Optimize/Regenerate
+            // pick a player — no need to touch each call site separately.
+            if (playerPool.length >= 11 && playerPool.some(p => playerIdentityKey(p) === playerIdentityKey(player))) {
+                base += 45;
+            }
+
             // EasySBC's metaRating already accounts for position-specific
             // attribute weighting (and playstyles), so only layer our own
             // hand-tuned attribute bonus on top for players without it.
@@ -4568,6 +4587,11 @@
                 `بدء تحسين التشكيلة <span class="text-white font-bold">${squadState.formation}</span> بميزانية كوينز إجمالية قدرها <span class="text-fc-gold font-bold">${budget.toLocaleString()} كوينز</span>.` :
                 `Starting optimization for formation <span class="text-white font-bold">${squadState.formation}</span> with total coin budget of <span class="text-fc-gold font-bold">${budget.toLocaleString()} coins</span>.`;
             squadState.explanationLog.push(startingLogText);
+            if (playerPool.length >= 11) {
+                squadState.explanationLog.push(currentLanguage === 'ar'
+                    ? `مجموعة اللاعبين تحتوي على ${playerPool.length} لاعب — سيتم تفضيلهم عند اختيار كل مركز إذا كانوا مناسبين.`
+                    : `Your player pool has ${playerPool.length} players queued — they'll be favored for each slot when they're a suitable fit.`);
+            }
 
             // Budget policy: build the best squad that costs <= budget.
             // There's no tolerance margin — if a slot genuinely can't be
@@ -5137,6 +5161,11 @@
 
             const regenMsg = currentLanguage === 'ar' ? 'تم توليد تشكيلة جديدة لنفس التشكيلة والميزانية.' : 'Generated a new squad variation for the same formation and budget.';
             squadState.explanationLog.push(regenMsg);
+            if (playerPool.length >= 11) {
+                squadState.explanationLog.push(currentLanguage === 'ar'
+                    ? `مجموعة اللاعبين تحتوي على ${playerPool.length} لاعب — تم تفضيلهم عند اختيار كل مركز إذا كانوا مناسبين.`
+                    : `Your player pool has ${playerPool.length} players queued — they were favored for each slot when they were a suitable fit.`);
+            }
             if (unlockedDuringRegen.length > 0) {
                 const unlockedNames = unlockedDuringRegen.map(p => p.name).join(', ');
                 squadState.explanationLog.push(currentLanguage === 'ar'
