@@ -504,7 +504,36 @@
                         <button onclick="openExplanationModal()" class="p-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-fc-accent transition-all shrink-0" title="How was this squad built?">
                             <i class="fa-solid fa-circle-info text-lg"></i>
                         </button>
+                        <button onclick="window.toggleSquadDescribePanel()" id="describe-squad-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Describe the squad and tactics you want in your own words">
+                            <i class="fa-solid fa-comment-dots"></i>
+                            <span data-i18n="describeSquadBtn">DESCRIBE SQUAD</span>
+                        </button>
                     </div>
+                </div>
+
+                <!-- Free-text squad description. This is keyword matching
+                     against the SAME controls above it (formation, league,
+                     playstyle identity, shape, budget) — not a real
+                     language model — so it only ever sets things this app
+                     already knows how to set, and the summary line after
+                     submitting shows exactly what was picked up so the
+                     person can see (and manually fix via the dropdowns
+                     above) anything it missed. -->
+                <div id="squad-describe-panel" class="hidden px-4 py-3 border-t border-fc-border space-y-2">
+                    <p class="text-xs text-gray-400" data-i18n="describeSquadHelp">
+                        Describe the squad and tactics you want — a formation, a playing identity (attacking, possession-based, fast, physical, clinical in front of goal, etc.), a league, and/or a budget. Whatever it can pick out gets applied to the controls above, then the squad gets rebuilt to match.
+                    </p>
+                    <textarea id="squad-describe-input" rows="3" placeholder="e.g. An attacking 4-3-3 with fast wingers, built mostly from the Premier League, around a 50k budget…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-fc-accent"></textarea>
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.applySquadDescription()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-black hover:bg-fc-accentHover flex items-center gap-1.5">
+                            <i class="fa-solid fa-check"></i>
+                            <span data-i18n="describeSquadDoneBtn">DONE — BUILD IT</span>
+                        </button>
+                        <button onclick="window.toggleSquadDescribePanel(false)" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-gray-300 text-xs font-bold hover:text-white">
+                            <span data-i18n="cancelBtn">Cancel</span>
+                        </button>
+                    </div>
+                    <p id="squad-describe-summary" class="hidden text-xs text-gray-300 bg-fc-dark/80 border border-fc-border rounded-xl px-3 py-2"></p>
                 </div>
 
                 <!-- Header (label) is its own full-width line above the
@@ -1173,6 +1202,11 @@
                 managerLabel: "Manager (optional, +1 chem match)",
                 optimizeBtn: "OPTIMIZE",
                 regenBtn: "REGENERATE",
+                describeSquadBtn: "DESCRIBE SQUAD",
+                describeSquadHelp: "Describe the squad and tactics you want — a formation, a playing identity (attacking, possession-based, fast, physical, clinical in front of goal, etc.), a league, and/or a budget. Whatever it can pick out gets applied to the controls above, then the squad gets rebuilt to match.",
+                describeSquadDoneBtn: "DONE — BUILD IT",
+                describeSquadNothingFound: "Couldn't pick out anything specific from that — try mentioning a formation (e.g. 4-3-3), a playing style (attacking, possession-based, fast, physical, clinical, technical), a league, or a budget.",
+                describeSquadUnderstood: "Understood:",
                 saveSquadBtn: "SAVE SQUAD",
                 regenExhausted: "EXHAUSTED",
                 squadSummary: "Squad Summary",
@@ -1299,6 +1333,11 @@
                 managerLabel: "المدرب (اختياري، +1 كيمياء عند التطابق)",
                 optimizeBtn: "تحسين",
                 regenBtn: "إعادة توليد",
+                describeSquadBtn: "صف التشكيلة",
+                describeSquadHelp: "صف التشكيلة والتكتيك الذي تريده — تشكيل، هوية لعب (هجومي، استحواذي، سريع، بدني، حاسم أمام المرمى، إلخ)، دوري، و/أو ميزانية. كل ما يمكن تمييزه سيُطبَّق على الإعدادات أعلاه، ثم يُعاد بناء التشكيلة لتطابقها.",
+                describeSquadDoneBtn: "تم — ابنِها",
+                describeSquadNothingFound: "لم يتم تمييز أي شيء محدد من ذلك — جرّب ذكر تشكيل (مثل 4-3-3)، أسلوب لعب (هجومي، استحواذي، سريع، بدني، حاسم، تقني)، دوري، أو ميزانية.",
+                describeSquadUnderstood: "تم فهم:",
                 saveSquadBtn: "حفظ التشكيلة",
                 regenExhausted: "انتهت التشكيلات",
                 squadSummary: "ملخص التشكيلة",
@@ -5182,6 +5221,212 @@
             squadState.exhausted = false;
             squadState.history = new Set();
             markSettingsPending();
+        };
+
+        // ===================================================================
+        // DESCRIBE YOUR SQUAD — free-text controls, in plain language
+        // ===================================================================
+        // Honest about what this actually is: keyword matching against the
+        // exact same controls already on screen (formation, league filter,
+        // playstyle identity, attacking/defending shape, budget) — not a
+        // language model. It only ever sets things this app already knows
+        // how to set, and applySquadDescription() shows a summary of
+        // exactly what it picked up so anything missed is obvious and can
+        // be fixed with the dropdowns directly.
+
+        window.toggleSquadDescribePanel = function(forceOpen) {
+            const panel = document.getElementById('squad-describe-panel');
+            if (!panel) return;
+            const show = forceOpen === undefined ? panel.classList.contains('hidden') : !!forceOpen;
+            panel.classList.toggle('hidden', !show);
+            if (show) {
+                const textarea = document.getElementById('squad-describe-input');
+                if (textarea) textarea.focus();
+            }
+        };
+
+        const FORMATION_DIGIT_ALIASES = {
+            '433': '4-3-3', '442': '4-4-2', '4231': '4-2-3-1',
+            '41212': '4-1-2-1-2', '352': '3-5-2', '451': '4-5-1', '4411': '4-4-1-1'
+        };
+
+        function detectFormationFromText(text) {
+            // Real dash-separated form first (e.g. "4-2-3-1").
+            const dashMatches = text.match(/\b[1-9](?:-[1-9]){2,4}\b/g) || [];
+            for (const m of dashMatches) {
+                if (formationSlots[m]) return m;
+            }
+            // Digits-only shorthand people actually type (e.g. "433").
+            const digitMatches = text.match(/\b[1-9]{3,6}\b/g) || [];
+            for (const m of digitMatches) {
+                if (FORMATION_DIGIT_ALIASES[m]) return FORMATION_DIGIT_ALIASES[m];
+            }
+            return null;
+        }
+
+        const PLAYSTYLE_DESCRIBE_KEYWORDS = {
+            pace:      ['fast', 'pace', 'speed', 'speedy', 'quick', 'rapid', 'blazing', 'transition'],
+            power:     ['physical', 'strong', 'aggressive', 'powerhouse', 'strength', 'muscular', 'bully', 'dominant in the air', 'aerial'],
+            buildup:   ['possession', 'passing', 'tiki-taka', 'tiki taka', 'build-up', 'build up', 'patient', 'control the ball', 'short passing'],
+            defense:   ['defensive', 'solid at the back', 'low block', 'compact', 'hard to break down', 'clean sheet', 'park the bus'],
+            shooting:  ['clinical', 'finishing', 'goal-scoring', 'goalscoring', 'lethal', 'sharpshooter', 'prolific'],
+            dribbling: ['dribbling', 'skillful', 'skilful', 'technical', 'flair', 'tricky', 'nutmeg', '1v1']
+        };
+
+        function detectPlaystyleFromText(lowerText) {
+            let best = null, bestCount = 0;
+            for (const [axis, words] of Object.entries(PLAYSTYLE_DESCRIBE_KEYWORDS)) {
+                const count = words.reduce((sum, w) => sum + (lowerText.includes(w) ? 1 : 0), 0);
+                if (count > bestCount) { best = axis; bestCount = count; }
+            }
+            return best;
+        }
+
+        function detectShapeFromText(lowerText) {
+            const attackWords = ['attacking', 'high press', 'high line', 'gung-ho', 'all-out attack', 'go for goals', 'ultra attacking'];
+            const defendWords = ['defensive shape', 'sit deep', 'sit back', 'counter-attack', 'counter attack', 'park the bus', 'low block'];
+            if (attackWords.some(w => lowerText.includes(w))) return 'attack';
+            if (defendWords.some(w => lowerText.includes(w))) return 'defend';
+            return null;
+        }
+
+        const LEAGUE_DESCRIBE_KEYWORDS = {
+            premier_league:   ['premier league', 'epl', 'english league'],
+            la_liga:          ['la liga', 'laliga', 'spanish league'],
+            serie_a:          ['serie a', 'italian league'],
+            bundesliga:       ['bundesliga', 'german league'],
+            saudi_pro_league: ['saudi pro league', 'roshn', 'spl', 'saudi league', 'saudi'],
+            super_lig:        ['süper lig', 'super lig', 'turkish league']
+        };
+
+        function detectLeagueFromText(lowerText) {
+            for (const [key, words] of Object.entries(LEAGUE_DESCRIBE_KEYWORDS)) {
+                if (words.some(w => lowerText.includes(w))) return key;
+            }
+            return null;
+        }
+
+        function parseCompactNumberToken(str) {
+            if (!str) return null;
+            str = str.replace(/,/g, '').trim();
+            const m = str.match(/^([\d.]+)\s*(k|m)?$/i);
+            if (!m) return null;
+            const num = parseFloat(m[1]);
+            if (isNaN(num)) return null;
+            const mult = m[2] ? (m[2].toLowerCase() === 'k' ? 1000 : 1000000) : 1;
+            return Math.round(num * mult);
+        }
+
+        function detectBudgetFromText(lowerText) {
+            const patterns = [
+                /([\d,]+\.?\d*\s*[km]?)\s*coins?/i,
+                /budget\s*(?:of|is|:)?\s*([\d,]+\.?\d*\s*[km]?)/i,
+                /([\d,]+\.?\d*\s*[km]?)\s*(?:coin\s*)?budget/i
+            ];
+            for (const p of patterns) {
+                const m = lowerText.match(p);
+                if (m) {
+                    const val = parseCompactNumberToken(m[1].replace(/\s+/g, ''));
+                    if (val != null && val > 0) return val;
+                }
+            }
+            return null;
+        }
+
+        window.applySquadDescription = function() {
+            const isAr = currentLanguage === 'ar';
+            const textarea = document.getElementById('squad-describe-input');
+            const summaryEl = document.getElementById('squad-describe-summary');
+            const text = textarea ? textarea.value.trim() : '';
+            if (!text) return;
+            const lowerText = text.toLowerCase();
+
+            const summary = [];
+
+            // Budget first — applied before League/Playstyle so those
+            // unlock correctly (both require squadState.budget > 0) if
+            // this description is the first time a real budget is set.
+            const budget = detectBudgetFromText(lowerText);
+            if (budget != null) {
+                squadState.budget = budget;
+                const budgetInput = document.getElementById('squad-budget-input');
+                if (budgetInput) budgetInput.value = budget;
+                updateBuildFilterControlsState();
+                summary.push((isAr ? 'الميزانية: ' : 'Budget: ') + budget.toLocaleString() + (isAr ? ' كوينز' : ' coins'));
+            }
+
+            // Formation — set directly (not via window.changeFormation,
+            // which triggers its own adjust-in-place rebuild) since a
+            // description is building a squad from scratch and gets one
+            // single explicit rebuild at the end of this function instead.
+            const formKey = detectFormationFromText(text);
+            if (formKey) {
+                squadState.formation = formKey;
+                squadState.pitchShapeMode = 'normal';
+                squadState.heatZoneSlotIdx = null;
+                const formSelect = document.getElementById('formation-select');
+                if (formSelect) formSelect.value = formKey;
+                summary.push((isAr ? 'التشكيل: ' : 'Formation: ') + formKey);
+            }
+
+            // Shape — purely visual (see setPitchShapeMode), applied after
+            // formation in case formation reset it back to normal above.
+            const shape = detectShapeFromText(lowerText);
+            if (shape) {
+                squadState.pitchShapeMode = shape;
+                ['normal', 'attack', 'defend'].forEach(m => {
+                    const btn = document.getElementById(`shape-btn-${m}`);
+                    if (btn) btn.classList.toggle('active', m === shape);
+                });
+                summary.push(isAr
+                    ? (shape === 'attack' ? 'الشكل: هجومي' : 'الشكل: دفاعي')
+                    : (shape === 'attack' ? 'Shape: Attacking' : 'Shape: Defending'));
+            }
+
+            // League filter and playstyle identity both require a real
+            // budget (same gating as their dropdowns) — skip silently if
+            // there still isn't one rather than setting a value the UI
+            // itself would immediately reset back to blank.
+            if (squadState.budget > 0) {
+                const league = detectLeagueFromText(lowerText);
+                if (league && LEAGUE_FILTER_GROUPS[league]) {
+                    squadState.leagueFilter = league;
+                    computePositionFitBaselines();
+                    const leagueSelect = document.getElementById('league-filter-select');
+                    if (leagueSelect) leagueSelect.value = league;
+                    summary.push((isAr ? 'الدوري: ' : 'League: ') + LEAGUE_FILTER_GROUPS[league].label[isAr ? 'ar' : 'en']);
+                }
+
+                const playstyle = detectPlaystyleFromText(lowerText);
+                if (playstyle && PLAYSTYLE_TARGET_AXES[playstyle]) {
+                    squadState.playstyleTarget = playstyle;
+                    const styleSelect = document.getElementById('playstyle-target-select');
+                    if (styleSelect) styleSelect.value = playstyle;
+                    summary.push((isAr ? 'الهوية: ' : 'Identity: ') + PLAYSTYLE_TARGET_AXES[playstyle].label[isAr ? 'ar' : 'en']);
+                }
+            }
+
+            if (summary.length === 0) {
+                if (summaryEl) {
+                    summaryEl.classList.remove('hidden');
+                    summaryEl.textContent = i18n[currentLanguage].describeSquadNothingFound;
+                }
+                return; // nothing changed — don't waste a rebuild on nothing
+            }
+
+            if (summaryEl) {
+                summaryEl.classList.remove('hidden');
+                summaryEl.textContent = i18n[currentLanguage].describeSquadUnderstood + ' ' + summary.join(' · ');
+            }
+
+            // A different league/playstyle/formation invalidates
+            // Regenerate's old uniqueness history, same reasoning as the
+            // individual setters above.
+            squadState.exhausted = false;
+            squadState.history = new Set();
+            markSettingsPending();
+
+            window.runSquadOptimizer();
         };
 
         function endSquadWorking() {
