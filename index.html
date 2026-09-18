@@ -8321,6 +8321,55 @@
                 }
             });
 
+            // Rule 5 — Don't let the whole back line step out at once. Two
+            // Ball-Playing Defenders plus an attacking fullback means three
+            // of the back four have vacated their recovery position at the
+            // same time — lose the ball and it's a foot race with nobody
+            // actually covering. This is deliberately unconditional (not
+            // skipped even when the pitch shape is set to Attacking) —
+            // wanting to attack and wanting the back line to still be
+            // covered aren't contradictory, they're exactly the balance a
+            // real team tries to hold.
+            const attackingFbCount = fbSlots.filter(idx => ['Attacking Wingback', 'Wingback', 'Inverted Wingback'].includes(assignments[idx].role)).length;
+            const cbSlots = byLine.DEF.filter(idx => slots[idx].pos === 'CB');
+            const forwardCbs = cbSlots.filter(idx => assignments[idx].role === 'Ball-Playing Defender');
+            if (forwardCbs.length >= 2 && attackingFbCount >= 1) {
+                forwardCbs.sort((a, b) => assignments[a].score - assignments[b].score); // weakest fit first
+                const idx = forwardCbs[0];
+                const alt = candidatesBySlot[idx].find(o => o.role === 'Defender');
+                if (alt) adjust(idx, alt.role, {
+                    en: "Kept as a no-nonsense last-line Defender — with a fullback already pushing forward, both center-backs stepping out at once would leave nobody actually covering in behind.",
+                    ar: 'أُبقي كمدافع تقليدي في الخط الأخير — مع اندفاع أحد الظهيرين للأمام، خروج كلا قلبي الدفاع معاً سيترك المساحة الخلفية دون تغطية.'
+                });
+            }
+
+            // Rule 6 — Guarantee a counter-attacking outlet even when the
+            // team leans defensive. A back line playing conservatively with
+            // nobody upfield built to run into space means winning the
+            // ball back leads nowhere — there's no actual way to hurt
+            // anyone on the break. If every fullback is sitting deep (or
+            // the pitch shape is explicitly set to Defending) AND nobody in
+            // the front line/wide areas has a genuine pace-and-space role,
+            // reassign whoever fits one best so there's still a real
+            // release valve.
+            const isDefensiveLean = squadState.pitchShapeMode === 'defend' || (fbSlots.length > 0 && fbSlots.every(idx => ['Fullback', 'Falseback'].includes(assignments[idx].role)));
+            if (isDefensiveLean) {
+                const counterRoles = ['Advanced Forward', 'Winger'];
+                const outletSlots = [...byLine.ATT, ...byLine.MID.filter(idx => ['LM', 'RM'].includes(slots[idx].pos))];
+                const hasCounterOutlet = outletSlots.some(idx => counterRoles.includes(assignments[idx].role));
+                if (!hasCounterOutlet && outletSlots.length > 0) {
+                    let best = null;
+                    outletSlots.forEach(idx => {
+                        const opt = candidatesBySlot[idx].find(o => counterRoles.includes(o.role));
+                        if (opt && (!best || opt.score > best.opt.score)) best = { idx, opt };
+                    });
+                    if (best) adjust(best.idx, best.opt.role, {
+                        en: "Kept as a direct out-ball — with the rest of the team sitting deep, someone still needs to be a genuine threat to run into the space that opens up the moment possession's won back.",
+                        ar: 'أُبقي كمنفذ هجومي مباشر — مع تراجع بقية الفريق، يجب أن يبقى أحدهم تهديداً حقيقياً للانطلاق في المساحة التي تُفتح فور استعادة الكرة.'
+                    });
+                }
+            }
+
             return assignments;
         }
 
