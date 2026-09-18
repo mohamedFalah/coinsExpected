@@ -2957,6 +2957,22 @@
             return player.price;
         }
 
+        // Single "how good is this card" number used purely for DISPLAY
+        // ORDERING (the build explanation list and the pick-reveal
+        // animation) — meta rating when the card has one, falling back to
+        // raw OVR otherwise. This intentionally does NOT feed the actual
+        // selection logic (calculatePlayerScore already handles that with
+        // its own position-fit/playstyle-bias math); it just lets the
+        // optimizer/regenerator present their picks best-to-worst instead
+        // of in whatever order the position-fill loop happened to visit
+        // slots in (which jumps around: e.g. an 84-rated pick, then a
+        // 74-rated one, then back up to 86, because slot fill order is
+        // driven by position scarcity, not quality).
+        function playerQualityScore(p) {
+            if (!p) return 0;
+            return typeof p.meta === 'number' && !isNaN(p.meta) ? p.meta : (p.rating || 0);
+        }
+
         const ATTRIBUTE_LABELS = {
             pac: { en: 'Pace', ar: 'السرعة' },
             sho: { en: 'Shooting', ar: 'التسديد' },
@@ -3965,7 +3981,19 @@
             const grid = document.getElementById('saved-squads-grid');
             if (!grid) return;
             const isAr = currentLanguage === 'ar';
-            const list = getSavedSquads();
+            // Best squad first, descending down to the least optimized —
+            // "quality" here is the same meta-first, rating-fallback
+            // signal the rest of the app already treats as the ground
+            // truth for a single player (calculatePlayerScore prefers
+            // meta over raw OVR), just averaged across the whole XI
+            // instead of one card. Squads tie-break on avgRating so two
+            // squads with the same/no meta reading still land in a
+            // sensible order relative to each other.
+            const list = getSavedSquads().slice().sort((a, b) => {
+                const qualityOf = sq => typeof sq.avgMeta === 'number' && !isNaN(sq.avgMeta) ? sq.avgMeta : (sq.avgRating || 0);
+                const diff = qualityOf(b) - qualityOf(a);
+                return diff !== 0 ? diff : (b.avgRating || 0) - (a.avgRating || 0);
+            });
 
             if (list.length === 0) {
                 grid.className = '';
@@ -3983,14 +4011,18 @@
 
             grid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4';
             const coinLabel = isAr ? 'كوينز' : 'Coins';
-            grid.innerHTML = list.map(sq => {
+            grid.innerHTML = list.map((sq, idx) => {
                 const savedDate = new Date(sq.savedAt);
                 const dateStr = isNaN(savedDate.getTime()) ? '' : savedDate.toLocaleDateString(isAr ? 'ar' : 'en', { year: 'numeric', month: 'short', day: 'numeric' });
                 const isSelected = compareSelectedIds.includes(sq.id);
+                const rank = idx + 1;
                 return `
                     <div ${compareModeActive ? `onclick="window.toggleSquadForCompare('${sq.id}')"` : ''} class="bg-fc-card border ${isSelected ? 'border-fc-accent ring-2 ring-fc-accent/50' : 'border-fc-border'} rounded-2xl p-5 hover:border-fc-accent/60 hover:shadow-lg hover:shadow-fc-accent/5 transition-all space-y-3 ${compareModeActive ? 'cursor-pointer' : ''}">
                         <div class="flex items-start justify-between gap-2">
-                            <h3 class="font-black text-white text-base truncate">${sq.name}</h3>
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="shrink-0 w-6 h-6 rounded-lg ${rank === 1 ? 'bg-fc-gold text-fc-dark' : 'bg-fc-dark border border-fc-border text-gray-400'} text-[10px] font-black flex items-center justify-center">#${rank}</span>
+                                <h3 class="font-black text-white text-base truncate">${sq.name}</h3>
+                            </div>
                             ${compareModeActive
                                 ? `<span class="shrink-0 w-6 h-6 rounded-full border-2 ${isSelected ? 'bg-fc-accent border-fc-accent' : 'border-fc-border'} flex items-center justify-center"><i class="fa-solid fa-check text-[10px] ${isSelected ? 'text-fc-dark' : 'text-transparent'}"></i></span>`
                                 : `<button onclick="window.deleteSavedSquad('${sq.id}', event)" class="shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all" title="${isAr ? 'حذف' : 'Delete'}">
@@ -4832,14 +4864,17 @@
                 return events;
             })();
             squadState.buildAnimation = {
-                initialLog: bestAttemptLog.map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
+                initialLog: bestAttemptLog.slice().sort((a, b) => playerQualityScore(b.chosen) - playerQualityScore(a.chosen)).map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
                 swapEvents: swapEventsForAnim
             };
 
-            // Log the winning attempt's per-slot picks in the same format
-            // as before, so the explanation panel reads exactly like a
-            // single deterministic build even though several were tried.
-            bestAttemptLog.forEach(({ slot, chosen }) => {
+            // Log the winning attempt's per-slot picks best-to-worst by
+            // quality (see playerQualityScore) instead of raw fill order,
+            // so reading down the explanation panel shows a clean
+            // descending list rather than jumping between an 84, then a
+            // 74, then back up to an 86 depending on which position
+            // happened to get filled when.
+            bestAttemptLog.slice().sort((a, b) => playerQualityScore(b.chosen) - playerQualityScore(a.chosen)).forEach(({ slot, chosen }) => {
                 const metaTag = typeof chosen.meta === 'number' ? ` · MR ${chosen.meta.toFixed(1)}` : '';
                 const selectionLogText = currentLanguage === 'ar' ?
                     `تم اختيار <span class="text-white font-bold">${chosen.name}</span> (${chosen.rating} ${chosen.pos}${metaTag}) مقابل <span class="text-fc-gold">${chosen.price.toLocaleString()} كوينز</span> في مركز <span class="text-fc-accent">${slot.label}</span>.` :
@@ -5140,7 +5175,7 @@
                     }
                 });
                 squadState.buildAnimation = {
-                    initialLog: (bestUnique.localLog || []).map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
+                    initialLog: (bestUnique.localLog || []).slice().sort((a, b) => playerQualityScore(b.chosen) - playerQualityScore(a.chosen)).map(e => ({ slotIdx: e.slotIdx, player: e.chosen })),
                     swapEvents
                 };
             }
