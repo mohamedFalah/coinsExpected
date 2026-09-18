@@ -494,6 +494,10 @@
                             <i class="fa-solid fa-shuffle"></i>
                             <span data-i18n="regenBtn">REGENERATE</span>
                         </button>
+                        <button onclick="window.openPlayerPoolModal()" id="pool-build-open-btn" class="px-4 py-2.5 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-white font-black text-xs shadow-lg transition-all flex items-center gap-1.5 whitespace-nowrap" title="Pick 11+ players yourself and let the app find the best formation & XI from them">
+                            <i class="fa-solid fa-layer-group"></i>
+                            <span data-i18n="buildFromPoolBtn">BUILD FROM POOL</span>
+                        </button>
                         <button onclick="window.undoSquad()" id="undo-squad-btn" disabled class="p-2.5 rounded-xl bg-fc-dark border border-fc-border text-gray-300 hover:text-fc-accent hover:bg-fc-cardHover transition-all shrink-0 opacity-50 cursor-not-allowed" title="Undo — back to the previous squad">
                             <i class="fa-solid fa-rotate-left text-lg"></i>
                         </button>
@@ -975,6 +979,51 @@
         </div>
     </div>
 
+    <!-- Player Pool Build Modal -->
+    <div id="player-pool-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="window.closePlayerPoolModal()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full max-h-[85vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <button onclick="window.closePlayerPoolModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-4">
+                <div>
+                    <h3 class="text-lg font-extrabold text-white" data-i18n="poolModalTitle">Build From Player Pool</h3>
+                    <p class="text-xs text-gray-400 mt-1" data-i18n="poolModalDesc">Add 11 or more players you own or want to consider, then hit Build — the best formation and starting XI will be picked from the pool automatically.</p>
+                </div>
+
+                <div class="space-y-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="poolSearchLabel">Search Any Player</span>
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none"></i>
+                        <input type="text" id="pool-search-input" placeholder="Type a player name..."
+                            oninput="window.searchPoolCandidates(this.value)"
+                            class="w-full bg-fc-dark border border-fc-border rounded-xl pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 text-sm text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div id="pool-search-results" class="space-y-2"></div>
+                </div>
+
+                <div class="space-y-2 pt-2 border-t border-fc-border">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="poolStackLabel">Player Pool</span>
+                        <span id="pool-count-label" class="text-xs font-bold text-fc-accent">0</span>
+                    </div>
+                    <div id="pool-stack-list" class="space-y-1.5 max-h-56 overflow-y-auto hide-scrollbar"></div>
+                </div>
+
+                <div class="flex items-center gap-2 pt-2">
+                    <button onclick="window.buildFromPlayerPool()" id="pool-build-btn" disabled
+                        class="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-fc-accent to-blue-600 text-fc-dark font-black text-xs shadow-lg shadow-fc-accent/25 transition-all flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span data-i18n="poolBuildBtn">BUILD SQUAD</span>
+                    </button>
+                    <button onclick="window.clearPlayerPool()" class="px-4 py-3 rounded-xl bg-fc-dark hover:bg-fc-cardHover border border-fc-border text-gray-300 hover:text-white font-black text-xs shadow-lg transition-all whitespace-nowrap">
+                        <span data-i18n="poolClearBtn">Clear Pool</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings / Config Modal -->
     <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
         <div class="bg-fc-card border border-fc-border rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
@@ -1187,6 +1236,14 @@
                 suggestedTactics: "Suggested Tactics",
                 addPlayerTitle: "Add a Player",
                 searchAnyPlayer: "Search Any Player",
+                buildFromPoolBtn: "BUILD FROM POOL",
+                poolModalTitle: "Build From Player Pool",
+                poolModalDesc: "Add 11 or more players you own or want to consider, then hit Build — the best formation and starting XI will be picked from the pool automatically.",
+                poolSearchLabel: "Search Any Player",
+                poolStackLabel: "Player Pool",
+                poolEmptyStack: "No players added yet. Search above and add at least 11.",
+                poolBuildBtn: "BUILD SQUAD",
+                poolClearBtn: "Clear Pool",
                 nextBestUpgrade: "NEXT BEST UPGRADE",
                 optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
                 dataArch: "DATA ARCHITECTURE",
@@ -1313,6 +1370,14 @@
                 suggestedTactics: "التكتيك المقترح",
                 addPlayerTitle: "إضافة لاعب",
                 searchAnyPlayer: "ابحث عن أي لاعب",
+                buildFromPoolBtn: "بناء من مجموعة لاعبين",
+                poolModalTitle: "بناء التشكيلة من مجموعة لاعبين",
+                poolModalDesc: "أضف 11 لاعبًا أو أكثر تملكهم أو تفكر فيهم، ثم اضغط بناء — سيتم اختيار أفضل تشكيلة وأفضل تشكيلة أساسية من المجموعة تلقائيًا.",
+                poolSearchLabel: "ابحث عن أي لاعب",
+                poolStackLabel: "مجموعة اللاعبين",
+                poolEmptyStack: "لم تتم إضافة أي لاعب بعد. ابحث أعلاه وأضف 11 لاعبًا على الأقل.",
+                poolBuildBtn: "ابنِ التشكيلة",
+                poolClearBtn: "تفريغ المجموعة",
                 nextBestUpgrade: "الترقية التالية المقترحة",
                 optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
                 dataArch: "هندسة البيانات",
@@ -5678,6 +5743,262 @@
             renderSquadSummary();
             calculateNextBestUpgrade();
             window.closeAddPlayerModal();
+        };
+
+        // ===================================================================
+        // BUILD FROM PLAYER POOL — user hand-picks 11+ candidates (owned
+        // cards, cards they're considering, whatever), and instead of
+        // filling slots one at a time (Manual Build) or letting a budget
+        // drive the whole squad (Optimize), this tries every formation
+        // against that fixed pool and keeps whichever formation + XI
+        // assignment gets the most total quality out of the players
+        // actually given, exactly like an optimizer would but scoped to
+        // this pool instead of the full (budget-filtered) database.
+        // ===================================================================
+        // Kept as an array (not a Set) so insertion order is stable for the
+        // stack UI; de-duplicated by playerIdentityKey so the same real
+        // player can't be queued twice via two different cards.
+        let playerPool = [];
+
+        window.openPlayerPoolModal = function() {
+            const modal = document.getElementById('player-pool-modal');
+            if (!modal) return;
+            const searchInput = document.getElementById('pool-search-input');
+            if (searchInput) searchInput.value = '';
+            document.getElementById('pool-search-results').innerHTML = '';
+            renderPlayerPoolPanel();
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closePlayerPoolModal = function() {
+            const modal = document.getElementById('player-pool-modal');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+        };
+
+        function poolStackItemHtml(player) {
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+            const metaTag = typeof player.meta === 'number' ? ` · MR ${player.meta.toFixed(1)}` : '';
+            return `
+                <div class="w-full flex items-center justify-between gap-2 bg-fc-dark border border-fc-border rounded-xl p-2 text-left rtl:text-right">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <img src="${player.photo}" class="w-8 h-8 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                        <div class="min-w-0">
+                            <div class="text-xs font-bold text-white truncate">${player.name}</div>
+                            <div class="text-[10px] text-gray-400">${player.rating} OVR${metaTag} · ${player.pos}${player.alt && player.alt.length ? ` (${player.alt.join('/')})` : ''}${player.price ? ` · ${player.price.toLocaleString()}${coinLabel}` : ''}</div>
+                        </div>
+                    </div>
+                    <button onclick="window.removePlayerFromPool('${player.id}')" class="shrink-0 w-7 h-7 rounded-lg bg-fc-card hover:bg-red-500/20 border border-fc-border hover:border-red-500/50 text-gray-400 hover:text-red-400 flex items-center justify-center transition-all">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderPlayerPoolPanel() {
+            const isAr = currentLanguage === 'ar';
+            const stackContainer = document.getElementById('pool-stack-list');
+            const countLabel = document.getElementById('pool-count-label');
+            const buildBtn = document.getElementById('pool-build-btn');
+            if (countLabel) countLabel.textContent = `${playerPool.length} / 11+`;
+            if (stackContainer) {
+                stackContainer.innerHTML = playerPool.length > 0
+                    ? playerPool.map(poolStackItemHtml).join('')
+                    : `<p class="text-xs text-gray-500 italic" data-i18n="poolEmptyStack">${i18n[currentLanguage].poolEmptyStack}</p>`;
+            }
+            if (buildBtn) {
+                const ready = playerPool.length >= 11;
+                buildBtn.disabled = !ready;
+                buildBtn.classList.toggle('opacity-50', !ready);
+                buildBtn.classList.toggle('cursor-not-allowed', !ready);
+            }
+        }
+
+        window.searchPoolCandidates = function(query) {
+            const resultsContainer = document.getElementById('pool-search-results');
+            if (!resultsContainer) return;
+            const q = query.trim().toLowerCase();
+            if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
+
+            const pooledIds = new Set(playerPool.map(p => playerIdentityKey(p)));
+            const matches = getActiveDatabase({ requirePriced: false }).filter(p => p.name.toLowerCase().includes(q) && !pooledIds.has(playerIdentityKey(p))).slice(0, 8);
+            if (matches.length === 0) {
+                resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
+                return;
+            }
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+            resultsContainer.innerHTML = matches.map(p => {
+                const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
+                return `
+                    <button onclick="window.addPlayerToPool('${p.id}')" class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border rounded-xl p-2.5 text-left rtl:text-right transition-all">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <img src="${p.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                            <div class="min-w-0">
+                                <div class="text-xs font-bold text-white truncate">${p.name}</div>
+                                <div class="text-[10px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos}${p.price ? ` · ${p.price.toLocaleString()}${coinLabel}` : ''}</div>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-bold text-fc-dark bg-fc-accent px-2 py-1 rounded-lg shrink-0">${isAr ? 'إضافة' : 'Add'}</span>
+                    </button>
+                `;
+            }).join('');
+        };
+
+        window.addPlayerToPool = function(playerId) {
+            const player = fc27Database.find(p => p.id === playerId);
+            if (!player) return;
+            if (playerPool.some(p => playerIdentityKey(p) === playerIdentityKey(player))) return;
+            playerPool.push(player);
+            const searchInput = document.getElementById('pool-search-input');
+            renderPlayerPoolPanel();
+            if (searchInput) window.searchPoolCandidates(searchInput.value);
+        };
+
+        window.removePlayerFromPool = function(playerId) {
+            playerPool = playerPool.filter(p => p.id !== playerId);
+            renderPlayerPoolPanel();
+            const searchInput = document.getElementById('pool-search-input');
+            if (searchInput && searchInput.value.trim().length >= 2) window.searchPoolCandidates(searchInput.value);
+        };
+
+        window.clearPlayerPool = function() {
+            playerPool = [];
+            renderPlayerPoolPanel();
+            document.getElementById('pool-search-results').innerHTML = '';
+        };
+
+        // Greedy global-max-weight assignment: repeatedly grab the single
+        // best remaining (slot, player) pairing by calculatePlayerScore
+        // among everyone still eligible (real or alt position), remove
+        // both from contention, and repeat. This mirrors the same
+        // exact-then-alt greedy the rest of the app's optimizer already
+        // uses (see runSquadOptimizerImpl) rather than a from-scratch
+        // matching approach, so results feel consistent with how Optimize
+        // fills a squad elsewhere. Any slot that still has no eligible
+        // pool player left after that (pool too thin at that position)
+        // falls back to a second pass that allows ANY unused pool player
+        // regardless of position, so a complete XI is always produced as
+        // long as the pool has >= 11 players — those out-of-position fills
+        // will simply show up with weak/zero chemistry on the pitch, same
+        // as manually forcing a player out of position anywhere else.
+        function assignPoolToFormation(pool, slots) {
+            const assigned = new Array(slots.length).fill(null);
+            const usedPlayerIdx = new Set();
+            const filledSlot = new Array(slots.length).fill(false);
+            let totalScore = 0;
+
+            // Pass 1: real-or-alt position matches only.
+            while (true) {
+                let best = null; // { slotIdx, poolIdx, score }
+                slots.forEach((slot, slotIdx) => {
+                    if (filledSlot[slotIdx]) return;
+                    pool.forEach((player, poolIdx) => {
+                        if (usedPlayerIdx.has(poolIdx)) return;
+                        const eligible = player.pos === slot.pos || (player.alt && player.alt.includes(slot.pos));
+                        if (!eligible) return;
+                        const score = calculatePlayerScore(player, slot.pos);
+                        if (!best || score > best.score) best = { slotIdx, poolIdx, score };
+                    });
+                });
+                if (!best) break;
+                assigned[best.slotIdx] = pool[best.poolIdx];
+                filledSlot[best.slotIdx] = true;
+                usedPlayerIdx.add(best.poolIdx);
+                totalScore += best.score;
+            }
+
+            // Pass 2: fallback fill for any slot still empty, using
+            // whichever remaining pool player scores best there even
+            // out of position (heavily penalized by calculatePlayerScore's
+            // own fit logic already, so this naturally prefers the least-
+            // bad fit rather than an arbitrary leftover).
+            while (true) {
+                let best = null;
+                slots.forEach((slot, slotIdx) => {
+                    if (filledSlot[slotIdx]) return;
+                    pool.forEach((player, poolIdx) => {
+                        if (usedPlayerIdx.has(poolIdx)) return;
+                        const score = calculatePlayerScore(player, slot.pos) - 300; // out-of-position penalty for ranking only
+                        if (!best || score > best.score) best = { slotIdx, poolIdx, score };
+                    });
+                });
+                if (!best) break;
+                assigned[best.slotIdx] = pool[best.poolIdx];
+                filledSlot[best.slotIdx] = true;
+                usedPlayerIdx.add(best.poolIdx);
+                totalScore += best.score;
+            }
+
+            const filledCount = filledSlot.filter(Boolean).length;
+            return { assigned, totalScore, filledCount };
+        }
+
+        window.buildFromPlayerPool = function() {
+            if (playerPool.length < 11) return;
+            snapshotSquadForUndo();
+
+            let bestFormation = null, bestResult = null;
+            Object.keys(formationSlots).forEach(formKey => {
+                const result = assignPoolToFormation(playerPool, formationSlots[formKey]);
+                // Prefer a fully-filled XI over a higher-scoring partial one
+                // — an incomplete squad isn't a usable answer no matter how
+                // good the players who did get placed are.
+                if (!bestResult ||
+                    result.filledCount > bestResult.filledCount ||
+                    (result.filledCount === bestResult.filledCount && result.totalScore > bestResult.totalScore)) {
+                    bestResult = result;
+                    bestFormation = formKey;
+                }
+            });
+            if (!bestFormation) return;
+
+            squadState.formation = bestFormation;
+            squadState.pitchShapeMode = 'normal';
+            squadState.heatZoneSlotIdx = null;
+            squadState.selectedXI = {};
+            bestResult.assigned.forEach((player, idx) => { if (player) squadState.selectedXI[idx] = player; });
+            squadState.lockedIds = new Set();
+            squadState.lockedPlayers = {};
+            squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + effectivePrice(p), 0);
+
+            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) { totalRating += p.rating; count++; if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; } }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
+            squadState.budget = squadState.totalCost + 50000;
+            squadState.buildAnimation = null;
+            squadState.history = new Set([computeSquadSignature(squadState.selectedXI)]);
+            squadState.exhausted = false;
+
+            const isAr = currentLanguage === 'ar';
+            const poolNames = playerPool.map(p => p.name).join(', ');
+            squadState.explanationLog = [
+                isAr
+                    ? `تم البناء من مجموعة ${playerPool.length} لاعب: <span class="text-white font-bold">${poolNames}</span>.`
+                    : `Built from a pool of ${playerPool.length} players: <span class="text-white font-bold">${poolNames}</span>.`,
+                isAr
+                    ? `أفضل تشكيلة لهذه المجموعة كانت <span class="text-fc-gold font-bold">${bestFormation}</span>، مع ملء ${bestResult.filledCount}/11 مركزًا من مباشرة داخل المجموعة.`
+                    : `The best formation for this pool was <span class="text-fc-gold font-bold">${bestFormation}</span>, filling ${bestResult.filledCount}/11 slots directly from the pool.`
+            ];
+            if (bestResult.filledCount < 11) {
+                squadState.explanationLog.push(isAr
+                    ? `المجموعة لم تحتوِ على ما يكفي من اللاعبين لبعض المراكز — أضف المزيد من اللاعبين المتنوعين وحاول مجددًا.`
+                    : `The pool didn't have enough players for every position — add a more varied pool and try again.`);
+            }
+
+            const formationSelect = document.getElementById('formation-select');
+            if (formationSelect) formationSelect.value = bestFormation;
+
+            computeSlotAlternatives();
+            window.closePlayerPoolModal();
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
         };
 
         window.searchReplacementPlayers = function(query) {
