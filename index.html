@@ -5140,7 +5140,17 @@
 
             const slots = formationSlots[squadState.formation];
             const MAX_ATTEMPTS = 40;
+            // Once a result clears BOTH the chemistry floor and the
+            // meaningful-diversity floor, keep searching this many MORE
+            // attempts (instead of grabbing the very first one that
+            // qualifies) so a lucky-but-mediocre early hit doesn't lock in
+            // over a better one found two attempts later — this was
+            // producing visibly inconsistent quality (e.g. an 84-meta
+            // squad, then a regenerate landing on 79 when an 82 was
+            // reachable in the same search).
+            const POLISH_ATTEMPTS_AFTER_BOTH_FLOORS = 10;
             let bestUnique = null; // best NEW (not-already-seen) combination found so far
+            let attemptsSinceBothFloorsMet = null; // null until first double-floor candidate is found, then counts up
             let unlockedDuringRegen = [];
 
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -5211,9 +5221,18 @@
 
                 // Once we've got a genuinely new result that's both usable
                 // AND meaningfully different from what was just on screen,
-                // stop searching — no need to spend the rest of the attempt
-                // budget chasing a marginally better one.
-                if (bestUnique.chemSum >= MIN_USABLE_CHEMISTRY && bestUnique.diffCount >= MIN_MEANINGFUL_DIFF_SLOTS) break;
+                // don't grab it immediately — keep searching a bounded
+                // number of MORE attempts (see
+                // POLISH_ATTEMPTS_AFTER_BOTH_FLOORS above) so a mediocre
+                // early hit doesn't lock in over a better one just a few
+                // attempts away. bestUnique keeps updating via the same
+                // priority comparator above the whole time, so this window
+                // only ever holds onto or improves on what's already found.
+                const bothFloorsMet = bestUnique.chemSum >= MIN_USABLE_CHEMISTRY && bestUnique.diffCount >= MIN_MEANINGFUL_DIFF_SLOTS;
+                if (bothFloorsMet) {
+                    attemptsSinceBothFloorsMet = (attemptsSinceBothFloorsMet === null) ? 0 : attemptsSinceBothFloorsMet + 1;
+                    if (attemptsSinceBothFloorsMet >= POLISH_ATTEMPTS_AFTER_BOTH_FLOORS) break;
+                }
             }
 
             const found = bestUnique ? bestUnique.signature : null;
