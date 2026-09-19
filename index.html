@@ -5095,7 +5095,7 @@
         // each slot's top few candidates.
         function buildRandomizedXI(ctx) {
             const { slots, budget, lockedPlacement, candidateMap, priceSortedMap, sortedSlotIndices } = ctx;
-            const RANDOM_POOL_SIZE = 3;
+            const RANDOM_POOL_SIZE = 5;
 
             // Cheapest still-available candidate's price for a slot. Walks
             // a PRICE-sorted copy from the front instead of scanning the
