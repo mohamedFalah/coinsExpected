@@ -2379,19 +2379,29 @@
             const budget = squadState.budget;
 
             let candidateMap = {};
+            let priceSortedMap = {};
             neededSlotIndices.forEach(idx => {
                 const slot = newSlots[idx];
                 const eligible = getActiveDatabase().filter(p => (p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos))) && !usedIds.has(playerIdentityKey(p)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
+                priceSortedMap[idx] = eligible.slice().sort((a, b) => a.price - b.price);
             });
 
+            // Cheapest still-available candidate's price for a slot. Walks
+            // a PRICE-sorted copy of the slot's candidates from the front
+            // instead of scanning the whole (position-fit-sorted) list —
+            // with a large loaded database (thousands of eligible players
+            // per common position), a plain linear scan called repeatedly
+            // is what made this whole pass slow enough to freeze the tab.
+            // Since usedIds only ever grows by the handful of players
+            // actually picked so far, this walk almost always stops within
+            // a few steps regardless of how big the total pool is.
             function cheapestAvailablePrice(slotIdx) {
-                let min = Infinity;
-                for (const cand of candidateMap[slotIdx]) {
-                    if (!usedIds.has(playerIdentityKey(cand)) && cand.price < min) min = cand.price;
+                for (const cand of priceSortedMap[slotIdx]) {
+                    if (!usedIds.has(playerIdentityKey(cand))) return cand.price;
                 }
-                return isFinite(min) ? min : 0;
+                return 0;
             }
 
             let order = neededSlotIndices.slice();
@@ -2412,10 +2422,16 @@
                 const remaining = order.slice(i + 1);
 
                 const collectFitting = (cap) => {
+                    // Hoisted OUT of the per-candidate loop below: this
+                    // value depends only on `remaining` and `usedIds`,
+                    // neither of which changes while checking candidates
+                    // for THIS slot — recomputing it once per candidate
+                    // (as before) was pure wasted work, multiplied by
+                    // however many candidates and slots exist.
+                    const remainingMinCost = remaining.reduce((sum, ri) => sum + cheapestAvailablePrice(ri), 0);
                     const fitting = [];
                     for (const cand of candidates) {
                         if (usedIds.has(playerIdentityKey(cand))) continue;
-                        const remainingMinCost = remaining.reduce((sum, ri) => sum + cheapestAvailablePrice(ri), 0);
                         if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                     }
                     return fitting;
@@ -4718,23 +4734,31 @@
             }
 
             let candidateMap = {};
+            let priceSortedMap = {};
             slots.forEach((slot, idx) => {
                 if (lockedSlotIndices.has(idx)) return;
                 const eligible = getActiveDatabase().filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
+                priceSortedMap[idx] = eligible.slice().sort((a, b) => a.price - b.price);
             });
 
             // Cheapest still-eligible, still-unused candidate's price for a
             // slot — a real (not flat-guessed) lower bound on what it will
             // cost to fill that slot, used to reserve budget for slots still
             // to come so we don't overspend early and get stuck later.
+            // Walks a PRICE-sorted copy instead of scanning the full
+            // (position-fit-sorted) candidate list on every call — with a
+            // large loaded database this function gets called extremely
+            // often, and a plain linear scan over thousands of candidates
+            // each time was what made a full build slow enough to freeze
+            // the tab. usedIds only ever grows by a handful of picks, so
+            // this walk stops almost immediately regardless of pool size.
             function cheapestAvailablePrice(slotIdx, usedIds) {
-                let min = Infinity;
-                for (const cand of candidateMap[slotIdx]) {
-                    if (!usedIds.has(playerIdentityKey(cand)) && cand.price < min) min = cand.price;
+                for (const cand of priceSortedMap[slotIdx]) {
+                    if (!usedIds.has(playerIdentityKey(cand))) return cand.price;
                 }
-                return isFinite(min) ? min : 0;
+                return 0;
             }
 
             let sortedSlotIndices = slots.map((s, i) => i).filter(idx => !lockedSlotIndices.has(idx));
@@ -4787,10 +4811,13 @@
                     const remainingSlotIndices = sortedSlotIndices.slice(i + 1);
 
                     const collectFitting = (cap) => {
+                        // Hoisted out of the per-candidate loop — see the
+                        // formation-change gap-fill's identical comment
+                        // above for why (this doesn't depend on `cand`).
+                        const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
                         const fitting = [];
                         for (const cand of candidates) {
                             if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
-                            const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
                             if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                         }
                         return fitting;
@@ -5030,37 +5057,57 @@
         // taking the single highest-scoring affordable candidate per slot,
         // picks randomly among the top few affordable candidates — real
         // variation while keeping quality and budget usage high.
-        function buildRandomizedXI() {
+        // Everything about a randomized-fill attempt that DOESN'T change
+        // between attempts within one Regenerate click — formation, budget,
+        // locked players, and (the expensive part) each slot's eligible
+        // candidate lists. Building this once per Regenerate click instead
+        // of on every single attempt (previously buildRandomizedXI rebuilt
+        // it from scratch every time, up to 40+ times per click) is a big
+        // chunk of what made Regenerate slow with a large loaded database.
+        function prepareRandomizedBuildContext() {
             const slots = formationSlots[squadState.formation];
             const budget = squadState.budget;
-            const RANDOM_POOL_SIZE = 3;
-
-            // Locked players are fixed before any randomization happens —
-            // regeneration only varies the unlocked slots.
             const lockedPlacement = placeLockedPlayers(slots);
             const lockedSlotIndices = lockedPlacement.usedSlot;
 
             let candidateMap = {};
+            let priceSortedMap = {};
             slots.forEach((slot, idx) => {
                 if (lockedSlotIndices.has(idx)) return;
                 const eligible = getActiveDatabase().filter(p => p.pos === slot.pos || (p.alt && p.alt.includes(slot.pos)));
                 eligible.sort((a, b) => calculatePlayerScore(b, slot.pos) - calculatePlayerScore(a, slot.pos));
                 candidateMap[idx] = eligible;
+                priceSortedMap[idx] = eligible.slice().sort((a, b) => a.price - b.price);
             });
-
-            function cheapestAvailablePrice(slotIdx, usedIds) {
-                let min = Infinity;
-                for (const cand of candidateMap[slotIdx]) {
-                    if (!usedIds.has(playerIdentityKey(cand)) && cand.price < min) min = cand.price;
-                }
-                return isFinite(min) ? min : 0;
-            }
 
             let sortedSlotIndices = slots.map((s, i) => i).filter(idx => !lockedSlotIndices.has(idx));
             sortedSlotIndices.sort((a, b) => {
                 const pA = slots[a].pos, pB = slots[b].pos;
                 return (SLOT_FILL_PRIORITY[pA] || 9) - (SLOT_FILL_PRIORITY[pB] || 9);
             });
+
+            return { slots, budget, lockedPlacement, candidateMap, priceSortedMap, sortedSlotIndices };
+        }
+
+        // One randomized fill attempt against an already-prepared context
+        // (see prepareRandomizedBuildContext above) — the only thing that
+        // actually varies attempt-to-attempt is the random pick within
+        // each slot's top few candidates.
+        function buildRandomizedXI(ctx) {
+            const { slots, budget, lockedPlacement, candidateMap, priceSortedMap, sortedSlotIndices } = ctx;
+            const RANDOM_POOL_SIZE = 3;
+
+            // Cheapest still-available candidate's price for a slot. Walks
+            // a PRICE-sorted copy from the front instead of scanning the
+            // whole (position-fit-sorted) list — see the identical comment
+            // on the main optimizer's version of this function for why
+            // that matters with a large loaded database.
+            function cheapestAvailablePrice(slotIdx, usedIds) {
+                for (const cand of priceSortedMap[slotIdx]) {
+                    if (!usedIds.has(playerIdentityKey(cand))) return cand.price;
+                }
+                return 0;
+            }
 
             let selectedXI = { ...lockedPlacement.assigned };
             let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
@@ -5074,10 +5121,14 @@
                 const remainingSlotIndices = sortedSlotIndices.slice(i + 1);
 
                 const collectFitting = (cap) => {
+                    // Hoisted out of the per-candidate loop — doesn't
+                    // depend on `cand`, so computing it once per slot
+                    // instead of once per candidate avoids a huge amount
+                    // of redundant work with a large candidate pool.
+                    const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
                     const fitting = [];
                     for (const cand of candidates) {
                         if (usedPlayerIds.has(playerIdentityKey(cand))) continue;
-                        const remainingMinCost = remainingSlotIndices.reduce((sum, ri) => sum + cheapestAvailablePrice(ri, usedPlayerIds), 0);
                         if (currentSpent + cand.price + remainingMinCost <= cap) fitting.push(cand);
                     }
                     return fitting;
@@ -5153,8 +5204,14 @@
             let attemptsSinceBothFloorsMet = null; // null until first double-floor candidate is found, then counts up
             let unlockedDuringRegen = [];
 
+            // Built ONCE for this whole Regenerate click, not per attempt —
+            // see prepareRandomizedBuildContext for why (candidate lists
+            // and price-sorted copies are the expensive part, and none of
+            // it changes between attempts within one click).
+            const buildCtx = prepareRandomizedBuildContext();
+
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-                const built = buildRandomizedXI();
+                const built = buildRandomizedXI(buildCtx);
                 // Snapshot BEFORE improveSquadChemistry/spendLeftoverBudget
                 // run below — unlike evaluateAttempt() in the main
                 // optimizer, this loop points squadState.selectedXI at the
