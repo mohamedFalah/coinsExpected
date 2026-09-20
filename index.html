@@ -449,6 +449,12 @@
                         <option value="3-5-2">3-5-2</option>
                         <option value="4-5-1">4-5-1</option>
                         <option value="4-4-1-1">4-4-1-1</option>
+                        <option value="3-1-4-2">3-1-4-2</option>
+                        <option value="4-2-1-3">4-2-1-3</option>
+                        <option value="4-2-2-2">4-2-2-2</option>
+                        <option value="4-4-2 (2)">4-4-2 (2)</option>
+                        <option value="5-4-1">5-4-1</option>
+                        <option value="5-3-2">5-3-2</option>
                     </select>
 
                     <select id="manager-nation-select" onchange="setSquadManagerField('nation', this.value)" title="Manager Nationality (optional, +1 chem match) — a manager has BOTH a nation and a league at once, set independently of this field"
@@ -1776,6 +1782,94 @@
                 { pos: 'RM', label: 'Right Mid', top: 44, left: 90 },
                 { pos: 'CAM', label: 'Attacking Mid', top: 31, left: 50 },
                 { pos: 'ST', label: 'Striker', top: 10, left: 50 }
+            ],
+            // 3 CB, 1 holding CDM, 4 across the middle (LM/CM/CM/RM), 2 ST.
+            '3-1-4-2': [
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'CB', label: 'Center Back 1', top: 70, left: 25 },
+                { pos: 'CB', label: 'Center Back 2', top: 72, left: 50 },
+                { pos: 'CB', label: 'Center Back 3', top: 70, left: 75 },
+                { pos: 'CDM', label: 'Defensive Mid', top: 54, left: 50 },
+                { pos: 'LM', label: 'Left Mid', top: 40, left: 12 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 33 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 67 },
+                { pos: 'RM', label: 'Right Mid', top: 40, left: 88 },
+                { pos: 'ST', label: 'Striker 1', top: 11, left: 38 },
+                { pos: 'ST', label: 'Striker 2', top: 11, left: 62 }
+            ],
+            // Back 4, 2 holding CDM, a single central CAM, front 3 (LW/ST/RW).
+            '4-2-1-3': [
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 54, left: 32 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 54, left: 68 },
+                { pos: 'CAM', label: 'Attacking Mid', top: 33, left: 50 },
+                { pos: 'LW', label: 'Left Winger', top: 12, left: 14 },
+                { pos: 'ST', label: 'Striker', top: 10, left: 50 },
+                { pos: 'RW', label: 'Right Winger', top: 12, left: 86 }
+            ],
+            // Back 4, 2 holding CDM, 2 CAM pushed WIDE (not central), 2 ST.
+            '4-2-2-2': [
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
+                { pos: 'CAM', label: 'Attacking Mid 1', top: 50, left: 8 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 50, left: 37 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 50, left: 63 },
+                { pos: 'CAM', label: 'Attacking Mid 2', top: 50, left: 92 },
+                { pos: 'ST', label: 'Striker 1', top: 11, left: 38 },
+                { pos: 'ST', label: 'Striker 2', top: 11, left: 62 }
+            ],
+            // A second 4-4-2 shape: LM/RM wingers with 2 holding CDM through
+            // the center, instead of the existing '4-4-2' entry's flat
+            // CM-CM-LM-RM line — a distinct enough shape (and Futbin's own
+            // default roles for it) to warrant its own formation key.
+            '4-4-2 (2)': [
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
+                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
+                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
+                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
+                { pos: 'LM', label: 'Left Mid', top: 38, left: 10 },
+                { pos: 'CDM', label: 'Defensive Mid 1', top: 46, left: 37 },
+                { pos: 'CDM', label: 'Defensive Mid 2', top: 46, left: 63 },
+                { pos: 'RM', label: 'Right Mid', top: 38, left: 90 },
+                { pos: 'ST', label: 'Striker 1', top: 12, left: 37 },
+                { pos: 'ST', label: 'Striker 2', top: 12, left: 63 }
+            ],
+            // Back 5 (wingback-less — pure CB x3 + LB/RB), 4 across the
+            // middle (LM/CM/CM/RM), lone striker up top.
+            '5-4-1': [
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 68, left: 8 },
+                { pos: 'CB', label: 'Center Back 1', top: 70, left: 29 },
+                { pos: 'CB', label: 'Center Back 2', top: 72, left: 50 },
+                { pos: 'CB', label: 'Center Back 3', top: 70, left: 71 },
+                { pos: 'RB', label: 'Right Back', top: 68, left: 92 },
+                { pos: 'LM', label: 'Left Mid', top: 40, left: 12 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 35 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 65 },
+                { pos: 'RM', label: 'Right Mid', top: 40, left: 88 },
+                { pos: 'ST', label: 'Striker', top: 11, left: 50 }
+            ],
+            // Back 5, a compact central 3 (CM, holding CDM, CM), 2 ST.
+            '5-3-2': [
+                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
+                { pos: 'LB', label: 'Left Back', top: 68, left: 10 },
+                { pos: 'CB', label: 'Center Back 1', top: 70, left: 30 },
+                { pos: 'CB', label: 'Center Back 2', top: 72, left: 50 },
+                { pos: 'CB', label: 'Center Back 3', top: 70, left: 70 },
+                { pos: 'RB', label: 'Right Back', top: 68, left: 90 },
+                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 25 },
+                { pos: 'CDM', label: 'Defensive Mid', top: 50, left: 50 },
+                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 75 },
+                { pos: 'ST', label: 'Striker 1', top: 11, left: 38 },
+                { pos: 'ST', label: 'Striker 2', top: 11, left: 62 }
             ]
         };
 
