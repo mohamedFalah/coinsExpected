@@ -699,6 +699,19 @@
                         <!-- Populated by renderSquadSummary() -->
                     </div>
 
+                    <!-- Trade-off options: alternate full squads from the
+                         most recent Optimize run, spanning the quality vs
+                         chemistry trade-off (e.g. a higher-meta pick with
+                         weaker links, or a stronger-linked pick with a
+                         small quality cost) instead of only ever showing
+                         the one blended result. Hidden entirely when there
+                         aren't at least two real, distinct options (e.g.
+                         after Regenerate, Manual Build, or Build From Pool,
+                         none of which populate this). -->
+                    <div id="tradeoff-options-panel" class="hidden border-t border-fc-border pt-4 space-y-2">
+                        <!-- Populated by renderTradeoffOptions() -->
+                    </div>
+
                     <div id="squad-identity" class="border-t border-fc-border pt-4">
                         <!-- Populated by renderSquadSummary(): a quick,
                              relative read on this squad's dominant trait
@@ -1236,6 +1249,11 @@
                 suggestedTactics: "Suggested Tactics",
                 addPlayerTitle: "Add a Player",
                 searchAnyPlayer: "Search Any Player",
+                tradeoffOptionsTitle: "Other Options",
+                tradeoffBalanced: "Balanced",
+                tradeoffQuality: "Best Meta",
+                tradeoffChemistry: "Best Chemistry",
+                tradeoffActive: "Active",
                 buildFromPoolBtn: "BUILD FROM POOL",
                 poolModalTitle: "Build From Player Pool",
                 poolModalDesc: "Add 11 or more players, then hit Build — the best formation and starting XI will be picked from the pool automatically. Any player you queue here (even before reaching 11) is also favored by Optimize and Regenerate for any slot they suit.",
@@ -1370,6 +1388,11 @@
                 suggestedTactics: "التكتيك المقترح",
                 addPlayerTitle: "إضافة لاعب",
                 searchAnyPlayer: "ابحث عن أي لاعب",
+                tradeoffOptionsTitle: "خيارات أخرى",
+                tradeoffBalanced: "متوازنة",
+                tradeoffQuality: "أفضل ميتا",
+                tradeoffChemistry: "أفضل كيمياء",
+                tradeoffActive: "الحالية",
                 buildFromPoolBtn: "بناء من مجموعة لاعبين",
                 poolModalTitle: "بناء التشكيلة من مجموعة لاعبين",
                 poolModalDesc: "أضف 11 لاعبًا أو أكثر، ثم اضغط بناء — سيتم اختيار أفضل تشكيلة وأفضل تشكيلة أساسية من المجموعة تلقائيًا. أي لاعب تضيفه هنا (حتى قبل الوصول إلى 11) سيتم تفضيله أيضًا من قِبل زرّي (تحسين) و(إعادة توليد) في أي مركز يناسبه.",
@@ -1579,6 +1602,13 @@
             // every read site can access .nationId/.leagueId directly.
             manager: { nationId: null, leagueId: null },
             explanationLog: [],
+            // Alternative full squads from the most recent Optimize run,
+            // spanning the quality/chemistry trade-off (see
+            // runSquadOptimizerImpl) — [] means none built yet, or the
+            // last action wasn't a full Optimize (e.g. Regenerate, or
+            // Manual Build). Each entry is a complete, ready-to-apply
+            // squad, not a preview.
+            tradeoffOptions: [],
             // Real before/after event log from the most recent
             // optimize/regenerate run, used to replay the actual build
             // process on the pitch (see animateSquadReveal) — null means
@@ -4597,6 +4627,7 @@
             const lockedPlacement = placeLockedPlayers(slots);
             squadState.selectedXI = { ...lockedPlacement.assigned };
             squadState.alternatives = {};
+            squadState.tradeoffOptions = [];
             squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + effectivePrice(p), 0);
             squadState.history = new Set();
             squadState.exhausted = false;
@@ -4671,13 +4702,13 @@
         // squad is built, not just repaired afterward. The repair pass
         // still runs after this as a safety net for whatever this doesn't
         // catch, so this is additive, not a replacement for it.
-        function rerankByPartialChemistry(fitting, partialXI, slotIdx, slot) {
+        function rerankByPartialChemistry(fitting, partialXI, slotIdx, slot, chemWeight = CHEM_VALUE_WEIGHT, poolSize = CHEM_RESCORE_POOL) {
             if (fitting.length <= 1) return fitting;
-            const head = fitting.slice(0, CHEM_RESCORE_POOL);
-            const tail = fitting.slice(CHEM_RESCORE_POOL);
+            const head = fitting.slice(0, poolSize);
+            const tail = fitting.slice(poolSize);
             const rescored = head.map(cand => {
                 const chemPoints = calculateSquadChemistry({ ...partialXI, [slotIdx]: cand }).perSlot[slotIdx].points;
-                return { cand, blended: calculatePlayerScore(cand, slot.pos) + chemPoints * CHEM_VALUE_WEIGHT };
+                return { cand, blended: calculatePlayerScore(cand, slot.pos) + chemPoints * chemWeight };
             });
             rescored.sort((a, b) => b.blended - a.blended);
             return rescored.map(r => r.cand).concat(tail);
@@ -4798,7 +4829,7 @@
             // would have left them (the classic greedy-algorithm trap for
             // a budget-constrained selection), which only trying several
             // attempts and keeping the best-scoring RESULT can catch.
-            function fillSlots(poolSize) {
+            function fillSlots(poolSize, chemWeight = CHEM_VALUE_WEIGHT, chemRescorePool = CHEM_RESCORE_POOL) {
                 let selectedXI = { ...lockedPlacement.assigned };
                 let usedPlayerIds = new Set(lockedPlacement.usedPlayerIds);
                 let currentSpent = lockedCost;
@@ -4823,7 +4854,7 @@
                         return fitting;
                     };
 
-                    const fitting = rerankByPartialChemistry(collectFitting(budget), selectedXI, slotIdx, slot);
+                    const fitting = rerankByPartialChemistry(collectFitting(budget), selectedXI, slotIdx, slot, chemWeight, chemRescorePool);
 
                     let chosen = null;
                     if (fitting.length > 0) {
@@ -4860,10 +4891,10 @@
             // the squad is after those passes run, exactly the number the
             // deterministic-only approach never bothered to check itself
             // against alternatives for.
-            function evaluateAttempt(xi) {
+            function evaluateAttempt(xi, skipChemFix = false) {
                 squadState.selectedXI = { ...xi };
                 squadState.totalCost = Object.values(squadState.selectedXI).reduce((s, p) => s + effectivePrice(p), 0);
-                improveSquadChemistry();
+                if (!skipChemFix) improveSquadChemistry();
                 spendLeftoverBudget();
                 fillRemainingGapSlots(slots);
                 const chem = calculateSquadChemistry();
@@ -4938,6 +4969,86 @@
                     squadState.explanationLog.push(warnText);
                 }
             }
+
+            // Trade-off options: two extra rounds of attempts exploring the
+            // far ends of the quality/chemistry spectrum, alongside the
+            // balanced result already chosen above. This mirrors what
+            // EasySBC's own "Suggested Squads" panel does: instead of
+            // silently picking one blended trade-off for the user, surface
+            // a few real points along that spectrum and let them choose.
+            // Each runs a FEW attempts (not just one) and keeps the best
+            // on its own axis — a single deterministic pass isn't
+            // guaranteed to be the true best on that axis either, for the
+            // exact greedy-algorithm reason OPTIMIZER_ATTEMPTS itself
+            // exists (see fillSlots's own comment above it).
+            const EXTREME_ATTEMPTS = 4;
+
+            // Both extreme searches are seeded with the balanced result
+            // itself, so "quality" can never end up with lower raw quality
+            // than balanced, and "chemistry" can never end up with lower
+            // chemistry than balanced — without this, a small, randomized
+            // search occasionally landing worse than the option it's
+            // supposed to be an upgrade over would be a genuinely broken
+            // (dominated) choice to show the user.
+            const balancedRawQuality = slots.reduce((sum, slot, idx) => {
+                const p = bestAttempt.selectedXI[idx];
+                return p ? sum + calculatePlayerScore(p, slot.pos) : sum;
+            }, 0);
+
+            let bestQuality = { ...bestAttempt, rawQuality: balancedRawQuality };
+            for (let a = 0; a < EXTREME_ATTEMPTS; a++) {
+                const built = fillSlots(a === 0 ? 1 : 3, 0); // chemWeight 0: picks ignore chemistry entirely
+                const evaluated = evaluateAttempt(built.selectedXI, true); // skip chem-fix repair too, so this stays a genuine max-quality point
+                const rawQuality = slots.reduce((sum, slot, idx) => {
+                    const p = evaluated.selectedXI[idx];
+                    return p ? sum + calculatePlayerScore(p, slot.pos) : sum;
+                }, 0);
+                if (rawQuality > bestQuality.rawQuality) bestQuality = { ...evaluated, rawQuality };
+            }
+            const qualityEval = bestQuality;
+
+            let bestChem = { ...bestAttempt };
+            for (let a = 0; a < EXTREME_ATTEMPTS; a++) {
+                // chemWeight cranked way up, and a much wider rescore pool
+                // than the balanced path uses — the balanced/default path
+                // deliberately stays within the top 15 raw-score candidates
+                // to keep meta dominant, but this build's whole point is to
+                // search deep enough into each slot's candidates to find
+                // real club/nation/league links even at a quality cost.
+                const built = fillSlots(3, 500, 60);
+                const evaluated = evaluateAttempt(built.selectedXI);
+                if (evaluated.chemSum > bestChem.chemSum) bestChem = evaluated;
+            }
+            const chemEval = bestChem;
+
+            function summarizeOption(label, evaluated) {
+                let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+                Object.values(evaluated.selectedXI).forEach(p => {
+                    if (p) { totalRating += p.rating; count++; if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; } }
+                });
+                return {
+                    label,
+                    selectedXI: evaluated.selectedXI,
+                    totalCost: evaluated.totalCost,
+                    chemSum: evaluated.chemSum,
+                    avgRating: count > 0 ? Math.round(totalRating / count) : 0,
+                    avgMeta: metaCount > 0 ? Math.round((totalMeta / metaCount) * 10) / 10 : null
+                };
+            }
+
+            // De-duplicate: if the "extreme" builds landed on the exact
+            // same XI as the balanced pick (small pools sometimes only
+            // have one real option), don't show a redundant duplicate card.
+            const balancedSig = computeSquadSignature(bestAttempt.selectedXI);
+            const tradeoffOptions = [summarizeOption('balanced', bestAttempt)];
+            if (computeSquadSignature(qualityEval.selectedXI) !== balancedSig) {
+                tradeoffOptions.push(summarizeOption('quality', qualityEval));
+            }
+            if (computeSquadSignature(chemEval.selectedXI) !== balancedSig
+                && computeSquadSignature(chemEval.selectedXI) !== computeSquadSignature(qualityEval.selectedXI)) {
+                tradeoffOptions.push(summarizeOption('chemistry', chemEval));
+            }
+            squadState.tradeoffOptions = tradeoffOptions;
 
             // Commit the winning attempt as the live squad.
             squadState.selectedXI = bestAttempt.selectedXI;
@@ -5169,6 +5280,7 @@
             // (manual mode no-op, "no more unique squads") leaves nothing
             // for animateSquadReveal to incorrectly replay.
             squadState.buildAnimation = null;
+            squadState.tradeoffOptions = [];
             // Manual Build Mode (budget = 0): nothing to randomize — every
             // pick was deliberate. Regenerating here would just silently
             // throw away hand-picked players, so this is a no-op with a
@@ -6196,6 +6308,7 @@
             squadState.pitchShapeMode = 'normal';
             squadState.heatZoneSlotIdx = null;
             squadState.selectedXI = {};
+            squadState.tradeoffOptions = [];
             bestResult.assigned.forEach((player, idx) => { if (player) squadState.selectedXI[idx] = player; });
             squadState.lockedIds = new Set();
             squadState.lockedPlayers = {};
@@ -6938,6 +7051,7 @@
             renderSquadIdentityBlock();
             renderTacticsSummary();
             renderTeamTacticalShape();
+            renderTradeoffOptions();
             const badge = document.getElementById('squad-overall-badge');
             const metaBadge = document.getElementById('squad-meta-badge');
             const metaCell = document.getElementById('squad-meta-cell');
@@ -7024,6 +7138,64 @@
             renderPlaystylesByLine(groups);
             renderSquadVulnerabilities(groups);
         }
+
+        // Shows the alternate full squads Optimize found spanning the
+        // quality/chemistry trade-off (see runSquadOptimizerImpl) — hidden
+        // entirely unless there are at least 2 real, distinct options.
+        function renderTradeoffOptions() {
+            const panel = document.getElementById('tradeoff-options-panel');
+            if (!panel) return;
+            const options = squadState.tradeoffOptions || [];
+            if (options.length < 2) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+
+            const isAr = currentLanguage === 'ar';
+            const t = i18n[currentLanguage];
+            const labelFor = key => key === 'quality' ? t.tradeoffQuality : key === 'chemistry' ? t.tradeoffChemistry : t.tradeoffBalanced;
+            const activeSig = computeSquadSignature(squadState.selectedXI);
+
+            panel.classList.remove('hidden');
+            panel.innerHTML = `
+                <div class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="tradeoffOptionsTitle">${t.tradeoffOptionsTitle}</div>
+                <div class="grid gap-1.5" style="grid-template-columns: repeat(${options.length}, minmax(0, 1fr));">
+                    ${options.map((opt, idx) => {
+                        const isActive = computeSquadSignature(opt.selectedXI) === activeSig;
+                        return `
+                            <button onclick="window.applyTradeoffOption(${idx})" class="rounded-xl border p-2 text-center transition-all ${isActive ? 'border-fc-accent bg-fc-accent/10' : 'border-fc-border bg-fc-dark hover:border-fc-accent/50'}">
+                                <div class="text-[9px] font-bold uppercase tracking-wide ${isActive ? 'text-fc-accent' : 'text-gray-500'}">${labelFor(opt.label)}${isActive ? ` · ${t.tradeoffActive}` : ''}</div>
+                                <div class="text-sm font-black text-white mt-0.5">${opt.avgMeta != null ? opt.avgMeta.toFixed(1) : opt.avgRating}</div>
+                                <div class="text-[10px] font-bold text-gray-400">${opt.chemSum}/33 ${isAr ? 'كيمياء' : 'chem'}</div>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        // Instantly switches the live squad to one of the alternate
+        // trade-off options Optimize found (see renderTradeoffOptions) —
+        // no rebuild needed, it's already a complete, fully-processed
+        // squad sitting in squadState.tradeoffOptions.
+        window.applyTradeoffOption = function(idx) {
+            const option = (squadState.tradeoffOptions || [])[idx];
+            if (!option) return;
+            snapshotSquadForUndo();
+            squadState.selectedXI = { ...option.selectedXI };
+            squadState.totalCost = option.totalCost;
+            squadState.buildAnimation = null;
+
+            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
+            Object.values(squadState.selectedXI).forEach(p => {
+                if (p) { totalRating += p.rating; count++; if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; } }
+            });
+            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
+            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            squadState.chemistry = calculateSquadChemistry();
+
+            computeSlotAlternatives();
+            renderFootballPitch();
+            renderSquadSummary();
+            calculateNextBestUpgrade();
+        };
 
         // For one stat key, finds THIS LINE's own best and worst player on
         // that stat, relative to the LINE'S OWN average — never compared
