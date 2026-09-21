@@ -920,13 +920,22 @@
                             <option value="" data-i18n="playersRolePlaceholder">— Role —</option>
                         </select>
                     </div>
+                    <div>
+                        <label data-i18n="playersRoleMaxPriceLbl" class="block text-xs font-bold text-gray-300 mb-1">Max Price (optional)</label>
+                        <input type="number" id="players-role-max-price" min="0" step="500" data-i18n-placeholder="playersRoleMaxPricePlaceholder" placeholder="No limit"
+                            oninput="window.searchPlayersByRole()"
+                            class="w-36 bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
                     <button onclick="window.clearRoleSearch()" id="players-role-clear-btn" class="hidden px-3 py-2.5 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white transition-all">
                         <i class="fa-solid fa-xmark"></i> <span data-i18n="playersRoleClearBtn">Clear</span>
                     </button>
                 </div>
             </div>
             <div id="players-search-results" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <!-- Populated by window.searchStandalonePlayers() or window.searchPlayersByRole() -->
+                <!-- Populated by renderPlayerSearchPage() -->
+            </div>
+            <div id="players-search-pagination" class="flex items-center justify-center gap-3 mt-2">
+                <!-- Populated by renderPlayerSearchPage() -->
             </div>
         </div>
 
@@ -1397,6 +1406,8 @@
                 playersRoleLbl: "Role",
                 playersRolePlaceholder: "— Role —",
                 playersRoleClearBtn: "Clear",
+                playersRoleMaxPriceLbl: "Max Price (optional)",
+                playersRoleMaxPricePlaceholder: "No limit",
                 noPlayersFoundStandalone: "No matching players found.",
                 navMarket: "Market",
                 marketTitle: "Market Flips",
@@ -1552,6 +1563,8 @@
                 playersRoleLbl: "الدور",
                 playersRolePlaceholder: "— الدور —",
                 playersRoleClearBtn: "مسح",
+                playersRoleMaxPriceLbl: "أقصى سعر (اختياري)",
+                playersRoleMaxPricePlaceholder: "بلا حد",
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
                 navMarket: "السوق",
                 marketTitle: "فرص السوق",
@@ -6202,11 +6215,85 @@
         // opens the same player modal used everywhere else, but with
         // standalone=true so it omits the slot-dependent sections (see
         // openPlayerModal's standalone branch).
+        // Shared pagination for both search modes (name and role) — 12
+        // per page, with Prev/Next controls when there's more than one
+        // page. `results` holds the FULL filtered/ranked list; only the
+        // current page's slice is ever rendered, so switching pages is
+        // instant (no re-filtering/re-scoring).
+        const PLAYER_SEARCH_PAGE_SIZE = 12;
+        let playerSearchState = { results: [], page: 0, renderItem: null };
+
+        function renderPlayerSearchPage() {
+            const resultsContainer = document.getElementById('players-search-results');
+            const paginationContainer = document.getElementById('players-search-pagination');
+            if (!resultsContainer) return;
+            const isAr = currentLanguage === 'ar';
+            const { results, renderItem } = playerSearchState;
+
+            if (results.length === 0) {
+                resultsContainer.innerHTML = `<p class="col-span-full text-sm text-gray-500 italic text-center py-6">${isAr ? i18n.ar.noPlayersFoundStandalone : i18n.en.noPlayersFoundStandalone}</p>`;
+                if (paginationContainer) paginationContainer.innerHTML = '';
+                return;
+            }
+
+            const totalPages = Math.max(1, Math.ceil(results.length / PLAYER_SEARCH_PAGE_SIZE));
+            playerSearchState.page = Math.min(Math.max(playerSearchState.page, 0), totalPages - 1);
+            const start = playerSearchState.page * PLAYER_SEARCH_PAGE_SIZE;
+            const pageItems = results.slice(start, start + PLAYER_SEARCH_PAGE_SIZE);
+
+            resultsContainer.innerHTML = pageItems.map(renderItem).join('');
+
+            if (paginationContainer) {
+                if (totalPages <= 1) {
+                    paginationContainer.innerHTML = '';
+                } else {
+                    const page = playerSearchState.page;
+                    const pageLabel = isAr ? `صفحة ${page + 1} من ${totalPages}` : `Page ${page + 1} of ${totalPages}`;
+                    paginationContainer.innerHTML = `
+                        <button onclick="window.changePlayerSearchPage(-1)" ${page === 0 ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                            <i class="fa-solid fa-chevron-${isAr ? 'right' : 'left'}"></i>
+                        </button>
+                        <span class="text-xs font-bold text-gray-400">${pageLabel} <span class="text-gray-600">(${results.length} ${isAr ? 'نتيجة' : 'results'})</span></span>
+                        <button onclick="window.changePlayerSearchPage(1)" ${page === totalPages - 1 ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                            <i class="fa-solid fa-chevron-${isAr ? 'left' : 'right'}"></i>
+                        </button>
+                    `;
+                }
+            }
+        }
+
+        window.changePlayerSearchPage = function(delta) {
+            playerSearchState.page += delta;
+            renderPlayerSearchPage();
+        };
+
+        function nameSearchResultHtml(p) {
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+            const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
+            return `
+                <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
+                    <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-bold text-white truncate">${p.name}</div>
+                        <div class="text-[11px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos} · ${(p.price || 0).toLocaleString()}${coinLabel}</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-${isAr ? 'left' : 'right'} text-gray-600 text-xs shrink-0"></i>
+                </button>
+            `;
+        }
+
         window.searchStandalonePlayers = function(query) {
             const resultsContainer = document.getElementById('players-search-results');
             if (!resultsContainer) return;
             const q = query.trim().toLowerCase();
-            if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
+            if (q.length < 2) {
+                resultsContainer.innerHTML = '';
+                const paginationContainer = document.getElementById('players-search-pagination');
+                if (paginationContainer) paginationContainer.innerHTML = '';
+                playerSearchState = { results: [], page: 0, renderItem: null };
+                return;
+            }
 
             // Mutually exclusive with the role search selects.
             const posSelect = document.getElementById('players-role-pos-select');
@@ -6216,26 +6303,9 @@
             if (roleSelect) { roleSelect.innerHTML = ''; roleSelect.disabled = true; }
             if (clearBtn) clearBtn.classList.add('hidden');
 
-            const isAr = currentLanguage === 'ar';
-            const coinLabel = isAr ? 'ك' : 'c';
-            const matches = getActiveDatabase({ requirePriced: false }).filter(p => p.name.toLowerCase().includes(q)).slice(0, 24);
-            if (matches.length === 0) {
-                resultsContainer.innerHTML = `<p class="col-span-full text-sm text-gray-500 italic text-center py-6">${isAr ? i18n.ar.noPlayersFoundStandalone : i18n.en.noPlayersFoundStandalone}</p>`;
-                return;
-            }
-            resultsContainer.innerHTML = matches.map(p => {
-                const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
-                return `
-                    <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
-                        <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
-                        <div class="min-w-0 flex-1">
-                            <div class="text-sm font-bold text-white truncate">${p.name}</div>
-                            <div class="text-[11px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos} · ${(p.price || 0).toLocaleString()}${coinLabel}</div>
-                        </div>
-                        <i class="fa-solid fa-chevron-${isAr ? 'left' : 'right'} text-gray-600 text-xs shrink-0"></i>
-                    </button>
-                `;
-            }).join('');
+            const matches = getActiveDatabase({ requirePriced: false }).filter(p => p.name.toLowerCase().includes(q));
+            playerSearchState = { results: matches, page: 0, renderItem: nameSearchResultHtml };
+            renderPlayerSearchPage();
         };
 
         // ===================================================================
@@ -6277,22 +6347,50 @@
         window.clearRoleSearch = function() {
             const posSelect = document.getElementById('players-role-pos-select');
             const roleSelect = document.getElementById('players-role-select');
+            const maxPriceInput = document.getElementById('players-role-max-price');
             if (posSelect) posSelect.value = '';
             if (roleSelect) { roleSelect.innerHTML = ''; roleSelect.disabled = true; window.populateRoleSelectForPosition(''); }
+            if (maxPriceInput) maxPriceInput.value = '';
             document.getElementById('players-role-clear-btn').classList.add('hidden');
             document.getElementById('players-search-results').innerHTML = '';
+            const paginationContainer = document.getElementById('players-search-pagination');
+            if (paginationContainer) paginationContainer.innerHTML = '';
+            playerSearchState = { results: [], page: 0, renderItem: null };
         };
+
+        function roleSearchResultHtml({ player: p, roleScore }) {
+            const isAr = currentLanguage === 'ar';
+            const coinLabel = isAr ? 'ك' : 'c';
+            const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
+            return `
+                <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
+                    <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-bold text-white truncate">${p.name}</div>
+                        <div class="text-[11px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos}</div>
+                        <div class="text-[10px] font-bold text-fc-accent truncate">${roleScore.role} · ${roleScore.focus}</div>
+                    </div>
+                    <div class="text-right rtl:text-left shrink-0">
+                        <div class="text-[10px] font-bold text-gray-500">${(p.price || 0).toLocaleString()}${coinLabel}</div>
+                    </div>
+                </button>
+            `;
+        }
 
         // Ranks every eligible loaded player by how well they'd play the
         // CHOSEN role at the chosen position — using the real getRoleCandidates
         // scoring (same attribute-driven formulas that already decide roles
         // on the pitch), not just raw OVR/meta. Each player's best-scoring
         // FOCUS for that role is what's shown and sorted on, since the user
-        // picked a role ("Poacher"), not a specific focus.
+        // picked a role ("Poacher"), not a specific focus. Max Price is
+        // applied as a pre-filter (optional — blank/0/negative means no
+        // limit) before scoring, not after, so pagination and the results
+        // count always reflect players actually affordable at that cap.
         window.searchPlayersByRole = function() {
             const posSelect = document.getElementById('players-role-pos-select');
             const roleSelect = document.getElementById('players-role-select');
             const clearBtn = document.getElementById('players-role-clear-btn');
+            const maxPriceInput = document.getElementById('players-role-max-price');
             const resultsContainer = document.getElementById('players-search-results');
             if (!posSelect || !roleSelect || !resultsContainer) return;
 
@@ -6305,39 +6403,24 @@
             const nameInput = document.getElementById('players-search-input');
             if (nameInput) nameInput.value = '';
 
-            const isAr = currentLanguage === 'ar';
-            const coinLabel = isAr ? 'ك' : 'c';
-            const pool = getActiveDatabase({ requirePriced: false }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+            const maxPrice = maxPriceInput ? parseInt(maxPriceInput.value, 10) : NaN;
+            const hasMaxPrice = !isNaN(maxPrice) && maxPrice > 0;
+
+            let pool = getActiveDatabase({ requirePriced: false }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+            if (hasMaxPrice) pool = pool.filter(p => (p.price || 0) <= maxPrice);
 
             const ranked = pool.map(p => {
                 const candidates = getRoleCandidates(p, pos).filter(c => c.role === role);
                 if (candidates.length === 0) return null;
                 const best = candidates.reduce((a, b) => (b.score > a.score ? b : a));
                 return { player: p, roleScore: best };
-            }).filter(Boolean).sort((a, b) => b.roleScore.score - a.roleScore.score).slice(0, 24);
+            }).filter(Boolean).sort((a, b) => b.roleScore.score - a.roleScore.score);
 
-            if (ranked.length === 0) {
-                resultsContainer.innerHTML = `<p class="col-span-full text-sm text-gray-500 italic text-center py-6">${isAr ? i18n.ar.noPlayersFoundStandalone : i18n.en.noPlayersFoundStandalone}</p>`;
-                return;
-            }
-
-            resultsContainer.innerHTML = ranked.map(({ player: p, roleScore }) => {
-                const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
-                return `
-                    <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
-                        <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
-                        <div class="min-w-0 flex-1">
-                            <div class="text-sm font-bold text-white truncate">${p.name}</div>
-                            <div class="text-[11px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos}</div>
-                            <div class="text-[10px] font-bold text-fc-accent truncate">${roleScore.role} · ${roleScore.focus}</div>
-                        </div>
-                        <div class="text-right rtl:text-left shrink-0">
-                            <div class="text-[10px] font-bold text-gray-500">${(p.price || 0).toLocaleString()}${coinLabel}</div>
-                        </div>
-                    </button>
-                `;
-            }).join('');
+            playerSearchState = { results: ranked, page: 0, renderItem: roleSearchResultHtml };
+            renderPlayerSearchPage();
         };
+
+
         // names containing quotes/apostrophes can't break the onclick
         // attribute — same safe pattern as addPlayerToSlot('${id}').
         // Looked up by id (not passed inline as a full object) so player
