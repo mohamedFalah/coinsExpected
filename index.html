@@ -10949,20 +10949,48 @@
 
         // Fetch one page of the EasySBC API, trying a direct request first and
         // falling back to a CORS proxy if the browser blocks the direct call.
-        async function fetchEasySbcPage(baseUrl, page, preferProxy) {
+        // `conditionalHeaders` (optional): { 'If-None-Match': etag,
+        // 'If-Modified-Since': lastModified } from a previous fetch of
+        // this same page — lets the server answer 304 Not Modified with
+        // no body at all when nothing's changed, instead of resending the
+        // full page every time. Only meaningful if the server actually
+        // supports it (most APIs do for GET, but this one is a third
+        // party we don't control) — if it doesn't, this simply always
+        // gets back 200 with fresh data, exactly like before, so nothing
+        // breaks either way. Returns { notModified: true } (no `data`)
+        // on a 304; callers must check that before touching `data`.
+        async function fetchEasySbcPage(baseUrl, page, preferProxy, conditionalHeaders) {
             const pageUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=' + page;
             const strategies = preferProxy
                 ? [{ url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'proxy' }, { url: pageUrl, label: 'direct' }]
                 : [{ url: pageUrl, label: 'direct' }, { url: CORS_PROXY + encodeURIComponent(pageUrl), label: 'proxy' }];
 
+            const headers = { 'Accept': 'application/json', ...(conditionalHeaders || {}) };
+
             let lastErr = null;
             for (const s of strategies) {
                 try {
-                    const res = await fetch(s.url, { headers: { 'Accept': 'application/json' } });
+                    // A conditional proxy request needs the target's real
+                    // headers preserved by the proxy to have any effect;
+                    // allorigins' /raw endpoint does forward the request
+                    // headers it's given, but strips most RESPONSE headers
+                    // on the way back (including ETag/Last-Modified) — so
+                    // conditional requests only actually pay off on the
+                    // direct path. They're still harmless to send through
+                    // the proxy (worst case the server just ignores them
+                    // and returns 200 as usual), so no special-casing here.
+                    const res = await fetch(s.url, { headers });
+                    if (res.status === 304) return { notModified: true, usedProxy: s.label === 'proxy' };
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const data = await res.json();
                     if (!data || !Array.isArray(data.players)) throw new Error('Unexpected response shape (no players[] array)');
-                    return { data, usedProxy: s.label === 'proxy' };
+                    // Reading these is harmless even when the server/proxy
+                    // doesn't send them at all — .get() just returns null,
+                    // and callers already treat a missing etag/lastModified
+                    // as "no conditional data available for next time".
+                    const etag = res.headers.get('etag') || null;
+                    const lastModified = res.headers.get('last-modified') || null;
+                    return { data, usedProxy: s.label === 'proxy', notModified: false, etag, lastModified };
                 } catch (err) {
                     lastErr = err;
                 }
@@ -11003,6 +11031,18 @@
         const FC27_IDB_VERSION = 1;
         const FC27_IDB_STORE = 'players_cache';
         const FC27_IDB_KEY = 'players';
+        // Separate key in the same store — cache freshness/conditional-
+        // request bookkeeping, kept apart from the (much larger) player
+        // array itself so reading/writing one never touches the other.
+        const FC27_IDB_META_KEY = 'players_meta';
+        // How long cached data is trusted without even checking EasySBC
+        // in the background — set deliberately low-ish (a few hours, not
+        // days) since prices genuinely move within a day in FUT, but long
+        // enough that reopening the app repeatedly across one sitting
+        // doesn't re-hit the API every single time. The manual "Scrape"
+        // button always runs regardless of this — it's only the automatic
+        // background check on page load that respects it.
+        const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
         function openFc27IndexedDB() {
             return new Promise((resolve, reject) => {
@@ -11045,6 +11085,41 @@
                 });
             } catch (e) {
                 console.warn('IndexedDB write failed — database will simply re-fetch fresh next load:', e);
+            }
+        }
+
+        // Cache metadata: { cachedAt, etag, lastModified }. `etag`/
+        // `lastModified` are whatever page 1's last successful (non-304)
+        // response carried — used as a cheap proxy for "has the whole
+        // catalog possibly changed" rather than tracking one per page,
+        // which would mean hundreds of conditional checks just to decide
+        // whether a fetch is even needed.
+        async function idbGetCacheMeta() {
+            try {
+                const db = await openFc27IndexedDB();
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(FC27_IDB_STORE, 'readonly');
+                    const req = tx.objectStore(FC27_IDB_STORE).get(FC27_IDB_META_KEY);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => reject(req.error);
+                });
+            } catch (e) {
+                console.warn('IndexedDB meta read failed:', e);
+                return null;
+            }
+        }
+
+        async function idbSetCacheMeta(meta) {
+            try {
+                const db = await openFc27IndexedDB();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(FC27_IDB_STORE, 'readwrite');
+                    tx.objectStore(FC27_IDB_STORE).put(meta, FC27_IDB_META_KEY);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch (e) {
+                console.warn('IndexedDB meta write failed:', e);
             }
         }
 
@@ -11094,10 +11169,45 @@
             }
         }
 
-        window.scrapeEasySBCPlayers = async function() {
+        // Formats an age in ms as a short human string for the log
+        // ("2.3h", "45m") — durable phrasing that doesn't need updating
+        // as time passes, unlike printing an absolute timestamp.
+        function formatCacheAge(ms) {
+            const hours = ms / (60 * 60 * 1000);
+            if (hours >= 1) return `${hours.toFixed(1)}h`;
+            return `${Math.round(ms / 60000)}m`;
+        }
+
+        // `options.skipIfFresh`: only ever passed by the automatic
+        // DOMContentLoaded background check (see bottom of file) — when
+        // true, and the cache is younger than CACHE_TTL_MS, this returns
+        // immediately without contacting EasySBC at all. The manual
+        // "Scrape" button never passes this, so it always runs — a
+        // person clicking it clearly wants a check right now regardless
+        // of how recently one happened.
+        //
+        // Either way, once a real check does run, it FIRST tries a
+        // conditional request for page 1 alone using whatever ETag/
+        // Last-Modified this app remembers from the last successful
+        // fetch. A 304 response means EasySBC confirms nothing changed —
+        // the other (up to 499) pages are never even requested. Only a
+        // real 200 (or a server that doesn't support conditional
+        // requests at all, which just always returns 200) triggers the
+        // full multi-page fetch below.
+        window.scrapeEasySBCPlayers = async function(options) {
+            const skipIfFresh = !!(options && options.skipIfFresh);
             const btn = document.getElementById('btn-scrape');
             const logBox = document.getElementById('scrape-status-log');
             if (logBox) logBox.dataset.fresh = 'false';
+
+            const cacheMeta = await idbGetCacheMeta();
+            if (skipIfFresh && cacheMeta && typeof cacheMeta.cachedAt === 'number') {
+                const age = Date.now() - cacheMeta.cachedAt;
+                if (age < CACHE_TTL_MS) {
+                    scrapeLog(`Cached data is ${formatCacheAge(age)} old — within the freshness window, skipping the EasySBC check for now.`, 'info');
+                    return;
+                }
+            }
 
             const urlInput = document.getElementById('scrape-url-input');
             const pagesInput = document.getElementById('scrape-pages-input');
@@ -11107,23 +11217,47 @@
 
             if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-not-allowed'); }
             setScrapeProgress(0);
-            scrapeLog(`Fetching ${pageCount} page(s) (~${pageCount * EASYSBC_PLAYERS_PER_PAGE} players) from ${baseUrl} ...`, 'info');
+
+            // Only send If-None-Match/If-Modified-Since if we actually
+            // have something from a PRIOR successful (non-304) fetch —
+            // otherwise there's nothing valid to condition on yet.
+            const conditionalHeaders = {};
+            if (cacheMeta && cacheMeta.etag) conditionalHeaders['If-None-Match'] = cacheMeta.etag;
+            if (cacheMeta && cacheMeta.lastModified) conditionalHeaders['If-Modified-Since'] = cacheMeta.lastModified;
+            const hasConditional = Object.keys(conditionalHeaders).length > 0;
+
+            scrapeLog(hasConditional
+                ? `Checking EasySBC for changes (conditional request) before deciding whether to fetch ${pageCount} page(s)...`
+                : `Fetching ${pageCount} page(s) (~${pageCount * EASYSBC_PLAYERS_PER_PAGE} players) from ${baseUrl} ...`, 'info');
 
             const collected = [];
             let preferProxy = false;
             let failures = 0;
             let completed = 0;
             const PAGE_CONCURRENCY = 12; // pages in flight at once
+            let newEtag = null, newLastModified = null;
 
             // Page 1 goes first, alone — it's what tells us whether direct
             // requests are blocked by CORS (usedProxy), which decides the
             // fetch strategy every other page will use. Everything after
-            // it can safely run concurrently once that's known.
+            // it can safely run concurrently once that's known. It's also
+            // the ONE conditional check that can short-circuit the whole
+            // fetch below.
             let firstPageOk = false;
             try {
-                const { data, usedProxy } = await fetchEasySbcPage(baseUrl, 1, false);
+                const result = await fetchEasySbcPage(baseUrl, 1, false, conditionalHeaders);
+                if (result.notModified) {
+                    scrapeLog('EasySBC confirmed no changes since the last check (304 Not Modified) — skipping the rest of the fetch entirely.', 'ok');
+                    await idbSetCacheMeta({ ...cacheMeta, cachedAt: Date.now() }); // just refresh the freshness window
+                    setScrapeProgress(null);
+                    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-not-allowed'); }
+                    return;
+                }
+                const { data, usedProxy, etag, lastModified } = result;
                 preferProxy = usedProxy;
                 firstPageOk = true;
+                newEtag = etag;
+                newLastModified = lastModified;
                 scrapeLog(usedProxy ? 'Direct request was blocked (CORS) — using proxy for remaining pages.' : 'Direct request succeeded — no proxy needed.', usedProxy ? 'warn' : 'ok');
                 if (typeof data.totalPages === 'number') {
                     scrapeLog(`EasySBC reports ${data.totalPages} total pages available (~${data.totalPages * EASYSBC_PLAYERS_PER_PAGE} players). Fetching ${pageCount} of them.`, 'info');
@@ -11179,6 +11313,11 @@
                 } else {
                     scrapeLog(`Checked EasySBC — ${normalized.length} players, no changes since last sync.`, 'ok');
                 }
+                // Remember this fetch's ETag/Last-Modified (if the server
+                // sent any) and reset the freshness clock, regardless of
+                // whether the DATA itself turned out to have changed —
+                // the request itself succeeded just now either way.
+                await idbSetCacheMeta({ etag: newEtag, lastModified: newLastModified, cachedAt: Date.now() });
             } else {
                 scrapeLog('No players were retrieved. Use the "How do I find the real data endpoint?" guide above to re-check the URL, or paste JSON directly into the Import box.', 'warn');
             }
@@ -11571,11 +11710,14 @@
                 window.updateDatabaseStats();
                 window.runSquadOptimizer();
             }
-            // Always revalidate against EasySBC in the background, using
-            // whichever page count is now in the field (saved or default).
-            // scrapeEasySBCPlayers() only re-renders/re-caches if the
-            // fetched data is actually different from what's on screen.
-            window.scrapeEasySBCPlayers();
+            // Revalidate against EasySBC in the background — but only if
+            // the cache is actually stale (see CACHE_TTL_MS) or missing
+            // any freshness record at all; skipIfFresh makes
+            // scrapeEasySBCPlayers itself decide and log that, rather
+            // than duplicating the freshness check here. When it does
+            // run, it tries a cheap conditional check first and only
+            // does the full page fetch if that says something changed.
+            window.scrapeEasySBCPlayers({ skipIfFresh: true });
         });
     </script>
 </body>
