@@ -6377,15 +6377,18 @@
             `;
         }
 
-        // Ranks every eligible loaded player by how well they'd play the
-        // CHOSEN role at the chosen position — using the real getRoleCandidates
-        // scoring (same attribute-driven formulas that already decide roles
-        // on the pitch), not just raw OVR/meta. Each player's best-scoring
-        // FOCUS for that role is what's shown and sorted on, since the user
-        // picked a role ("Poacher"), not a specific focus. Max Price is
-        // applied as a pre-filter (optional — blank/0/negative means no
-        // limit) before scoring, not after, so pagination and the results
-        // count always reflect players actually affordable at that cap.
+        // Ranks every eligible loaded player who can actually play the
+        // CHOSEN role at the chosen position — eligibility comes from the
+        // real getRoleCandidates scoring (same attribute-driven formulas
+        // that already decide roles on the pitch), but the display order
+        // is by Meta Rating (getMetaValue, falling back to raw OVR when a
+        // card has no meta), same as everywhere else quality is ranked in
+        // this app — not by the internal role-fit score itself. Each
+        // player's best-scoring FOCUS for that role is what's shown. Max
+        // Price is applied as a pre-filter (optional — blank/0/negative
+        // means no limit) before scoring, not after, so pagination and the
+        // results count always reflect players actually affordable at
+        // that cap.
         window.searchPlayersByRole = function() {
             const posSelect = document.getElementById('players-role-pos-select');
             const roleSelect = document.getElementById('players-role-select');
@@ -6414,7 +6417,7 @@
                 if (candidates.length === 0) return null;
                 const best = candidates.reduce((a, b) => (b.score > a.score ? b : a));
                 return { player: p, roleScore: best };
-            }).filter(Boolean).sort((a, b) => b.roleScore.score - a.roleScore.score);
+            }).filter(Boolean).sort((a, b) => getMetaValue(b.player) - getMetaValue(a.player));
 
             playerSearchState = { results: ranked, page: 0, renderItem: roleSearchResultHtml };
             renderPlayerSearchPage();
