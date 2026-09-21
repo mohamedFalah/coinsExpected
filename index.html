@@ -718,6 +718,18 @@
                         <!-- Populated by renderTradeoffOptions() -->
                     </div>
 
+                    <!-- Team-wide role fit: flags any player(s) sitting in a
+                         role that's a real step down from their best option
+                         at that position — whether that's because a
+                         team-shape rule adjusted it, or because the user
+                         manually picked it. Always shown once a squad
+                         exists (not conditionally hidden like the trade-off
+                         panel), since it's relevant regardless of how the
+                         squad was built. -->
+                    <div id="role-fit-summary-panel" class="hidden border-t border-fc-border pt-4">
+                        <!-- Populated by renderRoleFitSummary() -->
+                    </div>
+
                     <div id="squad-identity" class="border-t border-fc-border pt-4">
                         <!-- Populated by renderSquadSummary(): a quick,
                              relative read on this squad's dominant trait
@@ -1043,6 +1055,25 @@
         </div>
     </div>
 
+    <!-- Role Picker Modal -->
+    <div id="role-picker-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="window.closeRolePickerModal()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-md w-full max-h-[80vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <button onclick="window.closeRolePickerModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-4">
+                <div>
+                    <h3 class="text-lg font-extrabold text-white" data-i18n="rolePickerTitle">Choose a Role</h3>
+                    <p class="text-xs text-gray-400 mt-1" data-i18n="rolePickerDesc">Pick any role/focus this player can play. The suggested one is marked — others may fit them worse.</p>
+                </div>
+                <div id="role-picker-list" class="space-y-1.5"></div>
+                <button onclick="window.resetRoleOverride()" id="role-picker-reset-btn" class="w-full px-4 py-2.5 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white hover:border-fc-accent/50 transition-all">
+                    <span data-i18n="rolePickerReset">Reset to Suggested</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings / Config Modal -->
     <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
         <div class="bg-fc-card border border-fc-border rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-6" onclick="event.stopPropagation()">
@@ -1255,6 +1286,16 @@
                 suggestedTactics: "Suggested Tactics",
                 addPlayerTitle: "Add a Player",
                 searchAnyPlayer: "Search Any Player",
+                rolePickerTitle: "Choose a Role",
+                rolePickerDesc: "Pick any role/focus this player can play. The suggested one is marked — others may fit them worse.",
+                rolePickerSuggested: "Suggested",
+                rolePickerCurrent: "Current",
+                rolePickerReset: "Reset to Suggested",
+                roleFitTitle: "Role Fit",
+                roleFitAllGood: "All 11 players are well-suited to their assigned roles.",
+                roleFitIssue: "player(s) sitting in a role that's a real step down from their best fit:",
+                roleFitManualTag: "manually chosen",
+                roleFitAdjustedTag: "adjusted for team shape",
                 tradeoffOptionsTitle: "Other Options",
                 tradeoffBalanced: "Balanced",
                 tradeoffQuality: "Best Meta",
@@ -1394,6 +1435,16 @@
                 suggestedTactics: "التكتيك المقترح",
                 addPlayerTitle: "إضافة لاعب",
                 searchAnyPlayer: "ابحث عن أي لاعب",
+                rolePickerTitle: "اختر دوراً",
+                rolePickerDesc: "اختر أي دور/تركيز يمكن لهذا اللاعب أداءه. الدور المقترح مُعلَّم — قد تناسبه الأدوار الأخرى بشكل أقل.",
+                rolePickerSuggested: "مقترح",
+                rolePickerCurrent: "الحالي",
+                rolePickerReset: "إعادة للدور المقترح",
+                roleFitTitle: "ملاءمة الأدوار",
+                roleFitAllGood: "جميع اللاعبين الـ11 في أدوار تناسبهم جيداً.",
+                roleFitIssue: "لاعب(ين) في دور أضعف بوضوح من أفضل دور يناسبهم:",
+                roleFitManualTag: "اختيار يدوي",
+                roleFitAdjustedTag: "تم تعديله لموازنة التشكيلة",
                 tradeoffOptionsTitle: "خيارات أخرى",
                 tradeoffBalanced: "متوازنة",
                 tradeoffQuality: "أفضل ميتا",
@@ -1608,6 +1659,12 @@
             // every read site can access .nationId/.leagueId directly.
             manager: { nationId: null, leagueId: null },
             explanationLog: [],
+            // Per-slot manual role overrides: { [slotIdx]: { playerId, role,
+            // focus } }. See window.selectManualRole / computeTeamRoles.
+            // Keyed by playerId (not just slot) so a stale override from a
+            // previous occupant of this slot never silently reapplies to
+            // whoever's here now.
+            manualRoleOverrides: {},
             // Alternative full squads from the most recent Optimize run,
             // spanning the quality/chemistry trade-off (see
             // runSquadOptimizerImpl) — [] means none built yet, or the
@@ -6642,9 +6699,26 @@
                         ? (currentLanguage === 'ar' ? 'مثبّت — اضغط لإلغاء التثبيت (يبقى عند تغيير التشكيلة)' : 'Locked — click to unlock (stays through formation changes)')
                         : (currentLanguage === 'ar' ? 'اضغط لتثبيت اللاعب في التشكيلة' : 'Click to lock this player into the squad');
                     const roleInfo = (squadState.teamRoles && squadState.teamRoles[idx]) || getRoleSuggestion(player, slot.pos);
-                    const roleTooltip = roleInfo.adjusted
+                    const roleTooltipBase = roleInfo.adjusted
                         ? `${roleInfo.role} · ${roleInfo.focus} — ${currentLanguage === 'ar' ? roleInfo.adjustAr : roleInfo.adjustEn}`
                         : `${roleInfo.role} · ${roleInfo.focus}`;
+                    // A role assigned well below what this exact player is
+                    // actually capable of (their own best-scoring option at
+                    // this position) — whether that gap exists because a
+                    // team-shape rule adjusted it away, or because the user
+                    // manually picked a weaker role on purpose. 15 is a
+                    // heuristic cut — the same rough scale as a single
+                    // team-shape adjustment elsewhere in this scoring
+                    // system, not a precisely calibrated number.
+                    const roleGap = (typeof roleInfo.bestScore === 'number') ? roleInfo.bestScore - roleInfo.score : 0;
+                    const isWeakRoleFit = roleGap > 15;
+                    const weakFitTitleEn = roleInfo.manual
+                        ? `Weaker fit than this player's best role here — you picked this on purpose, just flagging it.`
+                        : `Weaker fit than this player's best role here.`;
+                    const weakFitTitleAr = roleInfo.manual
+                        ? 'أضعف ملاءمة من أفضل دور لهذا اللاعب هنا — لقد اخترته عن قصد، هذا مجرد تنبيه.'
+                        : 'أضعف ملاءمة من أفضل دور لهذا اللاعب هنا.';
+                    const roleTooltip = roleTooltipBase + (isWeakRoleFit ? ` (${currentLanguage === 'ar' ? weakFitTitleAr : weakFitTitleEn})` : '') + (currentLanguage === 'ar' ? ' — اضغط لتغيير الدور' : ' — click to change role');
                     const chemInfo = squadState.chemistry && squadState.chemistry.perSlot[idx];
                     const chemPoints = chemInfo ? chemInfo.points : 0;
                     const chemInPos = chemInfo ? chemInfo.inPosition : true;
@@ -6690,7 +6764,8 @@
                         </div>
                         <div class="bg-fc-accent/10 border ${borderClasses} rounded-b-lg px-1 py-0.5 transition-all relative">
                             ${roleInfo.adjusted ? `<span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-fc-gold" title="${currentLanguage === 'ar' ? 'تم تعديل الدور لموازنة شكل التشكيلة' : 'Role adjusted for team shape'}"></span>` : ''}
-                            <span class="block text-center text-[8px] sm:text-[9px] font-bold text-fc-accent truncate leading-tight" title="${roleTooltip}">${roleInfo.role} · ${roleInfo.focus}</span>
+                            ${isWeakRoleFit ? `<span class="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-orange-500" title="${currentLanguage === 'ar' ? weakFitTitleAr : weakFitTitleEn}"></span>` : ''}
+                            <button onclick="event.stopPropagation(); window.openRolePickerModal(${idx})" class="block w-full text-center text-[8px] sm:text-[9px] font-bold truncate leading-tight hover:underline ${isWeakRoleFit ? 'text-orange-400' : 'text-fc-accent'}" title="${roleTooltip}">${roleInfo.role} · ${roleInfo.focus}</button>
                         </div>
                     `;
                     wrapper.onclick = () => window.openPlayerModal(player, slot.label, idx);
@@ -7146,6 +7221,7 @@
             renderTacticsSummary();
             renderTeamTacticalShape();
             renderTradeoffOptions();
+            renderRoleFitSummary();
             const badge = document.getElementById('squad-overall-badge');
             const metaBadge = document.getElementById('squad-meta-badge');
             const metaCell = document.getElementById('squad-meta-cell');
@@ -7265,8 +7341,71 @@
             `;
         }
 
-        // Instantly switches the live squad to one of the alternate
-        // trade-off options Optimize found (see renderTradeoffOptions) —
+        // Team-wide role-fit opinion: flags every player whose FINAL
+        // assigned role (manual override, team-shape-adjusted, or plain
+        // default) is a real step down from their own best-scoring option
+        // at that position — same 15-point heuristic gap used for the
+        // per-card orange dot (see renderFootballPitch), just summarized
+        // across all 11 at once. Recomputed on every renderSquadSummary()
+        // call, so it stays current whether one role changed or the whole
+        // XI did.
+        function renderRoleFitSummary() {
+            const panel = document.getElementById('role-fit-summary-panel');
+            if (!panel) return;
+            const teamRoles = squadState.teamRoles;
+            const slots = formationSlots[squadState.formation];
+            if (!teamRoles || !slots || Object.keys(squadState.selectedXI || {}).length === 0) {
+                panel.classList.add('hidden'); panel.innerHTML = ''; return;
+            }
+
+            const isAr = currentLanguage === 'ar';
+            const t = i18n[currentLanguage];
+            const WEAK_ROLE_GAP = 15;
+
+            const weakSlots = Object.keys(teamRoles).filter(idx => {
+                const info = teamRoles[idx];
+                return typeof info.bestScore === 'number' && (info.bestScore - info.score) > WEAK_ROLE_GAP;
+            });
+
+            panel.classList.remove('hidden');
+            if (weakSlots.length === 0) {
+                panel.innerHTML = `
+                    <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5" data-i18n="roleFitTitle">${t.roleFitTitle}</div>
+                    <div class="flex items-center gap-2 text-xs text-green-400 font-semibold">
+                        <i class="fa-solid fa-circle-check"></i>
+                        <span data-i18n="roleFitAllGood">${t.roleFitAllGood}</span>
+                    </div>
+                `;
+                return;
+            }
+
+            panel.innerHTML = `
+                <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5" data-i18n="roleFitTitle">${t.roleFitTitle}</div>
+                <div class="flex items-start gap-2 text-xs text-orange-400 font-semibold mb-2">
+                    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                    <span>${weakSlots.length} ${t.roleFitIssue}</span>
+                </div>
+                <div class="space-y-1.5">
+                    ${weakSlots.map(idx => {
+                        const player = squadState.selectedXI[idx];
+                        const info = teamRoles[idx];
+                        if (!player) return '';
+                        const tags = [];
+                        if (info.manual) tags.push(t.roleFitManualTag);
+                        else if (info.adjusted) tags.push(t.roleFitAdjustedTag);
+                        return `
+                            <button onclick="window.openRolePickerModal(${idx})" class="w-full text-left rtl:text-right flex items-center justify-between gap-2 bg-fc-dark border border-orange-500/30 rounded-lg px-2.5 py-1.5 hover:border-orange-500/60 transition-all">
+                                <div class="min-w-0">
+                                    <span class="text-xs font-bold text-white truncate">${player.name}</span>
+                                    <span class="text-[10px] text-gray-400"> — ${info.role} · ${info.focus}${tags.length ? ` (${tags.join(', ')})` : ''}</span>
+                                </div>
+                                <i class="fa-solid fa-chevron-right rtl:rotate-180 text-[10px] text-gray-500 shrink-0"></i>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
         // no rebuild needed, it's already a complete, fully-processed
         // squad sitting in squadState.tradeoffOptions.
         window.applyTradeoffOption = function(idx) {
@@ -9113,16 +9252,108 @@
         // and recomputed once per render in renderFootballPitch(), so every
         // consumer (pitch cards, the player modal's "Optimal Role & Tactic"
         // section) reads the same team-consistent assignment.
+        // ===================================================================
+        // MANUAL ROLE OVERRIDE — lets the user pick any role/focus a player
+        // is eligible for, instead of only ever seeing the auto-suggested
+        // one. See squadState.manualRoleOverrides and computeTeamRoles
+        // (which honors it, player-ID-matched so a stale override never
+        // silently reapplies to a different player who later fills the
+        // same slot).
+        // ===================================================================
+        let rolePickerSlotIdx = null;
+        let rolePickerOptions = [];
+
+        window.openRolePickerModal = function(slotIdx) {
+            const player = squadState.selectedXI[slotIdx];
+            const slot = formationSlots[squadState.formation] && formationSlots[squadState.formation][slotIdx];
+            if (!player || !slot) return;
+            rolePickerSlotIdx = slotIdx;
+            rolePickerOptions = getRoleCandidates(player, slot.pos).slice().sort((a, b) => b.score - a.score);
+
+            const currentInfo = squadState.teamRoles && squadState.teamRoles[slotIdx];
+            const isAr = currentLanguage === 'ar';
+            const t = i18n[currentLanguage];
+            const list = document.getElementById('role-picker-list');
+            list.innerHTML = rolePickerOptions.map((opt, i) => {
+                const isSuggested = i === 0;
+                const isCurrent = currentInfo && currentInfo.role === opt.role && currentInfo.focus === opt.focus;
+                return `
+                    <button onclick="window.selectManualRole(${i})" class="w-full text-left rtl:text-right p-3 rounded-xl border transition-all ${isCurrent ? 'border-fc-accent bg-fc-accent/10' : 'border-fc-border bg-fc-dark hover:border-fc-accent/50'}">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-bold text-white text-sm">${opt.role} <span class="text-gray-400 font-normal">· ${opt.focus}</span></span>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                ${isSuggested ? `<span class="text-[9px] font-bold text-fc-gold bg-fc-gold/10 px-1.5 py-0.5 rounded">${t.rolePickerSuggested}</span>` : ''}
+                                ${isCurrent ? `<span class="text-[9px] font-bold text-fc-accent bg-fc-accent/10 px-1.5 py-0.5 rounded">${t.rolePickerCurrent}</span>` : ''}
+                            </div>
+                        </div>
+                        <p class="text-[11px] text-gray-400 mt-1">${isAr ? opt.ar : opt.en}</p>
+                    </button>
+                `;
+            }).join('');
+
+            const resetBtn = document.getElementById('role-picker-reset-btn');
+            const override = squadState.manualRoleOverrides[slotIdx];
+            const hasOverride = override && override.playerId === player.id;
+            resetBtn.classList.toggle('hidden', !hasOverride);
+
+            const modal = document.getElementById('role-picker-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closeRolePickerModal = function() {
+            const modal = document.getElementById('role-picker-modal');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+            rolePickerSlotIdx = null;
+            rolePickerOptions = [];
+        };
+
+        window.selectManualRole = function(optionIdx) {
+            if (rolePickerSlotIdx === null) return;
+            const player = squadState.selectedXI[rolePickerSlotIdx];
+            const opt = rolePickerOptions[optionIdx];
+            if (!player || !opt) return;
+            squadState.manualRoleOverrides[rolePickerSlotIdx] = { playerId: player.id, role: opt.role, focus: opt.focus };
+            window.closeRolePickerModal();
+            renderFootballPitch();
+            renderSquadSummary();
+        };
+
+        window.resetRoleOverride = function() {
+            if (rolePickerSlotIdx === null) return;
+            delete squadState.manualRoleOverrides[rolePickerSlotIdx];
+            window.closeRolePickerModal();
+            renderFootballPitch();
+            renderSquadSummary();
+        };
+
         function computeTeamRoles(xi, slots) {
             const assignments = {};
             const candidatesBySlot = {};
+            const overrides = squadState.manualRoleOverrides || {};
 
             Object.keys(xi).forEach(slotIdx => {
                 const player = xi[slotIdx];
                 if (!player || !slots[slotIdx]) return;
                 const options = getRoleCandidates(player, slots[slotIdx].pos).slice().sort((a, b) => b.score - a.score);
                 candidatesBySlot[slotIdx] = options;
-                assignments[slotIdx] = { ...options[0] };
+                const bestScore = options[0].score;
+                const override = overrides[slotIdx];
+                const chosen = (override && override.playerId === player.id)
+                    ? options.find(o => o.role === override.role && o.focus === override.focus)
+                    : null;
+                if (chosen) {
+                    // Manually picked (see window.selectManualRole) — kept
+                    // exactly as chosen, `manual: true` so the team-shape
+                    // rules below leave it alone (they can still SEE it
+                    // when balancing every other slot, they just don't get
+                    // to override an explicit choice), and `bestScore`
+                    // carried along so the UI can flag it if it's a real
+                    // step down from what this player is actually best at.
+                    assignments[slotIdx] = { ...chosen, manual: true, bestScore };
+                } else {
+                    assignments[slotIdx] = { ...options[0], bestScore };
+                }
             });
 
             const byLine = { ATT: [], MID: [], DEF: [], GK: [] };
@@ -9131,9 +9362,10 @@
             });
 
             const adjust = (slotIdx, roleName, note) => {
+                if (assignments[slotIdx].manual) return; // never overrule an explicit manual pick
                 const opt = candidatesBySlot[slotIdx].find(o => o.role === roleName);
                 if (!opt) return;
-                assignments[slotIdx] = { ...opt, adjusted: true, adjustEn: note.en, adjustAr: note.ar };
+                assignments[slotIdx] = { ...opt, adjusted: true, adjustEn: note.en, adjustAr: note.ar, bestScore: assignments[slotIdx].bestScore };
             };
 
             // Rule 1 — Midfield needs at least one anchor. If every CM/CDM
