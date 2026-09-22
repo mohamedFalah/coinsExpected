@@ -10998,6 +10998,28 @@
             throw lastErr || new Error('All fetch strategies failed');
         }
 
+        // A single page failing is very often a TRANSIENT blip — a free
+        // public CORS proxy (allorigins.win, used as the fallback when
+        // EasySBC itself refuses direct browser CORS, which is expected
+        // and by design) getting momentarily rate-limited or timing out
+        // under concurrent load, rather than something genuinely wrong.
+        // Retrying once or twice with a short, increasing delay clears up
+        // the overwhelming majority of these without any user action —
+        // only a page that fails on every attempt actually gets logged
+        // as failed and skipped.
+        async function fetchEasySbcPageWithRetry(baseUrl, page, preferProxy, conditionalHeaders, maxRetries = 2) {
+            let lastErr = null;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    return await fetchEasySbcPage(baseUrl, page, preferProxy, conditionalHeaders);
+                } catch (err) {
+                    lastErr = err;
+                    if (attempt < maxRetries) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+                }
+            }
+            throw lastErr;
+        }
+
         // Runs `worker` over `items` with at most `concurrency` calls in
         // flight at once — a small worker-pool instead of Promise.all
         // (which would fire everything at once and risk hammering/getting
@@ -11234,7 +11256,6 @@
             let preferProxy = false;
             let failures = 0;
             let completed = 0;
-            const PAGE_CONCURRENCY = 12; // pages in flight at once
             let newEtag = null, newLastModified = null;
 
             // Page 1 goes first, alone — it's what tells us whether direct
@@ -11245,7 +11266,7 @@
             // fetch below.
             let firstPageOk = false;
             try {
-                const result = await fetchEasySbcPage(baseUrl, 1, false, conditionalHeaders);
+                const result = await fetchEasySbcPageWithRetry(baseUrl, 1, false, conditionalHeaders);
                 if (result.notModified) {
                     scrapeLog('EasySBC confirmed no changes since the last check (304 Not Modified) — skipping the rest of the fetch entirely.', 'ok');
                     await idbSetCacheMeta({ ...cacheMeta, cachedAt: Date.now() }); // just refresh the freshness window
@@ -11272,15 +11293,22 @@
             }
 
             if (firstPageOk && pageCount > 1) {
+                // The free public CORS proxy is far more prone to rate-
+                // limiting under heavy concurrent load than EasySBC's own
+                // API answering direct requests — so once we know we're
+                // going through it (preferProxy), scale concurrency down
+                // to reduce how often that happens in the first place,
+                // rather than only reacting to it after the fact via retries.
+                const PAGE_CONCURRENCY = preferProxy ? 5 : 12;
                 const remainingPages = Array.from({ length: pageCount - 1 }, (_, i) => i + 2);
                 scrapeLog(`Fetching the remaining ${remainingPages.length} page(s) concurrently (${PAGE_CONCURRENCY} at a time)...`, 'info');
                 await runWithConcurrency(remainingPages, PAGE_CONCURRENCY, async (page) => {
                     try {
-                        const { data } = await fetchEasySbcPage(baseUrl, page, preferProxy);
+                        const { data } = await fetchEasySbcPageWithRetry(baseUrl, page, preferProxy);
                         collected.push(...data.players);
                     } catch (err) {
                         failures++;
-                        scrapeLog(`Page ${page} failed: ${err.message}`, 'err');
+                        scrapeLog(`Page ${page} failed after retries: ${err.message}`, 'err');
                     } finally {
                         completed++;
                         setScrapeProgress((completed / pageCount) * 100);
