@@ -926,6 +926,10 @@
                             oninput="window.searchPlayersByRole()"
                             class="w-36 bg-fc-dark border border-fc-border rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-fc-accent">
                     </div>
+                    <label class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-fc-dark border border-fc-border cursor-pointer select-none">
+                        <input type="checkbox" id="players-role-above-avg" onchange="window.searchPlayersByRole()" class="accent-fc-accent w-4 h-4">
+                        <span data-i18n="playersRoleAboveAvgLbl" class="text-xs font-bold text-gray-300">Above average only</span>
+                    </label>
                     <button onclick="window.clearRoleSearch()" id="players-role-clear-btn" class="hidden px-3 py-2.5 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white transition-all">
                         <i class="fa-solid fa-xmark"></i> <span data-i18n="playersRoleClearBtn">Clear</span>
                     </button>
@@ -936,6 +940,26 @@
             </div>
             <div id="players-search-pagination" class="flex items-center justify-center gap-3 mt-2">
                 <!-- Populated by renderPlayerSearchPage() -->
+            </div>
+
+            <!-- Database Stats: a scouting-report view of the WHOLE loaded
+                 database (not any one squad) — per-line attribute
+                 averages, cross-position "who threatens whom" matchups,
+                 and what to actually prioritize when shopping for each
+                 position. Only players rated 74+ count toward any of it
+                 (see GENERAL_STATS_MIN_RATING) — a long tail of unusable
+                 fringe cards would otherwise drag every "typical" number
+                 down to something nobody would actually field. -->
+            <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-5">
+                <div>
+                    <h2 data-i18n="dbStatsTitle" class="text-xl md:text-2xl font-extrabold mb-1">Database Stats</h2>
+                    <p data-i18n="dbStatsDesc" class="text-gray-400 text-xs md:text-sm">
+                        A scouting report across your whole loaded database — not any one squad. Only players rated 74+ count, since lower-rated cards aren't realistically usable.
+                    </p>
+                </div>
+                <div id="db-stats-content" class="space-y-5">
+                    <!-- Populated by renderGeneralStatsPanel() -->
+                </div>
             </div>
         </div>
 
@@ -1408,6 +1432,15 @@
                 playersRoleClearBtn: "Clear",
                 playersRoleMaxPriceLbl: "Max Price (optional)",
                 playersRoleMaxPricePlaceholder: "No limit",
+                playersRoleAboveAvgLbl: "Above average only",
+                dbStatsTitle: "Database Stats",
+                dbStatsDesc: "A scouting report across your whole loaded database — not any one squad. Only players rated 74+ count, since lower-rated cards aren't realistically usable.",
+                dbStatsSampleSize: "players rated 74+",
+                dbStatsPriorityLabel: "When picking, prioritize:",
+                dbStatsPriorityReason: "widest spread among usable players — this is what actually separates a good pick from a mediocre one",
+                dbStatsMatchupsTitle: "Matchups to watch",
+                dbStatsNoMatchups: "No notable cross-position gaps stand out right now.",
+                dbStatsNoData: "Not enough rated-74+ players loaded yet for this position.",
                 noPlayersFoundStandalone: "No matching players found.",
                 navMarket: "Market",
                 marketTitle: "Market Flips",
@@ -1565,6 +1598,15 @@
                 playersRoleClearBtn: "مسح",
                 playersRoleMaxPriceLbl: "أقصى سعر (اختياري)",
                 playersRoleMaxPricePlaceholder: "بلا حد",
+                playersRoleAboveAvgLbl: "أعلى من المتوسط فقط",
+                dbStatsTitle: "إحصائيات القاعدة",
+                dbStatsDesc: "تقرير استكشافي عبر كامل قاعدة بياناتك المحملة — وليس عن تشكيلة معينة. فقط اللاعبون بتقييم 74+ يُحتسبون، لأن التقييمات الأقل غير قابلة للاستخدام فعلياً.",
+                dbStatsSampleSize: "لاعب بتقييم 74+",
+                dbStatsPriorityLabel: "عند الاختيار، ركّز على:",
+                dbStatsPriorityReason: "أوسع تفاوت بين اللاعبين القابلين للاستخدام — وهذا ما يفرّق فعلياً بين اختيار جيد وآخر متوسط",
+                dbStatsMatchupsTitle: "مواجهات يجب الانتباه لها",
+                dbStatsNoMatchups: "لا توجد فجوات ملحوظة بين المراكز حالياً.",
+                dbStatsNoData: "لا يوجد عدد كافٍ من اللاعبين بتقييم 74+ لهذا المركز بعد.",
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
                 navMarket: "السوق",
                 marketTitle: "فرص السوق",
@@ -2386,6 +2428,9 @@
             // even if one happened earlier in the same session.
             if (tabId === 'mysquads' && typeof window.renderSavedSquadsList === 'function') {
                 window.renderSavedSquadsList();
+            }
+            if (tabId === 'players' && typeof renderGeneralStatsPanel === 'function') {
+                renderGeneralStatsPanel();
             }
         };
 
@@ -3317,6 +3362,257 @@
             });
             POSITION_FIT_BASELINE = baseline;
             STYLE_ATTR_BASELINE = styleBaseline;
+        }
+
+        // ===================================================================
+        // GENERAL PLAYER STATS — a database-wide scouting report, separate
+        // from POSITION_FIT_BASELINE/STYLE_ATTR_BASELINE above. Those feed
+        // the live scoring engine and intentionally include every eligible
+        // card regardless of rating, since even a fringe card can be worth
+        // scoring in some budget context. This is different: a report a
+        // person actually reads, where a long tail of unusable sub-74
+        // cards would just drag every "typical" number down to something
+        // nobody would actually field. Kept as its own separate baseline
+        // rather than changing the scoring one, so this reporting feature
+        // never alters how Optimize/Regenerate actually pick players.
+        // ===================================================================
+        const GENERAL_STATS_MIN_RATING = 74;
+        const GENERAL_STATS_KEYS = ['pac', 'sho', 'pas', 'dri', 'def', 'phy'];
+        const GENERAL_STATS_POSITIONS = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST', 'CF'];
+
+        // Broad line groupings used for the headline DEF/MID/ATT view and
+        // for the cross-position "who threatens whom" matchups below.
+        const GENERAL_STATS_LINES = {
+            DEF: ['CB', 'LB', 'RB', 'LWB', 'RWB'],
+            MID: ['CDM', 'CM', 'CAM', 'LM', 'RM'],
+            ATT: ['LW', 'RW', 'ST', 'CF']
+        };
+
+        // Deliberately a short, hand-picked list of matchups that actually
+        // happen on a pitch — a full all-positions-vs-all-positions matrix
+        // would mostly be noise. Each one compares one line's average in
+        // `statKey` against another line's average in the SAME statKey,
+        // framed as "does the group that has to deal with this actually
+        // have an answer for it".
+        const GENERAL_STATS_MATCHUPS = [
+            {
+                id: 'cb_vs_wingers_pace', statKey: 'pac',
+                subject: ['CB'], threat: ['LW', 'RW'],
+                en: (gap, subjAvg, threatAvg) => `Center-backs average ${subjAvg} pace against wingers averaging ${threatAvg} — a ${gap}-point gap means CBs in this database are systematically exposed to being run in behind by a fast winger.`,
+                ar: (gap, subjAvg, threatAvg) => `متوسط سرعة قلب الدفاع ${subjAvg} مقابل ${threatAvg} للأجنحة — فارق ${gap} نقطة يعني أن قلوب الدفاع في هذه القاعدة معرضة بشكل منهجي للانطلاقات خلف الظهر من جناح سريع.`
+            },
+            {
+                id: 'cb_vs_strikers_phy', statKey: 'phy',
+                subject: ['CB'], threat: ['ST', 'CF'],
+                en: (gap, subjAvg, threatAvg) => `Strikers average ${threatAvg} physical against center-backs averaging ${subjAvg} — a ${gap}-point gap in the striker's favor means aerial/hold-up battles skew toward the attacker by default.`,
+                ar: (gap, subjAvg, threatAvg) => `متوسط البدنية للمهاجمين ${threatAvg} مقابل ${subjAvg} لقلوب الدفاع — فارق ${gap} نقطة لصالح المهاجم يعني أن المعارك الهوائية وثبات الكرة تميل لصالح المهاجم افتراضياً.`
+            },
+            {
+                id: 'fb_vs_wingers_pace', statKey: 'pac',
+                subject: ['LB', 'RB'], threat: ['LW', 'RW'],
+                en: (gap, subjAvg, threatAvg) => `Full-backs average ${subjAvg} pace against wingers averaging ${threatAvg} — a ${gap}-point gap on the flank, the single most common 1v1 in the game.`,
+                ar: (gap, subjAvg, threatAvg) => `متوسط سرعة الظهير ${subjAvg} مقابل ${threatAvg} للجناح — فارق ${gap} نقطة على الأطراف، وهي أكثر المواجهات الفردية تكراراً في المباراة.`
+            },
+            {
+                id: 'cdm_vs_cam_control', statKey: 'dri',
+                subject: ['CDM'], threat: ['CAM'],
+                en: (gap, subjAvg, threatAvg) => `Attacking mids average ${threatAvg} dribbling against defensive mids at ${subjAvg} — a ${gap}-point gap means a CAM can often dribble straight through the pivot rather than around it.`,
+                ar: (gap, subjAvg, threatAvg) => `متوسط المراوغة لصانعي الألعاب ${threatAvg} مقابل ${subjAvg} لمرتكزي الوسط الدفاعي — فارق ${gap} نقطة يعني أن صانع الألعاب غالباً ما يستطيع المراوغة مباشرة عبر المرتكز بدلاً من الالتفاف حوله.`
+            }
+        ];
+
+        let GENERAL_PLAYER_STATS = {}; // per-position: { count, ratingAvg, stats: { [key]: {avg, stdDev, count} } }
+
+        function computeGeneralPlayerStats() {
+            const perPosition = {};
+            GENERAL_STATS_POSITIONS.forEach(pos => {
+                const pool = getActiveDatabase({ requirePriced: false }).filter(p =>
+                    (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING && p.att
+                );
+                const stats = {};
+                GENERAL_STATS_KEYS.forEach(key => {
+                    const vals = pool.map(p => p.att[key]).filter(v => typeof v === 'number');
+                    if (vals.length === 0) { stats[key] = null; return; }
+                    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+                    const variance = vals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / vals.length;
+                    stats[key] = { avg, stdDev: Math.sqrt(variance), count: vals.length };
+                });
+                const ratingVals = pool.map(p => p.rating);
+                perPosition[pos] = {
+                    count: pool.length,
+                    ratingAvg: ratingVals.length ? ratingVals.reduce((a, b) => a + b, 0) / ratingVals.length : null,
+                    stats
+                };
+            });
+            GENERAL_PLAYER_STATS = perPosition;
+        }
+
+        // Pools multiple positions' pre-computed per-key averages into one
+        // combined average for a LINE (e.g. all of DEF), weighted by how
+        // many rated-74+ players actually back each position's number —
+        // a position with only 12 qualifying cards shouldn't count as
+        // heavily as one with 300.
+        function combinedLineStatAvg(positions, statKey) {
+            let weightedSum = 0, totalWeight = 0;
+            positions.forEach(pos => {
+                const entry = GENERAL_PLAYER_STATS[pos];
+                const stat = entry && entry.stats[statKey];
+                if (stat && stat.count > 0) { weightedSum += stat.avg * stat.count; totalWeight += stat.count; }
+            });
+            return totalWeight > 0 ? weightedSum / totalWeight : null;
+        }
+
+        // Below this point gap, a matchup isn't worth calling out — both
+        // sides are close enough that it's not a systemic pattern.
+        const GENERAL_STATS_MATCHUP_THRESHOLD = 4;
+
+        function computeStatMatchupInsights() {
+            return GENERAL_STATS_MATCHUPS.map(m => {
+                const subjAvg = combinedLineStatAvg(m.subject, m.statKey);
+                const threatAvg = combinedLineStatAvg(m.threat, m.statKey);
+                if (subjAvg == null || threatAvg == null) return null;
+                const gap = Math.round(Math.abs(threatAvg - subjAvg));
+                if (gap < GENERAL_STATS_MATCHUP_THRESHOLD) return null;
+                return { ...m, gap, subjAvg: Math.round(subjAvg), threatAvg: Math.round(threatAvg) };
+            }).filter(Boolean);
+        }
+
+        // "What to prioritize when picking a player at this position":
+        // the key attribute (from getKeyAttributesForPosition) with the
+        // WIDEST spread (stdDev) among rated-74+ eligible players — a
+        // stat everyone clusters tightly on can't be what separates a
+        // good pick from a mediocre one, but a stat with real spread is
+        // exactly where careful shopping pays off.
+        function getPriorityStatForPosition(pos) {
+            const entry = GENERAL_PLAYER_STATS[pos];
+            if (!entry) return null;
+            const keys = getKeyAttributesForPosition(pos).filter(k => GENERAL_STATS_KEYS.includes(k));
+            if (keys.length === 0) return null;
+            let best = null;
+            keys.forEach(k => {
+                const stat = entry.stats[k];
+                if (stat && (!best || stat.stdDev > best.stdDev)) best = { key: k, ...stat };
+            });
+            return best;
+        }
+
+        // A single "how good is average, overall, for this position"
+        // number — the same weighted key-attribute composite
+        // computeKeyAttrFitScore uses for one player, but built from
+        // GENERAL_PLAYER_STATS's per-attribute averages instead, so a
+        // player's own fit score can be compared directly against it.
+        // Used by the Players tab's "Above average only" search filter.
+        function getAverageFitScoreForPosition(pos) {
+            const keys = getKeyAttributesForPosition(pos);
+            const entry = GENERAL_PLAYER_STATS[pos];
+            if (!keys.length || !entry) return null;
+            const weights = [3, 2, 1];
+            let weightedSum = 0, weightTotal = 0;
+            keys.forEach((k, i) => {
+                const w = weights[i] || 1;
+                const stat = entry.stats[k];
+                if (stat) { weightedSum += stat.avg * w; weightTotal += w; }
+            });
+            return weightTotal > 0 ? weightedSum / weightTotal : null;
+        }
+
+        // Pools several underlying position codes into one display card —
+        // e.g. LB and RB are mirror images of each other, so showing them
+        // as one "LB / RB" row is more useful than two near-identical
+        // ones. Sample size sums across the pooled keys (LB and RB are
+        // disjoint sets for the vast majority of cards, so this is a fair
+        // approximation, not exact double-counting). Priority stat uses
+        // the first key, since mirrored positions always share the same
+        // key-attribute list in getKeyAttributesForPosition anyway.
+        function computeDisplayPositionSummary(keys) {
+            const stats = {};
+            GENERAL_STATS_KEYS.forEach(k => {
+                let sum = 0, count = 0;
+                keys.forEach(pos => {
+                    const s = GENERAL_PLAYER_STATS[pos] && GENERAL_PLAYER_STATS[pos].stats[k];
+                    if (s && s.count > 0) { sum += s.avg * s.count; count += s.count; }
+                });
+                stats[k] = count > 0 ? { avg: sum / count, count } : null;
+            });
+            const sampleSize = keys.reduce((s, pos) => s + ((GENERAL_PLAYER_STATS[pos] || {}).count || 0), 0);
+            const priority = getPriorityStatForPosition(keys[0]);
+            return { sampleSize, stats, priority };
+        }
+
+        const DB_STATS_DISPLAY_POSITIONS = [
+            { labelEn: 'GK', labelAr: 'حارس مرمى', keys: ['GK'] },
+            { labelEn: 'CB', labelAr: 'قلب دفاع', keys: ['CB'] },
+            { labelEn: 'LB / RB', labelAr: 'ظهير أيسر/أيمن', keys: ['LB', 'RB'] },
+            { labelEn: 'CDM', labelAr: 'ارتكاز', keys: ['CDM'] },
+            { labelEn: 'CM', labelAr: 'وسط', keys: ['CM'] },
+            { labelEn: 'CAM', labelAr: 'صانع ألعاب', keys: ['CAM'] },
+            { labelEn: 'LM / RM', labelAr: 'وسط أيسر/أيمن', keys: ['LM', 'RM'] },
+            { labelEn: 'LW / RW', labelAr: 'جناح أيسر/أيمن', keys: ['LW', 'RW'] },
+            { labelEn: 'ST', labelAr: 'مهاجم', keys: ['ST', 'CF'] }
+        ];
+
+        function renderGeneralStatsPanel() {
+            const container = document.getElementById('db-stats-content');
+            if (!container) return;
+            const isAr = currentLanguage === 'ar';
+            const t = i18n[currentLanguage];
+
+            const cards = DB_STATS_DISPLAY_POSITIONS.map(dp => {
+                const label = isAr ? dp.labelAr : dp.labelEn;
+                const summary = computeDisplayPositionSummary(dp.keys);
+                if (summary.sampleSize === 0) {
+                    return `
+                        <div class="bg-fc-dark border border-fc-border rounded-xl p-4">
+                            <div class="text-sm font-black text-white mb-1">${label}</div>
+                            <p class="text-xs text-gray-500 italic">${t.dbStatsNoData}</p>
+                        </div>
+                    `;
+                }
+                const statRows = GENERAL_STATS_KEYS.map(k => {
+                    const s = summary.stats[k];
+                    const attrLabel = ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+                    return `
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-gray-400">${attrLabel}</span>
+                            <span class="font-bold text-white">${s ? Math.round(s.avg) : '--'}</span>
+                        </div>
+                    `;
+                }).join('');
+                const priorityHtml = summary.priority ? `
+                    <div class="mt-2 pt-2 border-t border-fc-border">
+                        <div class="text-[10px] font-bold text-fc-accent">${t.dbStatsPriorityLabel} ${ATTRIBUTE_LABELS[summary.priority.key] ? (isAr ? ATTRIBUTE_LABELS[summary.priority.key].ar : ATTRIBUTE_LABELS[summary.priority.key].en) : summary.priority.key}</div>
+                        <div class="text-[9px] text-gray-500 mt-0.5">${t.dbStatsPriorityReason}</div>
+                    </div>
+                ` : '';
+                return `
+                    <div class="bg-fc-dark border border-fc-border rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-black text-white">${label}</div>
+                            <div class="text-[10px] text-gray-500">${summary.sampleSize} ${t.dbStatsSampleSize}</div>
+                        </div>
+                        <div class="space-y-1">${statRows}</div>
+                        ${priorityHtml}
+                    </div>
+                `;
+            }).join('');
+
+            const matchups = computeStatMatchupInsights();
+            const matchupsHtml = matchups.length > 0
+                ? matchups.map(m => `
+                    <div class="flex items-start gap-2 bg-fc-dark border border-orange-500/30 rounded-xl p-3">
+                        <i class="fa-solid fa-triangle-exclamation text-orange-400 text-xs mt-0.5 shrink-0"></i>
+                        <p class="text-xs text-gray-300">${isAr ? m.ar(m.gap, m.subjAvg, m.threatAvg) : m.en(m.gap, m.subjAvg, m.threatAvg)}</p>
+                    </div>
+                `).join('')
+                : `<p class="text-xs text-gray-500 italic">${t.dbStatsNoMatchups}</p>`;
+
+            container.innerHTML = `
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">${cards}</div>
+                <div>
+                    <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">${t.dbStatsMatchupsTitle}</div>
+                    <div class="space-y-2">${matchupsHtml}</div>
+                </div>
+            `;
         }
 
         function calculatePlayerScore(player, targetPos) {
@@ -5775,6 +6071,7 @@
         window.setLeagueFilter = function(value) {
             squadState.leagueFilter = value || null;
             computePositionFitBaselines();
+            computeGeneralPlayerStats();
             // The search space just changed size — a league-filtered pool
             // has far fewer possible combinations than the full database,
             // so Regenerate's "already seen" tracking from BEFORE this
@@ -6348,9 +6645,11 @@
             const posSelect = document.getElementById('players-role-pos-select');
             const roleSelect = document.getElementById('players-role-select');
             const maxPriceInput = document.getElementById('players-role-max-price');
+            const aboveAvgCheckbox = document.getElementById('players-role-above-avg');
             if (posSelect) posSelect.value = '';
             if (roleSelect) { roleSelect.innerHTML = ''; roleSelect.disabled = true; window.populateRoleSelectForPosition(''); }
             if (maxPriceInput) maxPriceInput.value = '';
+            if (aboveAvgCheckbox) aboveAvgCheckbox.checked = false;
             document.getElementById('players-role-clear-btn').classList.add('hidden');
             document.getElementById('players-search-results').innerHTML = '';
             const paginationContainer = document.getElementById('players-search-pagination');
@@ -6394,6 +6693,7 @@
             const roleSelect = document.getElementById('players-role-select');
             const clearBtn = document.getElementById('players-role-clear-btn');
             const maxPriceInput = document.getElementById('players-role-max-price');
+            const aboveAvgCheckbox = document.getElementById('players-role-above-avg');
             const resultsContainer = document.getElementById('players-search-results');
             if (!posSelect || !roleSelect || !resultsContainer) return;
 
@@ -6411,6 +6711,24 @@
 
             let pool = getActiveDatabase({ requirePriced: false }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
             if (hasMaxPrice) pool = pool.filter(p => (p.price || 0) <= maxPrice);
+
+            // "Above average only": the same rated-74+ database baseline
+            // the Database Stats panel is built from — a player's own
+            // weighted key-attribute fit (computeKeyAttrFitScore) has to
+            // clear that position's average fit (getAverageFitScoreForPosition)
+            // to count. This can legitimately return zero results if the
+            // whole eligible/affordable pool happens to sit below average
+            // — that's a real finding, not a bug, so it's left as an empty
+            // list rather than silently ignored.
+            if (aboveAvgCheckbox && aboveAvgCheckbox.checked) {
+                const avgFit = getAverageFitScoreForPosition(pos);
+                if (avgFit != null) {
+                    pool = pool.filter(p => {
+                        const fit = computeKeyAttrFitScore(p, pos);
+                        return fit != null && fit >= avgFit;
+                    });
+                }
+            }
 
             const ranked = pool.map(p => {
                 const candidates = getRoleCandidates(p, pos).filter(c => c.role === role);
@@ -7897,6 +8215,29 @@
                         issues.push(isAr
                             ? `متوسط تقييم هذا الخط ${Math.round(lineAvgRating)} مقابل معدل التشكيلة ${Math.round(squadAvgRating)} (فرق ${Math.round(gap)} نقطة) — الحلقة الأضعف رقمياً في التشكيلة.`
                             : `This line's average rating is ${Math.round(lineAvgRating)}, vs. a ${Math.round(squadAvgRating)} squad average (a ${Math.round(gap)}-point gap) — the numerically weakest line in the XI.`);
+                    }
+                }
+
+                // 3b. This line's key stat vs. the DATABASE-WIDE baseline
+                // for these exact positions (rated 74+ only — see
+                // GENERAL_PLAYER_STATS) — an EXTERNAL yardstick, unlike
+                // checks 2/3 above which only ever compare this squad
+                // against itself. A squad can pass every internal check
+                // (balanced relative to its own other lines) while still
+                // being genuinely weak by the standard of what's actually
+                // available in the database — this is the one check that
+                // would catch that.
+                if (withAtt.length > 0) {
+                    const posKeys = [...new Set(slots.filter((s, idx) => slotLine[idx] === def.key).map(s => s.pos))];
+                    const dbAvg = combinedLineStatAvg(posKeys, def.statKey);
+                    if (dbAvg != null) {
+                        const lineStatAvg = withAtt.reduce((s, p) => s + (p.att[def.statKey] || 0), 0) / withAtt.length;
+                        const gap = dbAvg - lineStatAvg;
+                        if (gap >= 5) {
+                            issues.push(isAr
+                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} — أقل من متوسط قاعدة البيانات لهذه المراكز (${Math.round(dbAvg)}، للاعبين بتقييم 74+) بفارق ${Math.round(gap)} نقطة. هذا ضعف حقيقي بمعيار السوق، وليس فقط مقارنة داخلية بباقي التشكيلة.`
+                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)} — below the database-wide average for these positions (${Math.round(dbAvg)}, players rated 74+) by ${Math.round(gap)} points. That's a genuine weakness by the standard of what's actually out there, not just relative to the rest of this squad.`);
+                        }
                     }
                 }
 
@@ -10414,15 +10755,32 @@
                             <div class="grid grid-cols-3 gap-2 text-center text-xs">
                                 ${attrEntries.map(([k, v]) => {
                                     const label = ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+                                    // vs. the database-wide average for this
+                                    // exact position (rated 74+ only — see
+                                    // GENERAL_PLAYER_STATS) — an external,
+                                    // market-wide yardstick for this one
+                                    // attribute, not a claim about the
+                                    // player's overall quality.
+                                    const posStats = GENERAL_PLAYER_STATS[effectivePos];
+                                    const avgEntry = posStats && posStats.stats[k];
+                                    let vsAvgHtml = '';
+                                    if (avgEntry && avgEntry.count > 0) {
+                                        const diff = Math.round(v - avgEntry.avg);
+                                        const sign = diff > 0 ? '+' : '';
+                                        const colorClass = diff >= 3 ? 'text-green-400' : (diff <= -3 ? 'text-orange-400' : 'text-gray-500');
+                                        const avgLabel = currentLanguage === 'ar' ? `المتوسط: ${Math.round(avgEntry.avg)}` : `avg: ${Math.round(avgEntry.avg)}`;
+                                        vsAvgHtml = `<span class="block text-[9px] font-bold mt-0.5 ${colorClass}" title="${avgLabel}">${sign}${diff}</span>`;
+                                    }
                                     return `
                                         <div class="p-2 rounded-xl border bg-fc-accent/10 border-fc-accent/50">
                                             <span class="text-fc-accent uppercase text-[10px] block truncate">${label}</span>
                                             <span class="font-black text-white text-sm">${v}</span>
+                                            ${vsAvgHtml}
                                         </div>
                                     `;
                                 }).join('')}
                             </div>
-                            <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}</p>
+                            <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}${GENERAL_PLAYER_STATS[effectivePos] ? (currentLanguage === 'ar' ? ' الرقم الصغير تحت كل قيمة هو الفارق عن متوسط قاعدة البيانات لهذا المركز (لاعبون بتقييم 74+).' : ' The small number under each value is the gap from the database average for this position (players rated 74+).') : ''}</p>
                         </div>
 
                         <div class="space-y-2">
@@ -10654,6 +11012,7 @@
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     fc27Database = parsed;
                     computePositionFitBaselines();
+                    computeGeneralPlayerStats();
                     window.updateDatabaseStats();
                     populateManagerDropdown();
                     window.runSquadOptimizer();
@@ -11151,6 +11510,7 @@
                 if (!Array.isArray(cached) || cached.length === 0) return false;
                 fc27Database = cached;
                 computePositionFitBaselines();
+                computeGeneralPlayerStats();
                 window.updateDatabaseStats();
                 populateManagerDropdown();
                 window.runSquadOptimizer();
@@ -11333,6 +11693,7 @@
                 if (changed) {
                     fc27Database = normalized;
                     computePositionFitBaselines();
+                    computeGeneralPlayerStats();
                     window.updateDatabaseStats();
                     populateManagerDropdown();
                     window.runSquadOptimizer();
