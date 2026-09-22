@@ -1438,6 +1438,11 @@
                 dbStatsSampleSize: "players rated 74+",
                 dbStatsPriorityLabel: "When picking, prioritize:",
                 dbStatsPriorityReason: "ranked by real spread among usable players — if two players tie on the first, move to the next; that's exactly where the real separation is",
+                dbStatsPlaystylesTitle: "Playstyles to look for",
+                dbStatsPlaystylesReason: "ranked rarest-first among usable players who actually carry recorded playstyles — a playstyle almost everyone already has isn't a real edge, a rare one is",
+                dbStatsPlaystylesSample: "based on {data} of {total} rated players with recorded playstyle data",
+                dbStatsPlaystylesLowConfidence: "small sample — treat with caution",
+                dbStatsPlaystylesNoData: "No players at this position have recorded playstyle data yet (EasySBC only tracks it for some cards).",
                 dbStatsMatchupsTitle: "Matchups to watch",
                 dbStatsNoMatchups: "No notable cross-position gaps stand out right now.",
                 dbStatsNoData: "Not enough rated-74+ players loaded yet for this position.",
@@ -1604,6 +1609,11 @@
                 dbStatsSampleSize: "لاعب بتقييم 74+",
                 dbStatsPriorityLabel: "عند الاختيار، ركّز على:",
                 dbStatsPriorityReason: "مرتّبة حسب التفاوت الفعلي بين اللاعبين القابلين للاستخدام — إذا تعادل لاعبان في الأول، انتقل للتالي؛ فهناك يكمن الفارق الحقيقي",
+                dbStatsPlaystylesTitle: "أنماط لعب يجب البحث عنها",
+                dbStatsPlaystylesReason: "مرتّبة من الأندر إلى الأشيع بين اللاعبين القابلين للاستخدام ممن لديهم أنماط لعب مسجّلة — النمط الذي يملكه الجميع ليس ميزة حقيقية، أما النادر فهو الميزة",
+                dbStatsPlaystylesSample: "بناءً على {data} من {total} لاعب بتقييم 74+ لديهم بيانات أنماط لعب مسجّلة",
+                dbStatsPlaystylesLowConfidence: "عيّنة صغيرة — تعامل معها بحذر",
+                dbStatsPlaystylesNoData: "لا يوجد لاعبون في هذا المركز لديهم بيانات أنماط لعب مسجّلة بعد (EasySBC يسجّلها لبعض البطاقات فقط).",
                 dbStatsMatchupsTitle: "مواجهات يجب الانتباه لها",
                 dbStatsNoMatchups: "لا توجد فجوات ملحوظة بين المراكز حالياً.",
                 dbStatsNoData: "لا يوجد عدد كافٍ من اللاعبين بتقييم 74+ لهذا المركز بعد.",
@@ -3536,6 +3546,67 @@
                 .sort((a, b) => b.stdDev - a.stdDev);
         }
 
+        // The categorical equivalent of the stat priority chain above, for
+        // PlayStyles instead of numeric attributes. Same underlying logic
+        // ("where's the real separation among usable players?"), just
+        // measured as rarity instead of spread: a PlayStyle almost every
+        // eligible player already carries isn't a differentiator (same
+        // idea as a zero-stdDev stat); a RARE one that's still genuinely
+        // useful for this position is exactly where seeking it out gives
+        // a real edge.
+        //
+        // "Genuinely useful for this position" comes from
+        // ROLE_PLAYSTYLE_AFFINITY (built for playstyle-aware role
+        // assignment) — the union of every ideal PlayStyle across every
+        // real role ROLE_CATALOG_RAW lists for this position — so this
+        // never recommends something irrelevant just because it happens
+        // to be rare (e.g. a CB with Long Throw).
+        function getRelevantPlaystylesForPosition(pos) {
+            const roles = ROLE_CATALOG_RAW[pos] || [];
+            const set = new Set();
+            roles.forEach(r => {
+                const ideal = ROLE_PLAYSTYLE_AFFINITY[r.role];
+                if (ideal) ideal.forEach(name => set.add(name));
+            });
+            return [...set];
+        }
+
+        // IMPORTANT caveat, baked directly into how this is computed:
+        // EasySBC only populates PlayStyles for SOME cards (mostly
+        // specials/evolutions) — plain gold cards usually come back with
+        // empty arrays (see the comment in mapEasySbcPlayer). Computing
+        // rarity against every rated-74+ player would make every single
+        // PlayStyle look artificially rare purely from missing data, not
+        // real scarcity — so the denominator here is only players who
+        // have AT LEAST ONE recorded PlayStyle (base or +), and BOTH
+        // sample sizes (the full rated-74+ pool, and the smaller subset
+        // that actually has recorded data) are returned so the UI can be
+        // honest about how much to trust the result when that subset is
+        // small.
+        function getPlaystylePriorityForPosition(pos) {
+            const relevant = getRelevantPlaystylesForPosition(pos);
+            const eligiblePool = getActiveDatabase({ requirePriced: false }).filter(p =>
+                (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING
+            );
+            if (relevant.length === 0 || eligiblePool.length === 0) {
+                return { totalSample: eligiblePool.length, dataSample: 0, chain: [] };
+            }
+            const withPlaystyleData = eligiblePool.filter(p =>
+                (Array.isArray(p.playstyles) && p.playstyles.length > 0) || (Array.isArray(p.playstylesPlus) && p.playstylesPlus.length > 0)
+            );
+            if (withPlaystyleData.length === 0) {
+                return { totalSample: eligiblePool.length, dataSample: 0, chain: [] };
+            }
+            const chain = relevant.map(name => {
+                const count = withPlaystyleData.filter(p =>
+                    (p.playstylesPlus && p.playstylesPlus.includes(name)) || (p.playstyles && p.playstyles.includes(name))
+                ).length;
+                return { name, count, pct: count / withPlaystyleData.length };
+            }).filter(entry => entry.count > 0)
+              .sort((a, b) => a.pct - b.pct);
+            return { totalSample: eligiblePool.length, dataSample: withPlaystyleData.length, chain };
+        }
+
         // A single "how good is average, overall, for this position"
         // number — the same weighted key-attribute composite
         // computeKeyAttrFitScore uses for one player, but built from
@@ -3567,6 +3638,28 @@
         // whichever stat-key set actually applies to these positions
         // (GK's own 6 vs the outfield 6) rather than assuming the
         // outfield set always applies.
+        // Merges playstyle-priority info across multiple position codes
+        // shown together (e.g. LB + RB) — same spirit as how stats are
+        // pooled above: sum counts/samples across the pair rather than
+        // just using one side and ignoring the other.
+        function computeCombinedPlaystylePriority(keys) {
+            const relevantSet = new Set();
+            let totalSample = 0, dataSample = 0;
+            const countMap = {};
+            keys.forEach(pos => {
+                const info = getPlaystylePriorityForPosition(pos);
+                totalSample += info.totalSample;
+                dataSample += info.dataSample;
+                info.chain.forEach(entry => { countMap[entry.name] = (countMap[entry.name] || 0) + entry.count; });
+                getRelevantPlaystylesForPosition(pos).forEach(name => relevantSet.add(name));
+            });
+            const chain = [...relevantSet]
+                .map(name => ({ name, count: countMap[name] || 0, pct: dataSample > 0 ? (countMap[name] || 0) / dataSample : 0 }))
+                .filter(e => e.count > 0)
+                .sort((a, b) => a.pct - b.pct);
+            return { totalSample, dataSample, chain };
+        }
+
         function computeDisplayPositionSummary(keys) {
             const statKeys = statKeysForPosition(keys[0]);
             const stats = {};
@@ -3580,7 +3673,8 @@
             });
             const sampleSize = keys.reduce((s, pos) => s + ((GENERAL_PLAYER_STATS[pos] || {}).count || 0), 0);
             const priorityChain = getPriorityStatsRankedForPosition(keys[0]);
-            return { sampleSize, stats, priorityChain };
+            const playstyleInfo = computeCombinedPlaystylePriority(keys);
+            return { sampleSize, stats, priorityChain, playstyleInfo };
         }
 
         const DB_STATS_DISPLAY_POSITIONS = [
@@ -3672,6 +3766,49 @@
                         </div>
                     </div>
                 ` : '';
+
+                // Playstyle chain: rarest-but-relevant first, as a row of
+                // chips (icon + name + rarity %) rather than bars, since
+                // this is categorical data, not a 0-99 scale. Explicitly
+                // shows BOTH sample sizes (players with recorded
+                // playstyle data vs. the full rated-74+ pool) so a thin
+                // sample reads as exactly that, not a confident claim.
+                const pInfo = summary.playstyleInfo;
+                let playstylesHtml = '';
+                if (pInfo && pInfo.dataSample > 0 && pInfo.chain.length > 0) {
+                    const topChain = pInfo.chain.slice(0, 4);
+                    const sampleLine = t.dbStatsPlaystylesSample.replace('{data}', pInfo.dataSample).replace('{total}', pInfo.totalSample);
+                    const lowConfidence = pInfo.dataSample < 15;
+                    playstylesHtml = `
+                        <div class="mt-3 px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/30">
+                            <div class="flex items-center gap-1.5 mb-1.5">
+                                <i class="fa-solid fa-wand-sparkles text-purple-400 text-xs shrink-0"></i>
+                                <span class="text-xs font-black text-purple-300">${t.dbStatsPlaystylesTitle}</span>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5">
+                                ${topChain.map((p, i) => {
+                                    const icon = PLAYSTYLE_ICONS[p.name] || 'fa-star';
+                                    const opacity = i === 0 ? '' : (i === 1 ? 'opacity-85' : (i === 2 ? 'opacity-70' : 'opacity-55'));
+                                    return `
+                                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-purple-200 bg-purple-500/15 border border-purple-500/30 rounded-full px-2 py-1 ${opacity}">
+                                            <i class="fa-solid ${icon} text-[9px]"></i>${p.name}
+                                            <span class="text-purple-400">${Math.round(p.pct * 100)}%</span>
+                                        </span>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <p class="text-[10px] text-gray-400 leading-tight mt-1.5">${t.dbStatsPlaystylesReason}</p>
+                            <p class="text-[9px] ${lowConfidence ? 'text-orange-400' : 'text-gray-500'} leading-tight mt-1">${sampleLine}${lowConfidence ? ` — ${t.dbStatsPlaystylesLowConfidence}` : ''}</p>
+                        </div>
+                    `;
+                } else {
+                    playstylesHtml = `
+                        <div class="mt-3 px-3 py-2 rounded-xl bg-fc-dark border border-fc-border">
+                            <p class="text-[10px] text-gray-500 italic">${t.dbStatsPlaystylesNoData}</p>
+                        </div>
+                    `;
+                }
+
                 return `
                     <div class="bg-fc-dark border border-fc-border rounded-2xl p-5">
                         <div class="flex items-center justify-between mb-3">
@@ -3683,6 +3820,7 @@
                         </div>
                         <div class="space-y-2">${statRows}</div>
                         ${priorityHtml}
+                        ${playstylesHtml}
                     </div>
                 `;
             }).join('');
