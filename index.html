@@ -1437,7 +1437,7 @@
                 dbStatsDesc: "A scouting report across your whole loaded database — not any one squad. Only players rated 74+ count, since lower-rated cards aren't realistically usable.",
                 dbStatsSampleSize: "players rated 74+",
                 dbStatsPriorityLabel: "When picking, prioritize:",
-                dbStatsPriorityReason: "widest spread among usable players — this is what actually separates a good pick from a mediocre one",
+                dbStatsPriorityReason: "ranked by real spread among usable players — if two players tie on the first, move to the next; that's exactly where the real separation is",
                 dbStatsMatchupsTitle: "Matchups to watch",
                 dbStatsNoMatchups: "No notable cross-position gaps stand out right now.",
                 dbStatsNoData: "Not enough rated-74+ players loaded yet for this position.",
@@ -1603,7 +1603,7 @@
                 dbStatsDesc: "تقرير استكشافي عبر كامل قاعدة بياناتك المحملة — وليس عن تشكيلة معينة. فقط اللاعبون بتقييم 74+ يُحتسبون، لأن التقييمات الأقل غير قابلة للاستخدام فعلياً.",
                 dbStatsSampleSize: "لاعب بتقييم 74+",
                 dbStatsPriorityLabel: "عند الاختيار، ركّز على:",
-                dbStatsPriorityReason: "أوسع تفاوت بين اللاعبين القابلين للاستخدام — وهذا ما يفرّق فعلياً بين اختيار جيد وآخر متوسط",
+                dbStatsPriorityReason: "مرتّبة حسب التفاوت الفعلي بين اللاعبين القابلين للاستخدام — إذا تعادل لاعبان في الأول، انتقل للتالي؛ فهناك يكمن الفارق الحقيقي",
                 dbStatsMatchupsTitle: "مواجهات يجب الانتباه لها",
                 dbStatsNoMatchups: "لا توجد فجوات ملحوظة بين المراكز حالياً.",
                 dbStatsNoData: "لا يوجد عدد كافٍ من اللاعبين بتقييم 74+ لهذا المركز بعد.",
@@ -3378,6 +3378,17 @@
         // ===================================================================
         const GENERAL_STATS_MIN_RATING = 74;
         const GENERAL_STATS_KEYS = ['pac', 'sho', 'pas', 'dri', 'def', 'phy'];
+        // Goalkeepers don't use the outfield 6 at all — their real base
+        // attributes are these 6 instead (same field names already used
+        // everywhere else for a GK card — ATTRIBUTE_LABELS, getKeyAttributesForPosition,
+        // etc.). Treated as a completely separate stat set below, not
+        // just a filtered slice of GENERAL_STATS_KEYS.
+        const GENERAL_STATS_GK_KEYS = ['div', 'han', 'kic', 'ref', 'spe', 'pos'];
+        // Which key set applies to a given position — used everywhere
+        // below instead of assuming GENERAL_STATS_KEYS applies to everyone.
+        function statKeysForPosition(pos) {
+            return pos === 'GK' ? GENERAL_STATS_GK_KEYS : GENERAL_STATS_KEYS;
+        }
         const GENERAL_STATS_POSITIONS = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST', 'CF'];
 
         // Broad line groupings used for the headline DEF/MID/ATT view and
@@ -3450,7 +3461,7 @@
                     (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING && p.att
                 );
                 const stats = {};
-                GENERAL_STATS_KEYS.forEach(key => {
+                statKeysForPosition(pos).forEach(key => {
                     const vals = pool.map(p => p.att[key]).filter(v => typeof v === 'number');
                     if (vals.length === 0) { stats[key] = null; return; }
                     const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -3497,23 +3508,32 @@
             }).filter(Boolean);
         }
 
-        // "What to prioritize when picking a player at this position":
-        // the key attribute (from getKeyAttributesForPosition) with the
-        // WIDEST spread (stdDev) among rated-74+ eligible players — a
-        // stat everyone clusters tightly on can't be what separates a
-        // good pick from a mediocre one, but a stat with real spread is
-        // exactly where careful shopping pays off.
-        function getPriorityStatForPosition(pos) {
+        // "What to prioritize when picking a player at this position" —
+        // NOT just the single widest-spread attribute, but that
+        // position's own key attributes (from getKeyAttributesForPosition)
+        // RE-RANKED by spread (stdDev) among rated-74+ eligible players,
+        // instead of their fixed textbook-importance order. The point:
+        // two players tied on the #1 stat are common (real-world data
+        // clusters), and the #2/#3 entries here are exactly the right
+        // tiebreaks to look at next — they're already the attributes with
+        // the next-most real separation in this exact database, not an
+        // arbitrary runner-up. This can (and sometimes will) disagree
+        // with getKeyAttributesForPosition's own fixed order — e.g. it
+        // lists CB as [def, pac, phy], but if defending happens to be
+        // tightly clustered among 74+ CBs while pace varies a lot, this
+        // ranks pace first instead. That disagreement is itself useful
+        // information: "what's textbook-important" and "what actually
+        // separates good from mediocre in THIS pool" are different
+        // questions, and this answers the second one.
+        function getPriorityStatsRankedForPosition(pos) {
             const entry = GENERAL_PLAYER_STATS[pos];
-            if (!entry) return null;
-            const keys = getKeyAttributesForPosition(pos).filter(k => GENERAL_STATS_KEYS.includes(k));
-            if (keys.length === 0) return null;
-            let best = null;
-            keys.forEach(k => {
-                const stat = entry.stats[k];
-                if (stat && (!best || stat.stdDev > best.stdDev)) best = { key: k, ...stat };
-            });
-            return best;
+            if (!entry) return [];
+            const validKeys = statKeysForPosition(pos);
+            const keys = getKeyAttributesForPosition(pos).filter(k => validKeys.includes(k));
+            return keys
+                .map(k => entry.stats[k] ? { key: k, ...entry.stats[k] } : null)
+                .filter(Boolean)
+                .sort((a, b) => b.stdDev - a.stdDev);
         }
 
         // A single "how good is average, overall, for this position"
@@ -3543,10 +3563,14 @@
         // disjoint sets for the vast majority of cards, so this is a fair
         // approximation, not exact double-counting). Priority stat uses
         // the first key, since mirrored positions always share the same
-        // key-attribute list in getKeyAttributesForPosition anyway.
+        // key-attribute list in getKeyAttributesForPosition anyway. Uses
+        // whichever stat-key set actually applies to these positions
+        // (GK's own 6 vs the outfield 6) rather than assuming the
+        // outfield set always applies.
         function computeDisplayPositionSummary(keys) {
+            const statKeys = statKeysForPosition(keys[0]);
             const stats = {};
-            GENERAL_STATS_KEYS.forEach(k => {
+            statKeys.forEach(k => {
                 let sum = 0, count = 0;
                 keys.forEach(pos => {
                     const s = GENERAL_PLAYER_STATS[pos] && GENERAL_PLAYER_STATS[pos].stats[k];
@@ -3555,8 +3579,8 @@
                 stats[k] = count > 0 ? { avg: sum / count, count } : null;
             });
             const sampleSize = keys.reduce((s, pos) => s + ((GENERAL_PLAYER_STATS[pos] || {}).count || 0), 0);
-            const priority = getPriorityStatForPosition(keys[0]);
-            return { sampleSize, stats, priority };
+            const priorityChain = getPriorityStatsRankedForPosition(keys[0]);
+            return { sampleSize, stats, priorityChain };
         }
 
         const DB_STATS_DISPLAY_POSITIONS = [
@@ -3618,19 +3642,33 @@
                         </div>
                     `;
                 }
-                const statRows = GENERAL_STATS_KEYS.map(k => {
+                const statRows = statKeysForPosition(dp.keys[0]).map(k => {
                     const s = summary.stats[k];
                     const attrLabel = ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
-                    const isPriority = summary.priority && summary.priority.key === k;
+                    const rank = summary.priorityChain.findIndex(p => p.key === k); // -1 if not a key attribute at all
                     if (!s) return statBarRowHtml(attrLabel, 0, 'bg-gray-700', 'text-gray-600');
-                    return statBarRowHtml(attrLabel, s.avg, isPriority ? 'bg-fc-accent' : 'bg-blue-400/70', isPriority ? 'text-fc-accent' : 'text-white');
+                    // Rank 0 (top tiebreak) gets the brightest highlight,
+                    // rank 1/2 a progressively lighter tint, anything not
+                    // in the chain at all stays neutral blue.
+                    const RANK_BAR_CLASS = ['bg-fc-accent', 'bg-fc-accent/70', 'bg-fc-accent/45'];
+                    const RANK_TEXT_CLASS = ['text-fc-accent', 'text-fc-accent', 'text-white'];
+                    const barClass = rank >= 0 ? (RANK_BAR_CLASS[rank] || 'bg-fc-accent/45') : 'bg-blue-400/70';
+                    const textClass = rank >= 0 ? (RANK_TEXT_CLASS[rank] || 'text-white') : 'text-white';
+                    return statBarRowHtml(attrLabel, s.avg, barClass, textClass);
                 }).join('');
-                const priorityHtml = summary.priority ? `
-                    <div class="flex items-center gap-1.5 mt-3 px-3 py-2 rounded-xl bg-fc-accent/15 border border-fc-accent/40">
-                        <i class="fa-solid fa-star text-fc-accent text-xs shrink-0"></i>
+                const priorityHtml = summary.priorityChain.length > 0 ? `
+                    <div class="flex items-start gap-1.5 mt-3 px-3 py-2 rounded-xl bg-fc-accent/15 border border-fc-accent/40">
+                        <i class="fa-solid fa-star text-fc-accent text-xs shrink-0 mt-0.5"></i>
                         <div class="min-w-0">
-                            <span class="text-xs font-black text-fc-accent">${t.dbStatsPriorityLabel} ${ATTRIBUTE_LABELS[summary.priority.key] ? (isAr ? ATTRIBUTE_LABELS[summary.priority.key].ar : ATTRIBUTE_LABELS[summary.priority.key].en) : summary.priority.key}</span>
-                            <p class="text-[10px] text-gray-400 leading-tight">${t.dbStatsPriorityReason}</p>
+                            <div class="flex items-center flex-wrap gap-1.5">
+                                <span class="text-xs font-black text-fc-accent">${t.dbStatsPriorityLabel}</span>
+                                ${summary.priorityChain.map((p, i) => {
+                                    const pLabel = ATTRIBUTE_LABELS[p.key] ? (isAr ? ATTRIBUTE_LABELS[p.key].ar : ATTRIBUTE_LABELS[p.key].en) : p.key;
+                                    const opacity = i === 0 ? '' : (i === 1 ? 'opacity-80' : 'opacity-60');
+                                    return `${i > 0 ? `<i class="fa-solid fa-arrow-right rtl:rotate-180 text-[9px] text-fc-accent/50"></i>` : ''}<span class="text-xs font-black text-fc-accent ${opacity}">${pLabel}</span>`;
+                                }).join('')}
+                            </div>
+                            <p class="text-[10px] text-gray-400 leading-tight mt-0.5">${t.dbStatsPriorityReason}</p>
                         </div>
                     </div>
                 ` : '';
