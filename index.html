@@ -3555,18 +3555,42 @@
         // useful for this position is exactly where seeking it out gives
         // a real edge.
         //
-        // "Genuinely useful for this position" comes from
+        // "Genuinely useful for this position" needs two filters, not one.
         // ROLE_PLAYSTYLE_AFFINITY (built for playstyle-aware role
-        // assignment) — the union of every ideal PlayStyle across every
-        // real role ROLE_CATALOG_RAW lists for this position — so this
-        // never recommends something irrelevant just because it happens
-        // to be rare (e.g. a CB with Long Throw).
+        // assignment) says a PlayStyle fits SOME role at this position —
+        // but that includes niche, stylistic roles (e.g. "Ball-Playing
+        // Defender" wants Incisive Pass/First Touch, both Passing/Ball
+        // Control category) alongside the position's actual bread-and-
+        // butter job. Recommending a Ball Control trait as "what to look
+        // for in a CB" reads as wrong even though it's technically true
+        // FOR one specific CB style — it's not what most people mean by
+        // "a good CB." So this also requires the trait's own official
+        // category (PLAYSTYLE_CATEGORY) to match what this position is
+        // fundamentally FOR, dropping anything that only qualifies via a
+        // stylistic side-role.
+        const PLAYSTYLE_PRIMARY_CATEGORIES = {
+            'GK': ['Goalkeeper'],
+            'CB': ['Defending', 'Physical'],
+            'LB': ['Defending', 'Physical'], 'RB': ['Defending', 'Physical'],
+            'LWB': ['Defending', 'Physical'], 'RWB': ['Defending', 'Physical'],
+            'CDM': ['Defending'],
+            'CM': ['Passing', 'Ball Control'],
+            'CAM': ['Passing', 'Ball Control'],
+            'LM': ['Ball Control', 'Passing'], 'RM': ['Ball Control', 'Passing'],
+            'LW': ['Ball Control', 'Finishing'], 'RW': ['Ball Control', 'Finishing'],
+            'ST': ['Finishing', 'Physical'], 'CF': ['Finishing', 'Physical']
+        };
+
         function getRelevantPlaystylesForPosition(pos) {
             const roles = ROLE_CATALOG_RAW[pos] || [];
+            const primaryCategories = PLAYSTYLE_PRIMARY_CATEGORIES[pos];
             const set = new Set();
             roles.forEach(r => {
                 const ideal = ROLE_PLAYSTYLE_AFFINITY[r.role];
-                if (ideal) ideal.forEach(name => set.add(name));
+                if (!ideal) return;
+                ideal.forEach(name => {
+                    if (!primaryCategories || primaryCategories.includes(PLAYSTYLE_CATEGORY[name])) set.add(name);
+                });
             });
             return [...set];
         }
