@@ -1121,7 +1121,7 @@
             <div class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-4">
                 <div>
                     <h3 class="text-lg font-extrabold text-white" data-i18n="rolePickerTitle">Choose a Role</h3>
-                    <p class="text-xs text-gray-400 mt-1" data-i18n="rolePickerDesc">Pick any role/focus this player can play. The suggested one is marked — others may fit them worse.</p>
+                    <p class="text-xs text-gray-400 mt-1" data-i18n="rolePickerDesc">Pick a role, then a focus. The suggested role and the best-fit focus (★) are marked — others may fit this player worse.</p>
                 </div>
                 <div id="role-picker-list" class="space-y-1.5"></div>
                 <button onclick="window.resetRoleOverride()" id="role-picker-reset-btn" class="w-full px-4 py-2.5 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-white hover:border-fc-accent/50 transition-all">
@@ -1344,9 +1344,11 @@
                 addPlayerTitle: "Add a Player",
                 searchAnyPlayer: "Search Any Player",
                 rolePickerTitle: "Choose a Role",
-                rolePickerDesc: "Pick any role/focus this player can play. The suggested one is marked — others may fit them worse.",
+                rolePickerDesc: "Pick a role, then a focus. The suggested role and the best-fit focus (★) are marked — others may fit this player worse.",
                 rolePickerSuggested: "Suggested",
                 rolePickerCurrent: "Current",
+                rolePickerFocusLabel: "Focus:",
+                rolePickerBestFocus: "Best fit for this player's attributes",
                 rolePickerReset: "Reset to Suggested",
                 roleFitTitle: "Role Fit",
                 roleFitAllGood: "All 11 players are well-suited to their assigned roles.",
@@ -1515,9 +1517,11 @@
                 addPlayerTitle: "إضافة لاعب",
                 searchAnyPlayer: "ابحث عن أي لاعب",
                 rolePickerTitle: "اختر دوراً",
-                rolePickerDesc: "اختر أي دور/تركيز يمكن لهذا اللاعب أداءه. الدور المقترح مُعلَّم — قد تناسبه الأدوار الأخرى بشكل أقل.",
+                rolePickerDesc: "اختر دوراً ثم تركيزاً. الدور المقترح والتركيز الأنسب (★) مُعلَّمان — قد تناسب الخيارات الأخرى هذا اللاعب بشكل أقل.",
                 rolePickerSuggested: "مقترح",
                 rolePickerCurrent: "الحالي",
+                rolePickerFocusLabel: "التركيز:",
+                rolePickerBestFocus: "الأنسب لخصائص هذا اللاعب",
                 rolePickerReset: "إعادة للدور المقترح",
                 roleFitTitle: "ملاءمة الأدوار",
                 roleFitAllGood: "جميع اللاعبين الـ11 في أدوار تناسبهم جيداً.",
@@ -10233,8 +10237,143 @@
         // getRoleCandidatesBase above are left completely untouched), THEN
         // a small PlayStyle-aware nudge on top — see
         // applyRolePlaystyleAffinity for why it's kept deliberately minor.
+        // ===================================================================
+        // FOCUS-AWARE CANDIDATES
+        // ===================================================================
+        // getRoleCandidatesBase scores ROLES only — each entry carries one
+        // hardcoded focus that was never scored against the player (e.g.
+        // every ST option was always 'Attack', whatever the striker's
+        // stats). This layer looks up every REAL focus the scraped Futbin
+        // catalog allows for that role at that position, scores how well
+        // this player's attributes suit each one, and exposes the full
+        // list as `focuses` so the role picker can offer all of them.
+        //
+        // The role's own `score` is deliberately left untouched — role
+        // ranking (and its verified reachability percentages) stays
+        // exactly as before; focus fit only decides WHICH focus is used
+        // within a role. The originally hardcoded focus gets a small
+        // tie-break bonus so auto-assignment only moves off it when the
+        // player's stats clearly suit a different focus.
+        const FOCUS_FIT_WEIGHTS_OUTFIELD = {
+            'Attack':       { sho: 0.4, pac: 0.3, dri: 0.3 },
+            'Defend':       { def: 0.55, phy: 0.45 },
+            'Balanced':     { pac: 1/6, sho: 1/6, pas: 1/6, dri: 1/6, def: 1/6, phy: 1/6 },
+            'Build-Up':     { pas: 0.6, dri: 0.4 },
+            'Roaming':      { dri: 0.5, pas: 0.3, pac: 0.2 },
+            'Support':      { pac: 0.35, pas: 0.35, def: 0.15, phy: 0.15 },
+            'Versatile':    { pac: 0.3, pas: 0.3, dri: 0.2, phy: 0.2 },
+            'Wide':         { pac: 0.45, pas: 0.35, dri: 0.2 },
+            'Ball-Winning': { def: 0.5, phy: 0.35, pac: 0.15 },
+            'Aggressive':   { def: 0.45, phy: 0.4, pac: 0.15 }
+        };
+        const FOCUS_FIT_WEIGHTS_GK = {
+            'Defend':   { ref: 0.35, div: 0.35, han: 0.3 },
+            'Balanced': { ref: 0.25, div: 0.25, kic: 0.2, spe: 0.3 },
+            'Build-Up': { kic: 0.55, spe: 0.3, pos: 0.15 }
+        };
+        const FOCUS_DEFAULT_TIEBREAK = 2;
+
+        // Focus fit is scored RELATIVE to what's normal for the position,
+        // not on raw attributes — otherwise 'Defend' wins for virtually
+        // every CB (DEF/PHY are always a defender's highest stats) and
+        // 'Attack' for every striker, which is just the old hardcoded
+        // behaviour again. Relative to the position baseline, a CB whose
+        // PASSING stands out for a CB leans Build-Up, one whose PACE/PHY
+        // stand out leans Aggressive, and so on.
+        // Baseline = average attributes of loaded players at that
+        // position (real data, cached per database size); the hardcoded
+        // table is only a fallback before enough players are loaded.
+        const FOCUS_BASELINE_POS_GROUP = { LWB: 'LB', RWB: 'RB', CF: 'ST', LF: 'ST', RF: 'ST' };
+        const FOCUS_BASELINE_FALLBACK = {
+            ST:  { pac: 80, sho: 82, pas: 68, dri: 78, def: 38, phy: 75 },
+            LW:  { pac: 85, sho: 74, pas: 74, dri: 82, def: 40, phy: 65 },
+            RW:  { pac: 85, sho: 74, pas: 74, dri: 82, def: 40, phy: 65 },
+            LM:  { pac: 84, sho: 72, pas: 75, dri: 81, def: 45, phy: 66 },
+            RM:  { pac: 84, sho: 72, pas: 75, dri: 81, def: 45, phy: 66 },
+            CAM: { pac: 76, sho: 76, pas: 80, dri: 82, def: 50, phy: 65 },
+            CM:  { pac: 72, sho: 70, pas: 80, dri: 79, def: 70, phy: 74 },
+            CDM: { pac: 68, sho: 62, pas: 75, dri: 72, def: 80, phy: 80 },
+            LB:  { pac: 82, sho: 55, pas: 70, dri: 74, def: 76, phy: 74 },
+            RB:  { pac: 82, sho: 55, pas: 70, dri: 74, def: 76, phy: 74 },
+            CB:  { pac: 70, sho: 40, pas: 62, dri: 62, def: 82, phy: 82 },
+            GK:  { div: 82, han: 80, kic: 76, ref: 83, spe: 55, pos: 80 }
+        };
+        let focusBaselineCache = { size: -1, byPos: {} };
+
+        function getFocusBaseline(pos) {
+            const grp = FOCUS_BASELINE_POS_GROUP[pos] || pos;
+            let db = [];
+            try { db = (typeof getActiveDatabase === 'function') ? (getActiveDatabase({ requirePriced: false }) || []) : []; } catch (e) { db = []; }
+            if (focusBaselineCache.size !== db.length) focusBaselineCache = { size: db.length, byPos: {} };
+            if (focusBaselineCache.byPos[grp]) return focusBaselineCache.byPos[grp];
+            const pool = db.filter(p => p && p.att && p.pos === grp);
+            let baseline = FOCUS_BASELINE_FALLBACK[grp] || null;
+            if (pool.length >= 15) {
+                const keys = Object.keys(pool[0].att);
+                baseline = {};
+                keys.forEach(k => { baseline[k] = pool.reduce((sum, p) => sum + (p.att[k] || 0), 0) / pool.length; });
+            }
+            focusBaselineCache.byPos[grp] = baseline;
+            return baseline;
+        }
+
+        function scoreFocusFit(player, pos, focusName) {
+            const a = player.att || {};
+            const table = pos === 'GK' ? FOCUS_FIT_WEIGHTS_GK : FOCUS_FIT_WEIGHTS_OUTFIELD;
+            const w = table[focusName];
+            if (!w) return 0;
+            const base = getFocusBaseline(pos) || {};
+            let total = 0;
+            Object.keys(w).forEach(k => { total += ((a[k] || 0) - (base[k] || 0)) * w[k]; });
+            return total;
+        }
+
+        // Real focus names for one role at one position, straight from
+        // ROLE_CATALOG_RAW (same matching rules as getOfficialRoleInfo).
+        // Returns [] when the catalog has no entry, so callers fall back
+        // to the role's original single focus.
+        function getCatalogFocusNames(pos, roleName) {
+            const effPos = ROLE_CATALOG_POS_ALIAS[pos] || pos;
+            const roles = ROLE_CATALOG_RAW[effPos];
+            if (!roles || !roleName) return [];
+            const roleKey = normalizeAttrKey(String(roleName).split(/[/(]/)[0]);
+            const roleEntry = roles.find(r => normalizeAttrKey(r.role) === roleKey)
+                || roles.find(r => normalizeAttrKey(r.role).includes(roleKey) || roleKey.includes(normalizeAttrKey(r.role)));
+            return roleEntry ? roleEntry.focuses.map(f => f.focus) : [];
+        }
+
+        function attachFocusOptions(player, pos, candidates) {
+            return candidates.map(c => {
+                const names = getCatalogFocusNames(pos, c.role);
+                if (names.length === 0) {
+                    return { ...c, defaultFocus: c.focus, focuses: [{ focus: c.focus, fit: scoreFocusFit(player, pos, c.focus), isBest: true }] };
+                }
+                const scored = names.map(f => ({
+                    focus: f,
+                    fit: scoreFocusFit(player, pos, f),
+                    rank: scoreFocusFit(player, pos, f) + (f === c.focus ? FOCUS_DEFAULT_TIEBREAK : 0)
+                })).sort((x, y) => y.rank - x.rank);
+                const best = scored[0].focus;
+                return {
+                    ...c,
+                    defaultFocus: c.focus,
+                    focus: best,
+                    focuses: scored.map(f => ({ focus: f.focus, fit: f.fit, isBest: f.focus === best }))
+                };
+            });
+        }
+
+        // Swaps a candidate onto a specific focus (used by manual picks).
+        // Ignores focus names the catalog doesn't allow for that role.
+        function withFocus(candidate, focusName) {
+            if (!candidate || !focusName || !Array.isArray(candidate.focuses)) return candidate;
+            if (!candidate.focuses.some(f => f.focus === focusName)) return candidate;
+            return { ...candidate, focus: focusName };
+        }
+
         function getRoleCandidates(player, pos) {
-            return applyRolePlaystyleAffinity(player, getRoleCandidatesBase(player, pos));
+            pos = pos || player.pos;
+            return attachFocusOptions(player, pos, applyRolePlaystyleAffinity(player, getRoleCandidatesBase(player, pos)));
         }
 
         // Assigns every player in the current XI a role with full awareness
@@ -10266,20 +10405,34 @@
             const isAr = currentLanguage === 'ar';
             const t = i18n[currentLanguage];
             const list = document.getElementById('role-picker-list');
+            // One card per ROLE; inside it, one chip per real focus that
+            // role allows. Clicking the card picks the role with its
+            // best-fit focus; clicking a chip picks that exact focus.
             list.innerHTML = rolePickerOptions.map((opt, i) => {
                 const isSuggested = i === 0;
-                const isCurrent = currentInfo && currentInfo.role === opt.role && currentInfo.focus === opt.focus;
+                const isCurrentRole = currentInfo && currentInfo.role === opt.role;
+                const focusChips = (opt.focuses || [{ focus: opt.focus, isBest: true }]).map(f => {
+                    const isCurrentFocus = isCurrentRole && currentInfo.focus === f.focus;
+                    const label = isAr ? (FOCUS_NAME_AR[f.focus] || f.focus) : f.focus;
+                    return `<span role="button" onclick="event.stopPropagation(); window.selectManualRole(${i}, '${f.focus}')"
+                        class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg border cursor-pointer transition-all ${isCurrentFocus ? 'border-fc-accent bg-fc-accent/20 text-white' : 'border-fc-border bg-fc-card text-gray-300 hover:border-fc-accent/50 hover:text-white'}"
+                        title="${f.isBest ? t.rolePickerBestFocus : ''}">${f.isBest ? '<i class="fa-solid fa-star text-fc-gold text-[8px]"></i>' : ''}${label}</span>`;
+                }).join('');
                 return `
-                    <button onclick="window.selectManualRole(${i})" class="w-full text-left rtl:text-right p-3 rounded-xl border transition-all ${isCurrent ? 'border-fc-accent bg-fc-accent/10' : 'border-fc-border bg-fc-dark hover:border-fc-accent/50'}">
+                    <div onclick="window.selectManualRole(${i})" class="w-full text-left rtl:text-right p-3 rounded-xl border cursor-pointer transition-all ${isCurrentRole ? 'border-fc-accent bg-fc-accent/10' : 'border-fc-border bg-fc-dark hover:border-fc-accent/50'}">
                         <div class="flex items-center justify-between gap-2">
-                            <span class="font-bold text-white text-sm">${opt.role} <span class="text-gray-400 font-normal">· ${opt.focus}</span></span>
+                            <span class="font-bold text-white text-sm">${opt.role}</span>
                             <div class="flex items-center gap-1.5 shrink-0">
                                 ${isSuggested ? `<span class="text-[9px] font-bold text-fc-gold bg-fc-gold/10 px-1.5 py-0.5 rounded">${t.rolePickerSuggested}</span>` : ''}
-                                ${isCurrent ? `<span class="text-[9px] font-bold text-fc-accent bg-fc-accent/10 px-1.5 py-0.5 rounded">${t.rolePickerCurrent}</span>` : ''}
+                                ${isCurrentRole ? `<span class="text-[9px] font-bold text-fc-accent bg-fc-accent/10 px-1.5 py-0.5 rounded">${t.rolePickerCurrent}</span>` : ''}
                             </div>
                         </div>
                         <p class="text-[11px] text-gray-400 mt-1">${isAr ? opt.ar : opt.en}</p>
-                    </button>
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            <span class="text-[10px] text-gray-500 self-center">${t.rolePickerFocusLabel}</span>
+                            ${focusChips}
+                        </div>
+                    </div>
                 `;
             }).join('');
 
@@ -10300,12 +10453,13 @@
             rolePickerOptions = [];
         };
 
-        window.selectManualRole = function(optionIdx) {
+        window.selectManualRole = function(optionIdx, focusName) {
             if (rolePickerSlotIdx === null) return;
             const player = squadState.selectedXI[rolePickerSlotIdx];
             const opt = rolePickerOptions[optionIdx];
             if (!player || !opt) return;
-            squadState.manualRoleOverrides[rolePickerSlotIdx] = { playerId: player.id, role: opt.role, focus: opt.focus };
+            const picked = withFocus(opt, focusName);
+            squadState.manualRoleOverrides[rolePickerSlotIdx] = { playerId: player.id, role: picked.role, focus: picked.focus };
             window.closeRolePickerModal();
             renderFootballPitch();
             renderSquadSummary();
@@ -10331,8 +10485,12 @@
                 candidatesBySlot[slotIdx] = options;
                 const bestScore = options[0].score;
                 const override = overrides[slotIdx];
+                // Matched by ROLE, then the stored focus applied on top —
+                // the candidate list only carries each role's best-fit
+                // focus, so matching on role+focus would silently drop any
+                // manual pick of a non-default focus.
                 const chosen = (override && override.playerId === player.id)
-                    ? options.find(o => o.role === override.role && o.focus === override.focus)
+                    ? withFocus(options.find(o => o.role === override.role), override.focus)
                     : null;
                 if (chosen) {
                     // Manually picked (see window.selectManualRole) — kept
