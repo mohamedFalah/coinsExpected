@@ -1932,6 +1932,8 @@
         //   stagger — in a central group of 3+, the middle player drops
         //             this much deeper (single pivot behind two interiors,
         //             the centre CB of a back three covering behind)
+        //   wideStep— the line's WIDE anchors sit this much higher than its
+        //             central ones (3-5-2 wing-backs ahead of the pivots)
         //   team    — optional { width, compactness } scaling for the whole
         //             outfield (1 = as defined)
         //
@@ -2027,11 +2029,10 @@
                 ]
             },
             '3-5-2': {
-                desc: 'Back three, wing-backs, double pivot, #10, two strikers',
+                desc: 'Back three, double pivot flanked by high wing-backs, #10, two strikers',
                 lines: {
                     DEF: { depth: 0.70, spacing: 0.28, stagger: 0.01 },
-                    DM:  { depth: 0.50, spacing: 0.44 },
-                    MID: { depth: 0.40, width: 0.84 },
+                    DM:  { depth: 0.50, spacing: 0.44, width: 0.84, wideStep: 0.10 },
                     AM:  { depth: 0.33 },
                     ATT: { depth: 0.10, spacing: 0.28 }
                 },
@@ -2040,10 +2041,10 @@
                     ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
                     ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
                     ['DEF', 'CB', 'C', 'CB', 'Center Back 3'],
-                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['DM', 'WM', 'L', 'LM', 'Left Mid'],
                     ['DM', 'DM', 'L', 'CDM', 'Defensive Mid 1'],
                     ['DM', 'DM', 'R', 'CDM', 'Defensive Mid 2'],
-                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['DM', 'WM', 'R', 'RM', 'Right Mid'],
                     ['AM', 'AM', 'C', 'CAM', 'Attacking Mid'],
                     ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
                     ['ATT', 'ST', 'R', 'ST', 'Striker 2']
@@ -2247,7 +2248,7 @@
                 if (nCB === 3) return 'back three';
                 return 'back four';
             }
-            if (lineKey === 'DM') return central.length >= 2 ? 'double pivot' : 'single pivot';
+            if (lineKey === 'DM') return (central.length >= 2 ? 'double pivot' : 'single pivot') + (wide.length ? ' + wing-backs' : '');
             if (lineKey === 'AM') {
                 if (wide.length && central.length) return 'attacking-midfield three';
                 if (wide.length) return 'wide #10s';
@@ -2303,11 +2304,19 @@
         // THE GEOMETRY CALCULATION. Topology in, normalized base positions
         // out. No coordinate is read from the formation — only depths,
         // widths, spacings and anchor relationships.
-        function buildFormationGeometry(key) {
+        // `fit` (optional) = structural-fit overrides from
+        // fitFormationToFootprint: per-line { width, spacing, depth } and
+        // per-line wideLift (how much further a line's wide anchors step
+        // up). Always whole-line and symmetric — never a single player.
+        function buildFormationGeometry(key, fit) {
             const topo = FORMATION_TOPOLOGY[key];
             if (!topo) return null;
             const team = Object.assign({ width: 1, compactness: 1 }, topo.team || {});
-            const lineDefs = Object.assign({ GK: { depth: PITCH_GEOMETRY.gkDepth } }, topo.lines);
+            const lineDefs = { GK: { depth: PITCH_GEOMETRY.gkDepth } };
+            Object.keys(topo.lines).forEach(l => {
+                lineDefs[l] = Object.assign({}, topo.lines[l], (fit && fit.lines && fit.lines[l]) || {});
+            });
+            const wideLift = (fit && fit.wideLift) || {};
 
             const members = topo.slots.map(([line, anchor, side, pos, label], idx) => ({ idx, line, anchor, side, pos, label }));
             const byLine = {};
@@ -2334,7 +2343,7 @@
                 group.filter(m => ANCHOR_TYPES[m.anchor].wide).forEach(m => {
                     const half = (line.width || 0.76) / 2;
                     const offset = SIDE_SIGN[m.side] * half;
-                    placed.push({ ...m, x: 0.5 + offset, y: line.depth + ANCHOR_TYPES[m.anchor].depthOffset, unit, laneOffset: offset });
+                    placed.push({ ...m, x: 0.5 + offset, y: line.depth + ANCHOR_TYPES[m.anchor].depthOffset - (line.wideStep || 0) - (wideLift[lineKey] || 0), unit, laneOffset: offset });
                 });
             });
 
@@ -2483,33 +2492,63 @@
         // tiles below it form the "defend" cluster. Tiles rated "never"
         // (digit 0) are excluded entirely rather than counted as zero
         // weight in a way that could still pull the centroid toward them.
-        function decodeHeatmapZones(levelsStr) {
+        // ONE interpretation of the heat map, shared by the tactical engine
+        // AND the fire-icon overlay (see renderPlayerHeatZoneOverlay), so
+        // what you see is exactly what moves the player.
+        //
+        // The 25 tiles are treated as a weighted positional distribution
+        // (weight per level from HEATMAP_LEVELS — the same table that sets
+        // the overlay's opacity). From it:
+        //   centre  = weighted mean of every tile
+        //   spread  = weighted standard deviation (depth / width)
+        //   attack  = the SAME distribution exponentially tilted toward the
+        //             attacking end: tile weight × e^(+k·(centre−top)/σ)
+        //   defend  = tilted toward own goal: × e^(−k·(centre−top)/σ)
+        // Every tile always contributes (no hard split at the centroid), so
+        // a heat map concentrated in one row barely moves between phases,
+        // one spread over three rows moves a lot, and the lateral part of
+        // each target comes from where the advanced (or withdrawn) mass
+        // actually is — e.g. an Inside Forward's attack target drifts
+        // inside because its advanced tiles are central.
+        const HEATMAP_LEVELS = {
+            '0': { weight: 0, opacity: 0 },     // never
+            '1': { weight: 1, opacity: 0.16 },  // rarely
+            '2': { weight: 2, opacity: 0.30 },  // often
+            '3': { weight: 3, opacity: 0.48 }   // mostly
+        };
+        const HEATMAP_PHASE_TILT = 1.2;
+        const HEATMAP_MIN_SPREAD = 6;
+        const heatmapDistributionCache = {};
+        function buildHeatmapDistribution(levelsStr) {
+            if (!levelsStr) return null;
+            if (heatmapDistributionCache[levelsStr]) return heatmapDistributionCache[levelsStr];
             const grid = HEATMAP_RAW.grid;
-            const pts = [];
+            const cells = [];
             for (let i = 0; i < levelsStr.length; i++) {
-                const w = Number(levelsStr[i]);
-                if (!w) continue;
-                pts.push({ top: grid[i].top, left: grid[i].left, w });
+                const lv = HEATMAP_LEVELS[levelsStr[i]];
+                if (!lv || !lv.weight) continue;
+                cells.push({ i, top: grid[i].top, left: grid[i].left, w: lv.weight, opacity: lv.opacity });
             }
-            if (!pts.length) return null;
-            const totalW = pts.reduce((s, p) => s + p.w, 0);
-            const cTop = pts.reduce((s, p) => s + p.top * p.w, 0) / totalW;
-            const cLeft = pts.reduce((s, p) => s + p.left * p.w, 0) / totalW;
-            const centroid = group => {
-                if (!group.length) return { top: cTop, left: cLeft };
-                const tw = group.reduce((s, p) => s + p.w, 0);
-                return {
-                    top: group.reduce((s, p) => s + p.top * p.w, 0) / tw,
-                    left: group.reduce((s, p) => s + p.left * p.w, 0) / tw
-                };
+            if (!cells.length) return null;
+            const W = cells.reduce((s, c) => s + c.w, 0);
+            const cy = cells.reduce((s, c) => s + c.top * c.w, 0) / W;
+            const cx = cells.reduce((s, c) => s + c.left * c.w, 0) / W;
+            const sy = Math.sqrt(cells.reduce((s, c) => s + c.w * (c.top - cy) ** 2, 0) / W);
+            const sx = Math.sqrt(cells.reduce((s, c) => s + c.w * (c.left - cx) ** 2, 0) / W);
+            const scale = Math.max(sy, HEATMAP_MIN_SPREAD);
+            const tilted = dir => {
+                const ws = cells.map(c => c.w * Math.exp(dir * HEATMAP_PHASE_TILT * (cy - c.top) / scale));
+                const t = ws.reduce((a, b) => a + b, 0);
+                return { top: cells.reduce((s, c, k) => s + c.top * ws[k], 0) / t, left: cells.reduce((s, c, k) => s + c.left * ws[k], 0) / t };
             };
-            return {
-                attack: centroid(pts.filter(p => p.top <= cTop)),
-                defend: centroid(pts.filter(p => p.top > cTop)),
-                // Whole-map weighted centre — used by the tactical layer's
-                // resting role/focus nudge (see computeRoleFocusModifiers).
-                overall: { top: cTop, left: cLeft }
-            };
+            const dist = { cells, centre: { top: cy, left: cx }, spread: { top: sy, left: sx }, attack: tilted(1), defend: tilted(-1) };
+            heatmapDistributionCache[levelsStr] = dist;
+            return dist;
+        }
+        // Kept for compatibility — now just a view of the distribution.
+        function decodeHeatmapZones(levelsStr) {
+            const d = buildHeatmapDistribution(levelsStr);
+            return d ? { attack: d.attack, defend: d.defend, overall: d.centre } : null;
         }
 
         // Converts an ABSOLUTE (topPct, leftPct) — Futbin's own coordinate
@@ -2593,52 +2632,221 @@
         const HORIZONTAL_SAFE_DIST = 20;
 
         // ===================================================================
-        // TACTICAL LAYER — base position → final position
+        // TACTICAL ENGINE (v2) — three separate concepts
         // ===================================================================
-        //   base          formation geometry (symmetric, structural)
-        // + role          where this ROLE lives on average (heat-map centroid
-        //                 across all its focuses), as a small bounded nudge
-        // + focus         how THIS focus differs from the role's average
-        //   = tactical    the resting spot shown in Normal view (controlled
-        //                 asymmetry: an Inverted Wingback tucks in, an
-        //                 Attacking Wingback sits higher, etc.)
-        // + heatmap       Attack/Defend only: blend toward the real scraped
-        //                 advanced/withdrawn zone (HEATMAP_BLEND, unchanged)
-        // + phase         Attack/Defend only: whole-LINE structural shift —
-        //                 the team pushes up and stretches wide in
-        //                 possession, drops and narrows into a compact block
-        //                 out of it (PHASE_STRUCTURE)
-        // + guard         Attack never ends behind the resting spot, Defend
-        //                 never ahead of it (unchanged rule)
-        // + spacing       collision cascade (MIN_DEPTH_GAP /
-        //                 HORIZONTAL_SAFE_DIST, unchanged algorithm)
-        //   = final
+        //   BASE POSITION          formation geometry only. This is ALL the
+        //                          FORMATION button ever shows. Role, focus,
+        //                          heat map and phase never touch it.
+        //   TACTICAL REST POSITION base + bounded role + focus nudge. Used
+        //                          only as the starting point of a phase.
+        //   PHASE POSITION         rest + bounded, anchor-aware heat-map
+        //                          pull + whole-line phase transform, then
+        //                          the card-footprint collision solver.
         //
-        // All modifier values are in the legacy % units (0-100) the pitch
-        // renderer uses, so the numbers read the same as slot.top/left.
-        const TACTICAL_MODIFIER = {
-            // Fraction of (heat-map centroid − base) applied as the resting
-            // role/focus nudge, and the hard caps on it. Deliberately small:
-            // the base formation stays recognisable in Normal view.
-            strength: 0.12,
-            maxDepth: 3,
-            maxLateral: 4,
-            applyInNormal: true
-        };
-        const PHASE_STRUCTURE = {
-            attack: {
-                lineShift: { GK: 0, DEF: -3, DM: -2, MID: -2, AM: -1, ATT: 0 },
-                widthScale: 1.06
-            },
-            defend: {
-                lineShift: { GK: 0, DEF: 1, DM: 2, MID: 3, AM: 4, ATT: 5 },
-                widthScale: 0.90
-            }
-        };
+        //   FORMATION  → base (+ structural fit to the real card size)
+        //   ATTACKING  → rest + heatmap(attack) + attack phase + collision
+        //   DEFENDING  → rest + heatmap(defend) + defend phase + collision
+        //
+        // All positions are in the legacy 0-100 units: top = depth, left =
+        // LOCAL width (getSlotPixelPosition applies the trapezoid).
 
-        // Every focus of one role at one slot (side-specific, same lookup
-        // rules as getHeatmapFocusEntry) — needed to separate the ROLE's
-        // average tendency from the FOCUS's deviation from it.
+        // ---------------------------------------------------------------
+        // Card footprint — the collision system works on real rectangles.
+        // ---------------------------------------------------------------
+        // Measured from the live DOM after each render (a rendered card
+        // wrapper vs. the pitch box). Until a card exists (first paint,
+        // headless), a breakpoint estimate from the card's Tailwind sizes
+        // is used: w-16/sm:w-24/lg:w-28 and the measured-by-markup heights.
+        // All values are PERCENT of the pitch box, per axis.
+        const CARD_MIN_GAP_PX = 6;
+        const FOOTPRINT_PROFILES = {
+            desktop: { cardW: 112, cardH: 116, pitchW: 906, pitchH: 680 },
+            laptop:  { cardW: 112, cardH: 116, pitchW: 714, pitchH: 680 },
+            tablet:  { cardW: 96,  cardH: 112, pitchW: 720, pitchH: 680 },
+            mobile:  { cardW: 64,  cardH: 98,  pitchW: 358, pitchH: 560 }
+        };
+        function footprintFromPixels(p) {
+            return {
+                w: p.cardW / p.pitchW * 100, h: p.cardH / p.pitchH * 100,
+                gapX: CARD_MIN_GAP_PX / p.pitchW * 100, gapY: CARD_MIN_GAP_PX / p.pitchH * 100,
+                source: p.source || 'estimate'
+            };
+        }
+        let measuredCardFootprint = null;
+        let footprintOverride = null; // tests pin a profile here
+        function estimateCardFootprint() {
+            const vw = (document.documentElement && document.documentElement.clientWidth) || 1280;
+            const box = document.getElementById('pitch-container');
+            const pitchW = (box && box.clientWidth) || (vw >= 1024 ? Math.min(906, (Math.min(vw, 1280) - 64 - 72) / 4 * 3 + 48) : Math.max(300, vw - 48));
+            const pitchH = vw < 640 ? 560 : 680;
+            const cardW = vw >= 1024 ? 112 : (vw >= 640 ? 96 : 64);
+            const cardH = vw >= 1024 ? 116 : (vw >= 640 ? 112 : 98);
+            return footprintFromPixels({ cardW, cardH, pitchW, pitchH });
+        }
+        function getCardFootprint() {
+            return footprintOverride || measuredCardFootprint || estimateCardFootprint();
+        }
+        // Called after every render: if the real card size differs from the
+        // one positions were solved for, re-solve and slide cards into
+        // place (no rebuild). Returns true when it re-applied.
+        function syncMeasuredCardFootprint() {
+            const box = document.getElementById('pitch-container');
+            const card = box && box.querySelector('[data-slot-idx]');
+            if (!box || !card || !card.offsetWidth || !box.clientWidth) return false;
+            const fp = footprintFromPixels({ cardW: card.offsetWidth, cardH: card.offsetHeight, pitchW: box.clientWidth, pitchH: box.clientHeight, source: 'measured' });
+            const prev = getCardFootprint();
+            measuredCardFootprint = fp;
+            if (Math.abs(prev.w - fp.w) < 0.3 && Math.abs(prev.h - fp.h) < 0.3) return false;
+            invalidateShapeCaches();
+            applyPitchPositions();
+            return true;
+        }
+        let resizeTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => { measuredCardFootprint = null; if (!syncMeasuredCardFootprint()) { invalidateShapeCaches(); applyPitchPositions(); } }, 150);
+        });
+
+        const toPix = (top, left) => getSlotPixelPosition({ top, left });
+        const toLocalLeft = (top, pixLeft) => absoluteToLocalLeft(top, pixLeft);
+        // Rectangle overlap of two card centres in pixel space. >0 on both
+        // axes = collision. `gap` adds the minimum clearance.
+        function cardOverlap(a, b, fp, withGap) {
+            const ox = (fp.w + (withGap ? fp.gapX : 0)) - Math.abs(a.left - b.left);
+            const oy = (fp.h + (withGap ? fp.gapY : 0)) - Math.abs(a.top - b.top);
+            return { ox, oy, hit: ox > 0 && oy > 0, area: (ox > 0 && oy > 0) ? ox * oy : 0 };
+        }
+        function findCardCollisions(localPts, fp, withGap) {
+            const pix = localPts.map(p => toPix(p.top, p.left));
+            const hits = [];
+            for (let i = 0; i < pix.length; i++) for (let j = i + 1; j < pix.length; j++) {
+                const o = cardOverlap(pix[i], pix[j], fp, withGap);
+                if (o.hit) hits.push({ i, j, ...o });
+            }
+            return hits.sort((a, b) => b.area - a.area);
+        }
+
+        // ---------------------------------------------------------------
+        // STRUCTURAL FIT — keeps the FORMATION view collision-free at the
+        // real card size WITHOUT breaking structure.
+        // ---------------------------------------------------------------
+        // Only whole-line, symmetric parameters are ever adjusted, never an
+        // individual player: a line's central spacing or wide width (within
+        // its min/max envelope), a whole line's depth, or how far a line's
+        // wide anchors step up. Every candidate adjustment is scored by how
+        // much card overlap it removes per unit of structural cost, and
+        // horizontal adjustments are cheaper than vertical ones — so lines
+        // spread before they move, and a line always stays a line.
+        function lineEnvelope(line) {
+            const width = line.width || 0.76, spacing = line.spacing || 0;
+            return {
+                width,
+                minWidth: line.minWidth != null ? line.minWidth : width * 0.9,
+                maxWidth: line.maxWidth != null ? line.maxWidth : Math.min(0.86, width + 0.08),
+                spacing,
+                minSpacing: line.minSpacing != null ? line.minSpacing : spacing * 0.9,
+                maxSpacing: line.maxSpacing != null ? line.maxSpacing : spacing + 0.10,
+                maxShift: line.maxShift != null ? line.maxShift : 0.05,
+                maxWideLift: line.maxWideLift != null ? line.maxWideLift : 0.08
+            };
+        }
+        const FIT_STEP = 0.005;
+        const FIT_COST = { spacing: 1, width: 1.2, wideLift: 1.6, shift: 2.4 };
+        const structuralFitCache = {};
+        function fitFormationToFootprint(key, fp) {
+            const cacheKey = `${key}|${fp.w.toFixed(2)}x${fp.h.toFixed(2)}`;
+            if (structuralFitCache[cacheKey]) return structuralFitCache[cacheKey];
+            const topo = FORMATION_TOPOLOGY[key];
+            const fit = { lines: {}, wideLift: {} };
+            Object.keys(topo.lines).forEach(l => { fit.lines[l] = {}; });
+            const build = f => buildFormationGeometry(key, f);
+            const overlapOf = slots => findCardCollisions(slots, fp, true).reduce((s, h) => s + h.area, 0);
+            let slots = build(fit);
+            let total = overlapOf(slots);
+            const steps = [];
+            for (let iter = 0; iter < 160 && total > 0; iter++) {
+                const hits = findCardCollisions(slots, fp, true);
+                const involved = new Set();
+                hits.forEach(h => { involved.add(slots[h.i].geo.line); involved.add(slots[h.j].geo.line); });
+                const candidates = [];
+                involved.forEach(l => {
+                    if (l === 'GK') return;
+                    const env = lineEnvelope(topo.lines[l]);
+                    const cur = Object.assign({ width: env.width, spacing: env.spacing, depth: topo.lines[l].depth }, fit.lines[l]);
+                    const push = (kind, patch, costKind) => candidates.push({ kind, line: l, patch, cost: FIT_COST[costKind] });
+                    if (env.spacing && cur.spacing + FIT_STEP <= env.maxSpacing + 1e-9) push('spacing+', { spacing: cur.spacing + FIT_STEP }, 'spacing');
+                    if (env.spacing && cur.spacing - FIT_STEP >= env.minSpacing - 1e-9) push('spacing-', { spacing: cur.spacing - FIT_STEP }, 'spacing');
+                    if (cur.width + FIT_STEP <= env.maxWidth + 1e-9) push('width+', { width: cur.width + FIT_STEP }, 'width');
+                    if (cur.width - FIT_STEP >= env.minWidth - 1e-9) push('width-', { width: cur.width - FIT_STEP }, 'width');
+                    if (cur.depth - FIT_STEP >= topo.lines[l].depth - env.maxShift - 1e-9) push('up', { depth: cur.depth - FIT_STEP }, 'shift');
+                    if (cur.depth + FIT_STEP <= topo.lines[l].depth + env.maxShift + 1e-9) push('down', { depth: cur.depth + FIT_STEP }, 'shift');
+                    if ((fit.wideLift[l] || 0) + FIT_STEP <= env.maxWideLift + 1e-9) candidates.push({ kind: 'wideLift', line: l, lift: (fit.wideLift[l] || 0) + FIT_STEP, cost: FIT_COST.wideLift });
+                });
+                let best = null;
+                candidates.forEach(c => {
+                    const trial = { lines: { ...fit.lines, [c.line]: { ...fit.lines[c.line], ...(c.patch || {}) } }, wideLift: { ...fit.wideLift } };
+                    if (c.kind === 'wideLift') trial.wideLift[c.line] = c.lift;
+                    const ts = build(trial);
+                    if (!linesStayOrdered(key, ts)) return;
+                    const gain = total - overlapOf(ts);
+                    if (gain <= 1e-9) return;
+                    const value = gain / c.cost;
+                    if (!best || value > best.value) best = { c, trial, ts, value };
+                });
+                if (!best) break;
+                fit.lines = best.trial.lines; fit.wideLift = best.trial.wideLift;
+                slots = best.ts;
+                total = overlapOf(slots);
+                steps.push(`${best.c.line} ${best.c.kind}`);
+            }
+            const result = { slots, fit, residual: findCardCollisions(slots, fp, false), steps };
+            structuralFitCache[cacheKey] = result;
+            return result;
+        }
+        // A fit adjustment may never make two lines swap or merge.
+        function linesStayOrdered(key, slots) {
+            const means = {};
+            slots.forEach(s => { (means[s.geo.line] = means[s.geo.line] || []).push(s.geo.y); });
+            const order = FORMATION_LINES.filter(l => means[l]).map(l => means[l].reduce((a, b) => a + b, 0) / means[l].length);
+            for (let k = 0; k < order.length - 1; k++) if (order[k] - order[k + 1] < 0.06) return false;
+            return true;
+        }
+
+        // ---------------------------------------------------------------
+        // Anchor freedom — heat-map influence is adaptive, by structural
+        // anchor type (never by individual player).
+        //   depth / lateral : multipliers on HEATMAP_BLEND (0.7 / 0.35)
+        //   maxDepth / maxLateral : hard caps on the heat-map pull (units)
+        //   laneFloor : a wide anchor never comes closer to the centre
+        //               than this (local units) — a winger stays a winger
+        //   mobility : share of a collision correction this anchor takes
+        //              (GK 0 = immovable)
+        // ---------------------------------------------------------------
+        const ANCHOR_FREEDOM = {
+            GK:  { depth: 0.20, lateral: 0.10, maxDepth: 4,  maxLateral: 2,  mobility: 0.25 },
+            CB:  { depth: 0.80, lateral: 0.40, maxDepth: 14, maxLateral: 5,  mobility: 0.35 },
+            FB:  { depth: 1.00, lateral: 1.20, maxDepth: 24, maxLateral: 12, mobility: 0.8, laneFloor: 14 },
+            WB:  { depth: 1.00, lateral: 1.20, maxDepth: 24, maxLateral: 12, mobility: 0.8, laneFloor: 16 },
+            DM:  { depth: 0.90, lateral: 0.80, maxDepth: 18, maxLateral: 8,  mobility: 0.6 },
+            CM:  { depth: 1.00, lateral: 1.00, maxDepth: 22, maxLateral: 10, mobility: 0.9 },
+            WM:  { depth: 1.00, lateral: 1.30, maxDepth: 24, maxLateral: 12, mobility: 1.0, laneFloor: 20 },
+            AM:  { depth: 1.10, lateral: 1.00, maxDepth: 22, maxLateral: 10, mobility: 0.8 },
+            WAM: { depth: 1.00, lateral: 1.20, maxDepth: 22, maxLateral: 12, mobility: 1.0, laneFloor: 16 },
+            W:   { depth: 1.15, lateral: 1.40, maxDepth: 30, maxLateral: 14, mobility: 1.0, laneFloor: 20 },
+            ST:  { depth: 1.15, lateral: 0.90, maxDepth: 24, maxLateral: 9,  mobility: 0.6 }
+        };
+        const freedomOf = slot => ANCHOR_FREEDOM[(slot.geo && slot.geo.anchor) || 'CM'];
+
+        // Resting role/focus nudge (phase modes only — FORMATION is pure).
+        const TACTICAL_MODIFIER = { strength: 0.12, maxDepth: 3, maxLateral: 4 };
+        const PHASE_STRUCTURE = {
+            attack: { lineShift: { GK: 0, DEF: -3, DM: -2, MID: -2, AM: -1, ATT: 0 }, widthScale: 1.06 },
+            defend: { lineShift: { GK: 0, DEF: 1, DM: 2, MID: 3, AM: 4, ATT: 5 }, widthScale: 0.90 }
+        };
+        // Formation-integrity threshold (internal only, 0-100). Below it,
+        // the heat-map pull of the players doing the damage is damped.
+        const INTEGRITY_MIN = 72;
+
         function getHeatmapRoleEntry(pos, roleName, idx) {
             const effPos = ROLE_CATALOG_POS_ALIAS[pos] || pos;
             const sideKey = typeof idx === 'number' ? getPositionSideKey(effPos, idx) : effPos;
@@ -2649,14 +2857,7 @@
                 || roles.find(r => normalizeAttrKey(r.role).includes(roleKey) || roleKey.includes(normalizeAttrKey(r.role)))
                 || null;
         }
-
-        // Overall weighted centroid of one focus's heat map, in the app's
-        // local (top, left) convention.
-        function heatmapCentroidLocal(levels) {
-            const zones = decodeHeatmapZones(levels);
-            if (!zones || !zones.overall) return null;
-            return { top: zones.overall.top, left: absoluteToLocalLeft(zones.overall.top, zones.overall.left) };
-        }
+        const absToLocalPoint = p => ({ top: p.top, left: absoluteToLocalLeft(p.top, p.left) });
 
         function computeRoleFocusModifiers(slot, idx) {
             const none = { role: { dTop: 0, dLeft: 0 }, focus: { dTop: 0, dLeft: 0 } };
@@ -2665,31 +2866,21 @@
             const roleEntry = getHeatmapRoleEntry(slot.pos, roleInfo.role, idx);
             const focusEntry = getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx);
             if (!roleEntry || !focusEntry) return none;
-            const centroids = roleEntry.focuses.map(f => heatmapCentroidLocal(f.levels)).filter(Boolean);
-            const focusC = heatmapCentroidLocal(focusEntry.levels);
-            if (!centroids.length || !focusC) return none;
-            const roleC = {
-                top: centroids.reduce((s, c) => s + c.top, 0) / centroids.length,
-                left: centroids.reduce((s, c) => s + c.left, 0) / centroids.length
-            };
+            const centres = roleEntry.focuses.map(f => buildHeatmapDistribution(f.levels)).filter(Boolean).map(d => absToLocalPoint(d.centre));
+            const fd = buildHeatmapDistribution(focusEntry.levels);
+            if (!centres.length || !fd) return none;
+            const focusC = absToLocalPoint(fd.centre);
+            const roleC = { top: centres.reduce((s, c) => s + c.top, 0) / centres.length, left: centres.reduce((s, c) => s + c.left, 0) / centres.length };
             const k = TACTICAL_MODIFIER.strength;
             let role = { dTop: (roleC.top - slot.top) * k, dLeft: (roleC.left - slot.left) * k };
             let focus = { dTop: (focusC.top - roleC.top) * k, dLeft: (focusC.left - roleC.left) * k };
-            // Cap the COMBINED nudge, scaling both parts proportionally so
-            // the role/focus split stays truthful in the debug trace.
-            const sumTop = role.dTop + focus.dTop, sumLeft = role.dLeft + focus.dLeft;
-            const sT = Math.abs(sumTop) > TACTICAL_MODIFIER.maxDepth ? TACTICAL_MODIFIER.maxDepth / Math.abs(sumTop) : 1;
-            const sL = Math.abs(sumLeft) > TACTICAL_MODIFIER.maxLateral ? TACTICAL_MODIFIER.maxLateral / Math.abs(sumLeft) : 1;
-            role = { dTop: role.dTop * sT, dLeft: role.dLeft * sL };
-            focus = { dTop: focus.dTop * sT, dLeft: focus.dLeft * sL };
-            return { role, focus };
+            const sT = Math.abs(role.dTop + focus.dTop) > TACTICAL_MODIFIER.maxDepth ? TACTICAL_MODIFIER.maxDepth / Math.abs(role.dTop + focus.dTop) : 1;
+            const sL = Math.abs(role.dLeft + focus.dLeft) > TACTICAL_MODIFIER.maxLateral ? TACTICAL_MODIFIER.maxLateral / Math.abs(role.dLeft + focus.dLeft) : 1;
+            return { role: { dTop: role.dTop * sT, dLeft: role.dLeft * sL }, focus: { dTop: focus.dTop * sT, dLeft: focus.dLeft * sL } };
         }
 
         const clampLeft = v => Math.min(PITCH_GEOMETRY.maxX * 100, Math.max(PITCH_GEOMETRY.minX * 100, v));
         const clampTop = v => Math.min(PITCH_GEOMETRY.maxY * 100, Math.max(PITCH_GEOMETRY.minY * 100, v));
-        // Keeps the goalkeeper inside a sensible GK zone whatever the
-        // heat map says (a Sweeper Keeper's advanced cluster can otherwise
-        // drag the card out toward the edge of the box).
         function clampToGkZone(p) {
             const z = PITCH_GEOMETRY.gkZone;
             return {
@@ -2697,31 +2888,81 @@
                 left: Math.min(50 + z.maxLateral * 100, Math.max(50 - z.maxLateral * 100, p.left))
             };
         }
+        // Left/right identity + wide-lane floor, in local units.
+        function applyIdentityConstraints(slot, left) {
+            const side = slot.geo ? slot.geo.side : 'C';
+            const fr = freedomOf(slot);
+            if (side === 'L') left = Math.min(left, 50);
+            if (side === 'R') left = Math.max(left, 50);
+            if (fr.laneFloor && side === 'L') left = Math.min(left, 50 - fr.laneFloor);
+            if (fr.laneFloor && side === 'R') left = Math.max(left, 50 + fr.laneFloor);
+            return clampLeft(left);
+        }
 
-        // Spacing / collision solver — the SAME cascade as before, just
-        // lifted into its own function so it runs identically for every
-        // mode (Normal included, since role/focus nudges now exist there
-        // too). See the MIN_DEPTH_GAP comment block above for the rules.
-        // Tier = structural line (GK 0 … ATT 5). "Genuinely more advanced"
-        // used to be inferred from raw base depth, which misfires as soon as
-        // two members of the SAME line sit at slightly different depths
-        // (full-backs 2 units above their CBs, a staggered midfield three):
-        // the solver then treated them as different tiers and cascaded them
-        // against each other. With real topology, same line = same tier.
-        // The goalkeeper gets a full card-height of clearance (a GK card
-        // is a card too); everyone else keeps MIN_DEPTH_GAP.
+        // ---------------------------------------------------------------
+        // FORMATION INTEGRITY (internal only — never shown as a rating)
+        // ---------------------------------------------------------------
+        // 100 = the shape still reads as the formation. Components: line
+        // cohesion, role lane, left/right identity, line order/spacing,
+        // team width, team depth, card separation. Also returns a per-
+        // player distortion so the damage can be traced to who caused it.
+        function computeFormationIntegrity(slots, pts, basePts, fp) {
+            const n = slots.length;
+            const distortion = new Array(n).fill(0);
+            const lines = {};
+            slots.forEach((s, i) => { (lines[s.geo.line] = lines[s.geo.line] || []).push(i); });
+            // line cohesion
+            let linePen = 0, lineCount = 0;
+            Object.entries(lines).forEach(([l, m]) => {
+                if (l === 'GK' || m.length < 2) return;
+                const tops = m.map(i => pts[i].top).sort((a, b) => a - b);
+                const med = tops[Math.floor(tops.length / 2)];
+                const spread = tops[tops.length - 1] - tops[0];
+                linePen += Math.min(1, Math.max(0, spread - 22) / 30); lineCount++;
+                m.forEach(i => { distortion[i] += Math.max(0, Math.abs(pts[i].top - med) - 14) / 30; });
+            });
+            linePen = lineCount ? linePen / lineCount : 0;
+            // role lane + side identity
+            let lanePen = 0, sidePen = 0;
+            slots.forEach((s, i) => {
+                const fr = freedomOf(s);
+                const excess = Math.max(0, Math.abs(pts[i].left - basePts[i].left) - (fr.maxLateral + 4)) / 15;
+                lanePen += Math.min(1, excess); distortion[i] += excess;
+                const side = s.geo.side;
+                if ((side === 'L' && pts[i].left > 52) || (side === 'R' && pts[i].left < 48)) { sidePen += 1; distortion[i] += 1; }
+            });
+            lanePen /= n; sidePen /= n;
+            // line order
+            const order = FORMATION_LINES.filter(l => l !== 'GK' && lines[l]);
+            const mean = l => lines[l].reduce((a, i) => a + pts[i].top, 0) / lines[l].length;
+            let orderPen = 0;
+            for (let k = 0; k < order.length - 1; k++) if (mean(order[k + 1]) >= mean(order[k]) - 2) orderPen += 1;
+            orderPen = order.length > 1 ? orderPen / (order.length - 1) : 0;
+            // width / depth
+            const of = slots.map((s, i) => i).filter(i => slots[i].geo.line !== 'GK');
+            const span = (arr, k) => Math.max(...of.map(i => arr[i][k])) - Math.min(...of.map(i => arr[i][k]));
+            const widthPen = Math.min(1, Math.max(0, Math.abs(span(pts, 'left') / span(basePts, 'left') - 1) - 0.25) / 0.5);
+            const depthPen = Math.min(1, Math.max(0, Math.abs(span(pts, 'top') / span(basePts, 'top') - 1) - 0.35) / 0.5);
+            // separation (before collision resolution)
+            const sepPen = fp ? Math.min(1, findCardCollisions(pts, fp, false).length / 6) : 0;
+            const total = 0.22 * linePen + 0.22 * lanePen + 0.2 * sidePen + 0.14 * orderPen + 0.07 * widthPen + 0.07 * depthPen + 0.08 * sepPen;
+            return {
+                score: Math.round(100 * (1 - Math.min(1, total))),
+                components: { line: linePen, lane: lanePen, side: sidePen, order: orderPen, width: widthPen, depth: depthPen, separation: sepPen },
+                distortion
+            };
+        }
+
+        // ---------------------------------------------------------------
+        // First-pass structural cascade (unchanged rules: MIN_DEPTH_GAP /
+        // HORIZONTAL_SAFE_DIST, line-based tiers, GK anchor, back-pressure)
+        // ---------------------------------------------------------------
         const GK_CLEARANCE = 14;
         function resolveShapeSpacing(raw) {
             const sorted = [...raw].sort((a, b) => (b.tier - a.tier) || (a.baseTop - b.baseTop));
             const result = {};
             sorted.forEach((item, pos) => {
-                let constraint = -Infinity;
-                let blocker = null;
-                // The goalkeeper is an ANCHOR, not a cascade member: it
-                // stays in its GK zone and everyone else is solved around
-                // it (see the back-pressure pass below). Previously the GK,
-                // being deepest, inherited every constraint and got shoved
-                // into the 96% floor on top of a dropping centre-back.
+                let constraint = -Infinity, blocker = null;
                 if (item.fixed) { result[item.idx] = { top: item.rawTop, left: item.left, blocker: null }; return; }
                 for (let j = pos - 1; j >= 0; j--) {
                     const prev = sorted[j];
@@ -2737,18 +2978,6 @@
                 const finalTop = Math.min(96, Math.max(6, Math.max(item.rawTop, constraint)));
                 result[item.idx] = { top: finalTop, left: item.left, blocker: finalTop > item.rawTop ? blocker : null };
             });
-
-            // BACK-PRESSURE pass (new). The forward cascade only ever pushes
-            // players DEEPER, so when a chain reaches something that can't
-            // move (the GK anchor, or the 96% floor) the last two cards end
-            // up stacked. Here, anything immovable pushes a genuinely
-            // more-advanced, horizontally-close teammate back UP the pitch
-            // by MIN_DEPTH_GAP — and a pushed player becomes immovable in
-            // turn, so the correction propagates up the chain (GK → CB →
-            // pivot) instead of stopping at the first link. Same-tier
-            // teammates (equal base depth) are never pushed against each
-            // other, exactly like the forward rule, so a back line stays a
-            // line.
             const byIdx = {};
             raw.forEach(r => { byIdx[r.idx] = r; });
             const immovable = new Set(raw.filter(r => r.fixed || result[r.idx].top >= 95.5).map(r => r.idx));
@@ -2763,7 +2992,7 @@
                         if (result[r.idx].top > ceiling) {
                             result[r.idx].top = Math.max(6, ceiling);
                             result[r.idx].blocker = deepIdx;
-                            if (!immovable.has(r.idx)) { immovable.add(r.idx); }
+                            immovable.add(r.idx);
                             changed = true;
                         }
                     });
@@ -2773,250 +3002,498 @@
             return result;
         }
 
-        const shapeTargetsCache = { key: null, byMode: {} };
-        function shapeCacheKey() {
-            const roles = squadState.teamRoles || {};
-            return squadState.formation + '|' + Object.keys(roles).sort().map(i => `${i}:${roles[i].role}/${roles[i].focus}`).join(',');
+        // ---------------------------------------------------------------
+        // CARD-FOOTPRINT COLLISION SOLVER (pixel space)
+        // ---------------------------------------------------------------
+        // Works on real card rectangles after the trapezoid transform.
+        // Priority when two cards touch:
+        //   • same line      → horizontal only (a line stays a line)
+        //   • stacked centre → vertical (both central, e.g. CAM over ST)
+        //   • otherwise      → the cheaper axis, horizontal preferred
+        // Vertical separation always keeps line order (the more advanced
+        // line's player goes up), so a collision can never push a player
+        // into a different tactical line. The correction is shared by
+        // anchor mobility (GK 0 → never moves; CB little; wide/advanced
+        // players most). Every move respects: pitch bounds, left/right
+        // identity, the wide-lane floor, the phase direction guard, and a
+        // per-player correction budget.
+        const COLLISION_BUDGET = { vertical: 16, horizontal: 12 };
+        function resolveCardCollisions(items, slots, fp, mode) {
+            const P = items.map(it => ({ ...it, pix: toPix(it.top, it.left), start: toPix(it.top, it.left) }));
+            const stuck = {};
+            const gkZone = PITCH_GEOMETRY.gkZone;
+            const bound = (p) => {
+                const s = slots[p.idx];
+                // vertical: pitch, direction guard, budget. The guard is
+                // measured against the MORE ADVANCED (defend) / DEEPER
+                // (attack) of the player's formation spot and rest spot:
+                // Defend never lifts anyone ahead of where they'd stand in
+                // FORMATION or at rest, but a collision may undo a role
+                // nudge that dropped them into the keeper.
+                let top = Math.min(100 - fp.h / 2, Math.max(fp.h / 2, p.pix.top));
+                if (p.fixed) top = Math.min(gkZone.maxY * 100, Math.max(gkZone.minY * 100, top));
+                else if (mode === 'attack') top = Math.min(top, Math.max(p.restTop, p.baseTop));
+                else if (mode === 'defend') top = Math.max(top, Math.min(p.restTop, p.baseTop));
+                top = Math.min(p.start.top + COLLISION_BUDGET.vertical, Math.max(p.start.top - COLLISION_BUDGET.vertical, top));
+                // horizontal: pitch, budget, identity (checked in local)
+                let left = Math.min(100 - fp.w / 2, Math.max(fp.w / 2, p.pix.left));
+                left = Math.min(p.start.left + COLLISION_BUDGET.horizontal, Math.max(p.start.left - COLLISION_BUDGET.horizontal, left));
+                let localLeft = applyIdentityConstraints(s, toLocalLeft(top, left));
+                if (p.fixed) localLeft = Math.min(50 + gkZone.maxLateral * 100, Math.max(50 - gkZone.maxLateral * 100, localLeft));
+                p.pix = toPix(top, localLeft);
+            };
+            // Would sliding `p` sideways to `newLeft` hit a same-line
+            // teammate? Then a cross-line collision is solved vertically
+            // instead of shuffling a line into itself (CM pinched between
+            // the #10 and his own wide midfielder).
+            const hitsSameLine = (p, newLeft) => P.some(q => q !== p && q.tier === p.tier &&
+                cardOverlap({ top: p.pix.top, left: newLeft }, q.pix, fp, true).hit);
+            for (let iter = 0; iter < 120; iter++) {
+                let any = false;
+                for (let a = 0; a < P.length; a++) for (let b = a + 1; b < P.length; b++) {
+                    const A = P[a], B = P[b];
+                    const o = cardOverlap(A.pix, B.pix, fp, true);
+                    if (!o.hit) continue;
+                    any = true;
+                    // The keeper is fixed for the CASCADE, but in this solver
+                    // it keeps its small anchor mobility — bounded to the GK
+                    // zone by bound() — so it can drop back a touch instead of
+                    // forcing a centre-back up through the pivot.
+                    const ma = freedomOf(slots[A.idx]).mobility, mb = freedomOf(slots[B.idx]).mobility;
+                    if (ma + mb === 0) continue;
+                    const sa = slots[A.idx].geo, sb = slots[B.idx].geo;
+                    const pairKey = A.idx + '-' + B.idx;
+                    // Stuck-ness is tracked PER AXIS and counts every time a
+                    // pair is STILL colliding when the solver comes back to
+                    // it — which catches both a hard block (guard, keeper,
+                    // pitch edge) and a tug-of-war where a neighbouring pair
+                    // keeps undoing the fix. After a few failed returns the
+                    // pair switches to the other axis.
+                    const stuckX = stuck[pairKey + 'x'] || 0, stuckY = stuck[pairKey + 'y'] || 0;
+                    let axis;
+                    // same line: horizontal first; once horizontal has
+                    // clearly failed (line physically too wide for the
+                    // pitch), a small vertical stagger — wide anchor up
+                    if (A.tier === B.tier) axis = stuckX > 6 ? 'y' : 'x';
+                    else if (sa.side === 'C' && sb.side === 'C') axis = 'y';
+                    else {
+                        axis = o.ox <= o.oy * 1.2 ? 'x' : 'y';
+                        if (axis === 'x') {
+                            const dirA = Math.sign(A.pix.left - B.pix.left) || -1;
+                            const need = o.ox + 0.05;
+                            if (A.fixed || B.fixed
+                                || (ma && hitsSameLine(A, A.pix.left + dirA * need * ma / (ma + mb)))
+                                || (mb && hitsSameLine(B, B.pix.left - dirA * need * mb / (ma + mb)))) axis = 'y';
+                        }
+                        if (axis === 'x' && stuckX > 6 && stuckY <= stuckX) axis = 'y';
+                        else if (axis === 'y' && stuckY > 6 && stuckX <= stuckY) axis = 'x';
+                    }
+                    if (axis === 'x') {
+                        // the keeper only ever gives ground vertically
+                        const xa = A.fixed ? 0 : ma, xb = B.fixed ? 0 : mb;
+                        if (xa + xb === 0) { stuck[pairKey + 'x'] = 99; continue; }
+                        let dir = Math.sign(A.pix.left - B.pix.left);
+                        if (!dir) dir = (SIDE_RANK[sa.side] - SIDE_RANK[sb.side]) || (A.idx < B.idx ? -1 : 1);
+                        const need = o.ox + 0.05;
+                        A.pix = { top: A.pix.top, left: A.pix.left + dir * need * xa / (xa + xb) };
+                        B.pix = { top: B.pix.top, left: B.pix.left - dir * need * xb / (xa + xb) };
+                    } else {
+                        // Advanced line goes up. Same line (last resort, only
+                        // when the line physically can't fit side by side):
+                        // the WIDE anchor steps up, as a wing-back would.
+                        let dir;
+                        if (A.tier !== B.tier) dir = A.tier > B.tier ? -1 : 1;
+                        else {
+                            const aWide = ANCHOR_TYPES[sa.anchor].wide, bWide = ANCHOR_TYPES[sb.anchor].wide;
+                            dir = aWide && !bWide ? -1 : (!aWide && bWide ? 1 : (Math.sign(A.pix.top - B.pix.top) || -1));
+                        }
+                        const need = o.oy + 0.05;
+                        A.pix = { top: A.pix.top + dir * need * ma / (ma + mb), left: A.pix.left };
+                        B.pix = { top: B.pix.top - dir * need * mb / (ma + mb), left: B.pix.left };
+                    }
+                    bound(A); bound(B);
+                    stuck[pairKey + axis] = (stuck[pairKey + axis] || 0) + 1;
+                }
+                if (!any) break;
+            }
+            const out = {};
+            P.forEach(p => { out[p.idx] = { top: p.pix.top, left: toLocalLeft(p.pix.top, p.pix.left) }; });
+            return out;
         }
 
-        // Returns { [slotIdx]: {top, left, trace} } for 'normal' | 'attack'
-        // | 'defend'. `trace` is the full base → final breakdown used by the
-        // debug overlay; callers that only want the position ignore it.
+        // ---------------------------------------------------------------
+        // Pipeline
+        // ---------------------------------------------------------------
+        const shapeTargetsCache = { key: null, byMode: {} };
+        function invalidateShapeCaches() { shapeTargetsCache.key = null; shapeTargetsCache.byMode = {}; }
+        function shapeCacheKey() {
+            const roles = squadState.teamRoles || {};
+            const fp = getCardFootprint();
+            return `${squadState.formation}|${fp.w.toFixed(2)}x${fp.h.toFixed(2)}|` + Object.keys(roles).sort().map(i => `${i}:${roles[i].role}/${roles[i].focus}`).join(',');
+        }
+
         function computeAllShapeTargets(mode) {
             const cacheKey = shapeCacheKey();
             if (shapeTargetsCache.key !== cacheKey) { shapeTargetsCache.key = cacheKey; shapeTargetsCache.byMode = {}; }
             if (shapeTargetsCache.byMode[mode]) return shapeTargetsCache.byMode[mode];
 
-            const slots = formationSlots[squadState.formation] || [];
-            const phase = PHASE_STRUCTURE[mode] || null;
-            const raw = slots.map((slot, idx) => {
-                const isGK = slot.geo && slot.geo.line === 'GK';
-                const base = { top: slot.top, left: slot.left };
-                const mods = (mode !== 'normal' || TACTICAL_MODIFIER.applyInNormal)
-                    ? computeRoleFocusModifiers(slot, idx)
-                    : { role: { dTop: 0, dLeft: 0 }, focus: { dTop: 0, dLeft: 0 } };
-                let tactical = {
-                    top: base.top + mods.role.dTop + mods.focus.dTop,
-                    left: clampLeft(base.left + mods.role.dLeft + mods.focus.dLeft)
-                };
-                if (isGK) tactical = clampToGkZone(tactical);
-
-                const trace = { base, role: mods.role, focus: mods.focus, tactical: { ...tactical },
-                    heatmap: { dTop: 0, dLeft: 0 }, phase: { dTop: 0, dLeft: 0 }, guard: 0, spacing: 0, source: 'formation' };
-
-                let rawTop = tactical.top, left = tactical.left;
-                if (mode !== 'normal') {
-                    // HEATMAP modifier — same blend as always, now anchored
-                    // on the TACTICAL resting spot instead of the raw slot.
-                    const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
-                    const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
-                    const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
-                    if (zones) {
-                        const target = zones[mode];
-                        const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
-                        rawTop = tactical.top + (target.top - tactical.top) * HEATMAP_BLEND.top;
-                        left = clampLeft(tactical.left + (targetLocalLeft - tactical.left) * HEATMAP_BLEND.left);
-                        trace.source = 'heatmap';
-                    } else {
-                        const fallback = computeShapeOffsetFallback(slot, idx, mode);
-                        rawTop = tactical.top + fallback.dTop;
-                        left = clampLeft(tactical.left + fallback.dLeft);
-                        trace.source = 'fallback';
-                    }
-                    trace.heatmap = { dTop: rawTop - tactical.top, dLeft: left - tactical.left };
-
-                    // PHASE modifier — whole-line structure.
-                    if (phase && !isGK) {
-                        const line = slot.geo ? slot.geo.line : 'MID';
-                        const dTop = phase.lineShift[line] || 0;
-                        const newLeft = clampLeft(50 + (left - 50) * phase.widthScale);
-                        trace.phase = { dTop, dLeft: newLeft - left };
-                        rawTop += dTop;
-                        left = newLeft;
-                    }
-
-                    // Direction guard vs. the resting (tactical) spot.
-                    const beforeGuard = rawTop;
-                    if (mode === 'attack') rawTop = Math.min(rawTop, tactical.top);
-                    else rawTop = Math.max(rawTop, tactical.top);
-                    trace.guard = rawTop - beforeGuard;
-                }
-                if (isGK) { const z = clampToGkZone({ top: rawTop, left }); rawTop = z.top; left = z.left; }
-                const tier = slot.geo ? FORMATION_LINES.indexOf(slot.geo.line) : 0;
-                return { idx, baseTop: slot.top, restTop: tactical.top, rawTop, left, trace, fixed: isGK, tier };
-            });
-
-            const solved = resolveShapeSpacing(raw);
-
+            const key = squadState.formation;
+            const structural = formationSlots[key] || [];
+            const fp = getCardFootprint();
+            const fitted = fitFormationToFootprint(key, fp);
+            const base = fitted.slots;
+            const zero = { dTop: 0, dLeft: 0 };
             const result = {};
-            raw.forEach(item => {
-                const r = solved[item.idx];
-                if (!r) return;
-                let top = r.top;
-                // Final direction guarantee (unchanged rule) — Attack never
-                // finishes behind the resting spot, Defend never ahead.
-                if (mode === 'attack') top = Math.min(top, item.restTop);
-                else if (mode === 'defend') top = Math.max(top, item.restTop);
-                item.trace.spacing = top - item.rawTop;
-                item.trace.blocker = r.blocker;
-                item.trace.final = { top, left: r.left };
-                result[item.idx] = { top, left: r.left, trace: item.trace };
+
+            // FORMATION: pure geometry (+ structural card fit). No role,
+            // focus, heat map, phase or per-player collision logic.
+            if (mode === 'normal') {
+                base.forEach((s, idx) => {
+                    const fitD = { dTop: s.top - structural[idx].top, dLeft: s.left - structural[idx].left };
+                    result[idx] = { top: s.top, left: s.left, trace: {
+                        base: { top: structural[idx].top, left: structural[idx].left }, role: zero, focus: zero,
+                        rest: { top: s.top, left: s.left }, heatmap: zero, heatDamp: 1, phase: zero, guard: 0,
+                        collision: fitD, collisionNote: fitted.steps.length ? 'structural fit' : '',
+                        final: { top: s.top, left: s.left }, source: 'formation' } };
+                });
+                result.meta = { mode, fit: fitted, integrity: 100, footprint: fp };
+                shapeTargetsCache.byMode[mode] = result;
+                return result;
+            }
+
+            const phase = PHASE_STRUCTURE[mode];
+            const basePts = base.map(s => ({ top: s.top, left: s.left }));
+            // 1. TACTICAL REST = base + role + focus. restScale lets the
+            // collision loop below soften a role nudge that pinches two
+            // cards together (after the heat-map pull has been damped).
+            const rawMods = base.map((slot, idx) => computeRoleFocusModifiers(slot, idx));
+            const restScale = base.map(() => 1);
+            const buildRest = () => base.map((slot, idx) => {
+                const isGK = slot.geo.line === 'GK';
+                const k = restScale[idx], m0 = rawMods[idx];
+                const mods = { role: { dTop: m0.role.dTop * k, dLeft: m0.role.dLeft * k }, focus: { dTop: m0.focus.dTop * k, dLeft: m0.focus.dLeft * k } };
+                let p = { top: slot.top + mods.role.dTop + mods.focus.dTop, left: slot.left + mods.role.dLeft + mods.focus.dLeft };
+                p.left = applyIdentityConstraints(slot, p.left);
+                if (isGK) p = clampToGkZone(p);
+                return { p, mods, isGK };
             });
+            let rest = buildRest();
+            // 2. HEAT-MAP targets from the weighted distribution
+            const heatTargets = base.map((slot, idx) => {
+                const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
+                const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
+                const dist = focusEntry ? buildHeatmapDistribution(focusEntry.levels) : null;
+                return dist ? absToLocalPoint(dist[mode]) : null;
+            });
+            const damp = base.map(() => 1);
+            const place = () => base.map((slot, idx) => {
+                const r = rest[idx], fr = freedomOf(slot);
+                let heat = { dTop: 0, dLeft: 0 }, source = 'heatmap';
+                const t = heatTargets[idx];
+                if (t) {
+                    const bT = Math.min(0.95, HEATMAP_BLEND.top * fr.depth), bL = Math.min(0.8, HEATMAP_BLEND.left * fr.lateral);
+                    heat.dTop = Math.max(-fr.maxDepth, Math.min(fr.maxDepth, (t.top - r.p.top) * bT)) * damp[idx];
+                    heat.dLeft = Math.max(-fr.maxLateral, Math.min(fr.maxLateral, (t.left - r.p.left) * bL)) * damp[idx];
+                } else {
+                    const fb = computeShapeOffsetFallback(slot, idx, mode);
+                    heat = { dTop: fb.dTop * damp[idx], dLeft: fb.dLeft * damp[idx] }; source = 'fallback';
+                }
+                let top = r.p.top + heat.dTop, left = r.p.left + heat.dLeft;
+                // 3. PHASE — whole-line shift + width, min width kept by the lane floor
+                let ph = { dTop: 0, dLeft: 0 };
+                if (!r.isGK) {
+                    const dTop = phase.lineShift[slot.geo.line] || 0;
+                    let dLeft = (50 + (left - 50) * phase.widthScale) - left;
+                    // The team-wide width transform never overrides a
+                    // player's OWN lateral heat-map tendency: a touchline
+                    // Winger whose heat map says "stay wide" keeps his width
+                    // while the rest of the block narrows around him.
+                    if (heat.dLeft * dLeft < 0 && Math.abs(heat.dLeft) > 0.5) dLeft = 0;
+                    ph = { dTop, dLeft };
+                    top += dTop; left += dLeft;
+                }
+                left = applyIdentityConstraints(slot, left);
+                // 4. direction guard vs. the rest position
+                const g0 = top;
+                if (!r.isGK) { top = mode === 'attack' ? Math.min(top, r.p.top) : Math.max(top, r.p.top); }
+                let pt = { top: clampTop(top), left };
+                if (r.isGK) pt = clampToGkZone(pt);
+                return { pt, heat, ph, guard: top - g0, source };
+            });
+            let placed = place();
+            let integrity = computeFormationIntegrity(base, placed.map(x => x.pt), basePts, fp);
+            for (let round = 0; round < 4 && integrity.score < INTEGRITY_MIN; round++) {
+                let damped = false;
+                integrity.distortion.forEach((d, i) => { if (d > 0.15 && damp[i] > 0.3) { damp[i] *= 0.7; damped = true; } });
+                if (!damped) break;
+                placed = place();
+                integrity = computeFormationIntegrity(base, placed.map(x => x.pt), basePts, fp);
+            }
+            // 5. first-pass structural cascade, then card-footprint solver.
+            // If cards still collide after the solver, the heat-map pull of
+            // the players involved is damped and the phase recomputed —
+            // tendency yields to structure, never the other way round.
+            const solveOnce = () => {
+                const raw = base.map((slot, idx) => ({
+                    idx, baseTop: slot.top, rawTop: placed[idx].pt.top, left: placed[idx].pt.left,
+                    fixed: rest[idx].isGK, tier: FORMATION_LINES.indexOf(slot.geo.line)
+                }));
+                const cascaded = resolveShapeSpacing(raw);
+                const items = raw.map(r => ({ idx: r.idx, tier: r.tier, fixed: r.fixed, restTop: rest[r.idx].p.top, baseTop: base[r.idx].top,
+                    top: mode === 'attack' ? Math.min(cascaded[r.idx].top, rest[r.idx].p.top) : Math.max(cascaded[r.idx].top, rest[r.idx].p.top),
+                    left: cascaded[r.idx].left }));
+                const solved = resolveCardCollisions(items, base, fp, mode);
+                const residual = findCardCollisions(base.map((_, i) => solved[i]), fp, false);
+                return { cascaded, solved, residual };
+            };
+            let run = solveOnce();
+            let best = run;
+            for (let round = 0; round < 8 && run.residual.length; round++) {
+                let damped = false;
+                run.residual.forEach(h => [h.i, h.j].forEach(i => {
+                    if (!rest[i].isGK && damp[i] > 0.15) { damp[i] *= 0.65; damped = true; }
+                    else if (!rest[i].isGK && restScale[i] > 0.1) { restScale[i] *= 0.5; damped = true; }
+                }));
+                if (!damped) break;
+                rest = buildRest();
+                placed = place();
+                run = solveOnce();
+                if (run.residual.length <= best.residual.length) best = run;
+            }
+            if (best !== run) run = best;
+            const { cascaded, solved } = run;
+            base.forEach((slot, idx) => {
+                const f = solved[idx], pre = placed[idx].pt;
+                result[idx] = { top: f.top, left: f.left, trace: {
+                    base: { top: structural[idx].top, left: structural[idx].left },
+                    fit: { dTop: slot.top - structural[idx].top, dLeft: slot.left - structural[idx].left },
+                    role: rest[idx].mods.role, focus: rest[idx].mods.focus, rest: { ...rest[idx].p },
+                    heatmap: placed[idx].heat, heatDamp: damp[idx], heatTarget: heatTargets[idx], phase: placed[idx].ph, guard: placed[idx].guard,
+                    collision: { dTop: f.top - pre.top, dLeft: f.left - pre.left }, collisionNote: cascaded[idx].blocker != null ? `cascade ←${cascaded[idx].blocker}` : '',
+                    final: { top: f.top, left: f.left }, source: placed[idx].source } };
+            });
+            const finalIntegrity = computeFormationIntegrity(base, base.map((_, i) => result[i]), basePts, null);
+            result.meta = { mode, fit: fitted, integrity: finalIntegrity.score, integrityPre: integrity.score, footprint: fp };
             shapeTargetsCache.byMode[mode] = result;
             return result;
         }
 
+        // FORMATION view returns the generated geometry itself (structural
+        // fit to the card size included); phase views return the solved
+        // tactical position.
         function getShapeAdjustedSlot(slot, idx) {
             const mode = squadState.pitchShapeMode || 'normal';
-            if (mode === 'normal' && !TACTICAL_MODIFIER.applyInNormal) return slot;
             const t = computeAllShapeTargets(mode)[idx];
             if (!t) return slot;
             return { ...slot, top: t.top, left: t.left };
         }
-
-        // ===================================================================
-        // FORMATION VALIDATION
-        // ===================================================================
-        // validateFormationGeometry('4-3-3')                → base geometry
-        // validateFormationGeometry('4-3-3', { mode: 'attack' }) → the live
-        //   tactical output for the CURRENT squad (needs that formation to
-        //   be the active one, since roles come from squadState).
-        // Returns { formation, mode, ok, errors[], warnings[], metrics }.
-        function validateFormationGeometry(formationKey, opts) {
-            const mode = (opts && opts.mode) || 'base';
-            const errors = [], warnings = [];
-            const topo = FORMATION_TOPOLOGY[formationKey];
-            const slots = formationSlots[formationKey];
-            if (!topo || !slots) return { formation: formationKey, mode, ok: false, errors: ['Unknown formation'], warnings, metrics: {} };
-
-            // --- topology ---
-            if (slots.length !== 11) errors.push(`Topology has ${slots.length} slots, expected 11`);
-            const gkCount = topo.slots.filter(s => s[1] === 'GK').length;
-            if (gkCount !== 1) errors.push(`Topology has ${gkCount} goalkeepers`);
-            topo.slots.forEach(([line, anchor, side, pos], i) => {
-                if (!FORMATION_LINES.includes(line)) errors.push(`Slot ${i}: unknown line "${line}"`);
-                if (line !== 'GK' && !topo.lines[line]) errors.push(`Slot ${i}: line "${line}" has no parameters`);
-                if (!ANCHOR_TYPES[anchor]) errors.push(`Slot ${i}: unknown anchor "${anchor}"`);
-                else if (!(ANCHOR_ALLOWED_POS[anchor] || []).includes(pos)) errors.push(`Slot ${i}: position ${pos} can't sit on anchor ${anchor}`);
-                if (!(side in SIDE_SIGN)) errors.push(`Slot ${i}: bad side "${side}"`);
-                if (ANCHOR_TYPES[anchor] && ANCHOR_TYPES[anchor].wide && side === 'C') errors.push(`Slot ${i}: wide anchor ${anchor} can't be central`);
+        // Re-applies positions to the cards already on screen (smooth slide).
+        function applyPitchPositions() {
+            const slots = formationSlots[squadState.formation];
+            if (!slots) return;
+            document.querySelectorAll('#pitch-container [data-slot-idx]').forEach(wrapper => {
+                const idx = Number(wrapper.dataset.slotIdx);
+                if (!slots[idx]) return;
+                const pos = getSlotPixelPosition(getShapeAdjustedSlot(slots[idx], idx));
+                wrapper.style.top = pos.top + '%';
+                wrapper.style.left = pos.left + '%';
             });
-            const lineDepths = Object.keys(topo.lines).map(l => ({ l, d: topo.lines[l].depth }));
-            for (let a = 0; a < lineDepths.length; a++) for (let b = 0; b < lineDepths.length; b++) {
-                const ia = FORMATION_LINES.indexOf(lineDepths[a].l), ib = FORMATION_LINES.indexOf(lineDepths[b].l);
-                if (ia < ib && lineDepths[a].d <= lineDepths[b].d) errors.push(`Line order broken: ${lineDepths[a].l} (${lineDepths[a].d}) is not deeper than ${lineDepths[b].l} (${lineDepths[b].d})`);
+            if (typeof renderGeometryDebugOverlay === 'function') renderGeometryDebugOverlay();
+        }
+
+        // ===================================================================
+        // VALIDATION + AUTOMATIC FORMATION TEST SUITE
+        // ===================================================================
+        // validateFormationGeometry(key, {mode})  — one formation/mode, for
+        //   the active squad (mode 'base' = unfitted structural geometry).
+        // runFormationGeometryTests({profile, roles}) — every formation ×
+        //   Normal/Attack/Defend on the real card footprint. roles:
+        //   'catalog' (default role+focus per slot) or 'sweep' (every role
+        //   and focus of every slot, one at a time — the stress test).
+        const heatDirection = (d, tol) => Math.abs(d) <= tol ? 0 : Math.sign(d);
+        function validateShape(key, mode, targets, fp) {
+            const errors = [], warnings = [];
+            const slots = formationSlots[key];
+            const pts = slots.map((s, i) => targets && targets[i] ? { top: targets[i].top, left: targets[i].left } : { top: s.top, left: s.left });
+            const n = slots.length;
+            const Y = i => pts[i].top, X = i => pts[i].left, line = i => slots[i].geo.line, anchor = i => slots[i].geo.anchor;
+            const topo = FORMATION_TOPOLOGY[key];
+            // topology
+            if (n !== 11) errors.push(`topology has ${n} slots`);
+            if (topo.slots.filter(s => s[1] === 'GK').length !== 1) errors.push('topology needs exactly one GK');
+            topo.slots.forEach(([l, a, side, pos], i) => {
+                if (!FORMATION_LINES.includes(l) || (l !== 'GK' && !topo.lines[l])) errors.push(`slot ${i}: bad line ${l}`);
+                if (!ANCHOR_TYPES[a] || !(ANCHOR_ALLOWED_POS[a] || []).includes(pos)) errors.push(`slot ${i}: ${pos} can't sit on anchor ${a}`);
+                if (ANCHOR_TYPES[a] && ANCHOR_TYPES[a].wide && side === 'C') errors.push(`slot ${i}: wide anchor can't be central`);
+            });
+            // unique + card collision (rendered footprint)
+            for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (Math.abs(Y(i) - Y(j)) < 0.5 && Math.abs(X(i) - X(j)) < 0.5) errors.push(`duplicate position: ${slots[i].label} / ${slots[j].label}`);
+            findCardCollisions(pts, fp, false).forEach(h => errors.push(`card collision: ${slots[h.i].label} × ${slots[h.j].label} (overlap ${h.ox.toFixed(1)}% × ${h.oy.toFixed(1)}%)`));
+            const touching = findCardCollisions(pts, fp, true).filter(h => !findCardCollisions([pts[h.i], pts[h.j]], fp, false).length);
+            touching.forEach(h => warnings.push(`cards within min gap: ${slots[h.i].label} / ${slots[h.j].label}`));
+            // line coherence
+            const members = {};
+            slots.forEach((s, i) => { (members[s.geo.line] = members[s.geo.line] || []).push(i); });
+            Object.entries(members).forEach(([l, m]) => {
+                if (l === 'GK' || m.length < 2) return;
+                if (mode === 'normal') {
+                    // structural alignment: equal depth after the designed
+                    // anchor offsets (full-back step, winger step, stagger)
+                    const designed = i => formationSlots[key][i].top;
+                    const rel = m.map(i => Y(i) - designed(i));
+                    const wideRel = m.filter(i => ANCHOR_TYPES[anchor(i)].wide).map(i => Y(i) - designed(i));
+                    const centRel = m.filter(i => !ANCHOR_TYPES[anchor(i)].wide).map(i => Y(i) - designed(i));
+                    const spreadOf = a => a.length ? Math.max(...a) - Math.min(...a) : 0;
+                    if (spreadOf(centRel) > 0.3 || spreadOf(wideRel) > 0.3) errors.push(`${l} line not aligned (spread ${spreadOf(rel).toFixed(1)})`);
+                } else {
+                    const tops = m.map(Y);
+                    const spread = Math.max(...tops) - Math.min(...tops);
+                    if (spread > 34) warnings.push(`${l} line stretched ${spread.toFixed(0)} deep`);
+                }
+            });
+            // symmetry / side identity
+            topo.slots.forEach(([l, a, side], i) => {
+                if (side === 'L') {
+                    const j = topo.slots.findIndex(([l2, a2, s2]) => l2 === l && a2 === a && s2 === 'R');
+                    if (j < 0) { errors.push(`slot ${i} has no mirrored twin`); return; }
+                    if (mode === 'normal' && (Math.abs(Y(i) - Y(j)) > 0.3 || Math.abs(X(i) + X(j) - 100) > 0.3)) errors.push(`${slots[i].label} / ${slots[j].label} not symmetric`);
+                }
+                if ((side === 'L' && X(i) > 50.01) || (side === 'R' && X(i) < 49.99)) errors.push(`${slots[i].label} crossed to the wrong side`);
+                const fr = ANCHOR_FREEDOM[a];
+                if (fr && fr.laneFloor && Math.abs(X(i) - 50) < fr.laneFloor - 0.01) errors.push(`${slots[i].label} left its wide lane`);
+            });
+            // GK zone
+            const gk = slots.findIndex(s => s.geo.anchor === 'GK'), z = PITCH_GEOMETRY.gkZone;
+            if (Y(gk) < z.minY * 100 - 0.01 || Y(gk) > z.maxY * 100 + 0.01 || Math.abs(X(gk) - 50) > z.maxLateral * 100 + 0.01) errors.push('goalkeeper outside GK zone');
+            // line gaps + crossing unrelated lines
+            const occ = FORMATION_LINES.filter(l => l !== 'GK' && members[l]);
+            const lm = l => members[l].reduce((a, i) => a + Y(i), 0) / members[l].length;
+            for (let k = 0; k < occ.length - 1; k++) {
+                const gap = lm(occ[k]) - lm(occ[k + 1]);
+                if (mode === 'normal' && gap < 6) errors.push(`${occ[k]} / ${occ[k + 1]} lines merged (${gap.toFixed(1)})`);
+                if (gap > 40) warnings.push(`large gap ${occ[k]}→${occ[k + 1]} (${gap.toFixed(0)})`);
+                if (mode !== 'normal' && gap < -4) warnings.push(`${occ[k + 1]} line sits behind ${occ[k]}`);
             }
-            // Symmetry: every L slot needs a mirrored R twin on the same
-            // line + anchor (unless the formation declares asymmetric).
-            if (!topo.asymmetric) {
-                topo.slots.forEach(([line, anchor, side], i) => {
-                    if (side !== 'L') return;
-                    const twin = topo.slots.findIndex(([l2, a2, s2]) => l2 === line && a2 === anchor && s2 === 'R');
-                    if (twin === -1) errors.push(`Slot ${i} (${anchor} L on ${line}) has no mirrored R twin`);
+            slots.forEach((s, i) => {
+                const t = occ.indexOf(s.geo.line);
+                if (t < 0) return;
+                occ.forEach((l, k) => {
+                    if (Math.abs(k - t) < 2) return;
+                    const crossed = k > t ? Y(i) < lm(l) : Y(i) > lm(l);
+                    if (crossed) errors.push(`${s.label} (${s.geo.line}) crossed the ${l} line`);
+                });
+            });
+            // heat-map movement bounded + following the heat map
+            if (mode !== 'normal' && targets) {
+                slots.forEach((s, i) => {
+                    const tr = targets[i] && targets[i].trace;
+                    if (!tr) return;
+                    const fr = freedomOf(s);
+                    if (Math.abs(tr.heatmap.dTop) > fr.maxDepth + 0.01 || Math.abs(tr.heatmap.dLeft) > fr.maxLateral + 0.01) errors.push(`${s.label}: heat-map pull exceeds its anchor bound`);
+                    if (tr.heatTarget) {
+                        const wantX = heatDirection(tr.heatTarget.left - tr.rest.left, 3), gotX = heatDirection(tr.final.left - tr.rest.left, 1.5);
+                        const wantY = heatDirection(tr.heatTarget.top - tr.rest.top, 3), gotY = heatDirection(tr.final.top - tr.rest.top, 1.5);
+                        if (wantX && gotX && wantX !== gotX && Math.abs(tr.collision.dLeft) < 1) warnings.push(`${s.label} drifts ${gotX > 0 ? 'right' : 'left'} but its heat map pulls ${wantX > 0 ? 'right' : 'left'}`);
+                        if (wantY && gotY && wantY !== gotY && Math.abs(tr.collision.dTop) < 1 && !tr.phase.dTop) warnings.push(`${s.label} moves ${gotY < 0 ? 'up' : 'down'} against its heat map`);
+                    }
                 });
             }
-
-            // --- positions to check (base or live tactical) ---
-            let pts;
-            if (mode === 'base') {
-                pts = slots.map(s => ({ top: s.top, left: s.left }));
-            } else {
-                if (formationKey !== squadState.formation) {
-                    warnings.push(`Mode "${mode}" validates the live squad — "${formationKey}" isn't the active formation, checked base geometry instead`);
-                    pts = slots.map(s => ({ top: s.top, left: s.left }));
-                } else {
-                    const t = computeAllShapeTargets(mode);
-                    pts = slots.map((s, i) => t[i] ? { top: t[i].top, left: t[i].left } : { top: s.top, left: s.left });
-                }
-            }
-            const Y = i => pts[i].top / 100, X = i => pts[i].left / 100;
-            const lineOf = i => slots[i].geo.line, anchorOf = i => slots[i].geo.anchor;
-
-            // duplicates / overlap — measured in PIXEL space (after the
-            // trapezoid transform) against the real card footprint.
-            const pix = pts.map(p => getSlotPixelPosition(p));
-            for (let i = 0; i < 11; i++) for (let j = i + 1; j < 11; j++) {
-                const dy = Math.abs(pix[i].top - pix[j].top), dx = Math.abs(pix[i].left - pix[j].left);
-                if (dy < 1 && dx < 1) errors.push(`Duplicate position: slots ${i} (${slots[i].pos}) and ${j} (${slots[j].pos})`);
-                // ERROR = the solver's own guarantee is broken (closer than
-                // MIN_DEPTH_GAP in the same column). WARNING = cards touch
-                // (inside the card footprint) but the guarantee holds.
-                else if (dy < MIN_DEPTH_GAP - 0.5 && dx < GEO_CARD_BOX.w * 0.75) errors.push(`Overlap: ${slots[i].label} and ${slots[j].label} (Δy ${dy.toFixed(1)}%, Δx ${dx.toFixed(1)}%)`);
-                else if (dy < GEO_CARD_BOX.h * 0.9 && dx < GEO_CARD_BOX.w * 0.9) warnings.push(`Tight: ${slots[i].label} / ${slots[j].label} (Δy ${dy.toFixed(1)}%, Δx ${dx.toFixed(1)}%)`);
-            }
-            // defensive line coherence
-            const def = slots.map((_, i) => i).filter(i => lineOf(i) === 'DEF');
-            if (def.length) {
-                const spread = Math.max(...def.map(Y)) - Math.min(...def.map(Y));
-                if (spread > (mode === 'base' ? 0.05 : 0.14)) warnings.push(`Defensive line broken: depth spread ${(spread * 100).toFixed(1)}`);
-                const deepestNonDef = Math.max(...slots.map((_, i) => i).filter(i => !['GK', 'DEF'].includes(lineOf(i))).map(Y));
-                const cbs = def.filter(i => anchorOf(i) === 'CB');
-                if (cbs.length && Math.min(...cbs.map(Y)) < deepestNonDef - 0.02) warnings.push('A midfielder sits deeper than a centre-back');
-            }
-            // line gaps
-            const occupied = FORMATION_LINES.filter(l => l !== 'GK' && slots.some(s => s.geo.line === l));
-            const lineY = l => { const m = slots.map((_, i) => i).filter(i => lineOf(i) === l); return m.reduce((s, i) => s + Y(i), 0) / m.length; };
-            const gaps = [];
-            for (let k = 0; k < occupied.length - 1; k++) {
-                const gap = lineY(occupied[k]) - lineY(occupied[k + 1]);
-                gaps.push({ from: occupied[k], to: occupied[k + 1], gap: roundGeo(gap) });
-                if (gap > 0.36) warnings.push(`Large vertical gap ${occupied[k]}→${occupied[k + 1]}: ${(gap * 100).toFixed(1)}`);
-                // Line proximity is a STRUCTURAL check — in Attack/Defend the
-                // heat map legitimately merges lines (a pivot dropping into
-                // the back line), so there only an inverted order is flagged.
-                if (mode === 'base' && gap < 0.06) warnings.push(`Lines ${occupied[k]} and ${occupied[k + 1]} nearly merged (${(gap * 100).toFixed(1)})`);
-                if (mode !== 'base' && gap < -0.04) warnings.push(`Lines inverted: ${occupied[k + 1]} sits deeper than ${occupied[k]} (${(gap * 100).toFixed(1)})`);
-            }
-            const midLines = occupied.filter(l => ['DM', 'MID', 'AM'].includes(l));
-            if (midLines.length && occupied.includes('ATT')) {
-                const mostAdvancedMid = Math.min(...midLines.map(lineY));
-                if (mostAdvancedMid - lineY('ATT') < (mode === 'base' ? 0.12 : 0.05)) warnings.push(`Midfield too close to attack (${((mostAdvancedMid - lineY('ATT')) * 100).toFixed(1)})`);
-            }
-            // horizontal gaps within lines — only between neighbours where
-            // at least one is central (two wide anchors with nobody between
-            // them on the same line, e.g. 3-5-2 wing-backs, is the design:
-            // the centre is covered by another line).
-            occupied.forEach(l => {
-                const m = slots.map((_, i) => i).filter(i => lineOf(i) === l).sort((a, b) => X(a) - X(b));
-                for (let k = 0; k < m.length - 1; k++) {
-                    const bothWide = ANCHOR_TYPES[anchorOf(m[k])].wide && ANCHOR_TYPES[anchorOf(m[k + 1])].wide;
-                    if (!bothWide && X(m[k + 1]) - X(m[k]) > 0.5) warnings.push(`Large horizontal gap in ${l}: ${((X(m[k + 1]) - X(m[k])) * 100).toFixed(1)}`);
-                }
-            });
-            // wide players collapsing inward, striker too deep, GK zone
-            slots.forEach((s, i) => {
-                if (['W', 'WM', 'FB', 'WB'].includes(anchorOf(i)) && Math.abs(X(i) - 0.5) < 0.2) warnings.push(`${s.label} collapsed into the centre (x ${(X(i) * 100).toFixed(1)})`);
-                if (anchorOf(i) === 'ST' && Y(i) > 0.30) warnings.push(`${s.label} too deep for a striker (top ${(Y(i) * 100).toFixed(1)})`);
-                if (anchorOf(i) === 'GK') {
-                    const z = PITCH_GEOMETRY.gkZone;
-                    if (Y(i) < z.minY - 1e-6 || Y(i) > z.maxY + 1e-6 || Math.abs(X(i) - 0.5) > z.maxLateral + 1e-6) errors.push(`Goalkeeper outside GK zone (top ${(Y(i) * 100).toFixed(1)}, left ${(X(i) * 100).toFixed(1)})`);
-                }
-            });
-
-            const outfield = slots.map((_, i) => i).filter(i => lineOf(i) !== 'GK');
-            const metrics = {
-                teamWidth: roundGeo(Math.max(...outfield.map(X)) - Math.min(...outfield.map(X))),
-                teamDepth: roundGeo(Math.max(...outfield.map(Y)) - Math.min(...outfield.map(Y))),
-                lineGaps: gaps
-            };
-            return { formation: formationKey, mode, ok: errors.length === 0, errors, warnings, metrics };
+            return { formation: key, mode, ok: errors.length === 0, errors, warnings };
         }
 
-        // Validates every formation's base geometry once at startup — one
-        // console line when clean, a collapsed group with details otherwise.
+        function validateFormationGeometry(formationKey, opts) {
+            const mode = (opts && opts.mode) || 'base';
+            const fp = (opts && opts.footprint) || getCardFootprint();
+            if (!FORMATION_TOPOLOGY[formationKey]) return { formation: formationKey, mode, ok: false, errors: ['unknown formation'], warnings: [] };
+            if (mode === 'base') return validateShape(formationKey, 'normal', null, fp);
+            if (formationKey !== squadState.formation) return { ...validateShape(formationKey, 'normal', null, fp), warnings: ['not the active formation — checked structural geometry'] };
+            return validateShape(formationKey, mode, computeAllShapeTargets(mode), fp);
+        }
+
+        // Swaps in a formation + roles, runs a mode, restores state.
+        function withTestSquad(key, roles, fn) {
+            const saved = { formation: squadState.formation, teamRoles: squadState.teamRoles, cache: { ...shapeTargetsCache, byMode: shapeTargetsCache.byMode } };
+            squadState.formation = key; squadState.teamRoles = roles; invalidateShapeCaches();
+            try { return fn(); }
+            finally { squadState.formation = saved.formation; squadState.teamRoles = saved.teamRoles; shapeTargetsCache.key = saved.cache.key; shapeTargetsCache.byMode = saved.cache.byMode; }
+        }
+        function catalogRolesFor(key) {
+            const roles = {};
+            formationSlots[key].forEach((s, i) => {
+                const list = ROLE_CATALOG_RAW[ROLE_CATALOG_POS_ALIAS[s.pos] || s.pos];
+                if (list && list[0]) roles[i] = { role: list[0].role, focus: list[0].focuses[0].focus };
+            });
+            return roles;
+        }
+        function runFormationGeometryTests(opts) {
+            const o = Object.assign({ profile: null, roles: 'catalog', log: true }, opts || {});
+            const prevOverride = footprintOverride;
+            if (o.profile) footprintOverride = footprintFromPixels(FOOTPRINT_PROFILES[o.profile]);
+            const fp = getCardFootprint();
+            const rows = [];
+            try {
+                Object.keys(FORMATION_TOPOLOGY).forEach(key => {
+                    const baseRoles = catalogRolesFor(key);
+                    const roleSets = [baseRoles];
+                    if (o.roles === 'sweep') {
+                        formationSlots[key].forEach((s, i) => {
+                            (ROLE_CATALOG_RAW[ROLE_CATALOG_POS_ALIAS[s.pos] || s.pos] || []).forEach(r => r.focuses.forEach(f => {
+                                roleSets.push({ ...baseRoles, [i]: { role: r.role, focus: f.focus } });
+                            }));
+                        });
+                    }
+                    const row = { formation: key, modes: {} };
+                    // FORMATION must be independent of role/focus: compute it
+                    // with NO roles and with every role set; any difference
+                    // is a failure.
+                    const normalRef = withTestSquad(key, {}, () => { const t = computeAllShapeTargets('normal'); return formationSlots[key].map((_, i) => `${t[i].top.toFixed(3)},${t[i].left.toFixed(3)}`).join('|'); });
+                    const independenceErrors = [];
+                    roleSets.forEach(roles => withTestSquad(key, roles, () => {
+                        const t = computeAllShapeTargets('normal');
+                        const sig = formationSlots[key].map((_, i) => `${t[i].top.toFixed(3)},${t[i].left.toFixed(3)}`).join('|');
+                        if (sig !== normalRef) independenceErrors.push('FORMATION view changed with role/focus');
+                    }));
+                    ['normal', 'attack', 'defend'].forEach(mode => {
+                        const agg = { errors: new Set(), warnings: new Set(), runs: 0, failedRuns: 0, minIntegrity: 100 };
+                        (mode === 'normal' ? [baseRoles] : roleSets).forEach(roles => {
+                            withTestSquad(key, roles, () => {
+                                const t = computeAllShapeTargets(mode);
+                                const v = validateShape(key, mode, t, fp);
+                                agg.runs++; if (!v.ok) agg.failedRuns++;
+                                v.errors.forEach(e => agg.errors.add(e)); v.warnings.forEach(w => agg.warnings.add(w));
+                                if (t.meta && typeof t.meta.integrity === 'number') agg.minIntegrity = Math.min(agg.minIntegrity, t.meta.integrity);
+                            });
+                        });
+                        if (mode === 'normal') independenceErrors.forEach(e => agg.errors.add(e));
+                        row.modes[mode] = { status: agg.errors.size ? '✗' : (agg.warnings.size ? '⚠' : '✓'), errors: [...agg.errors], warnings: [...agg.warnings], runs: agg.runs, failedRuns: agg.failedRuns, minIntegrity: agg.minIntegrity };
+                    });
+                    rows.push(row);
+                });
+            } finally { footprintOverride = prevOverride; invalidateShapeCaches(); }
+            const header = `FORMATION GEOMETRY TEST — footprint ${fp.w.toFixed(1)}%×${fp.h.toFixed(1)}% (${o.profile || fp.source}), roles: ${o.roles}`;
+            const lines = rows.map(r => `${r.formation.padEnd(10)}  ${['normal', 'attack', 'defend'].map(m => `${r.modes[m].status} ${m[0].toUpperCase() + m.slice(1)}`).join('  ')}`);
+            const text = [header, ...lines].join('\n');
+            if (o.log) {
+                console.log(text);
+                rows.forEach(r => ['normal', 'attack', 'defend'].forEach(m => {
+                    const x = r.modes[m];
+                    if (x.errors.length || x.warnings.length) console.log(`  ${r.formation} ${m}:`, x);
+                }));
+            }
+            return { rows, text, footprint: fp };
+        }
         function validateAllFormations() {
-            const results = Object.keys(FORMATION_TOPOLOGY).map(k => validateFormationGeometry(k));
-            const bad = results.filter(r => !r.ok || r.warnings.length);
-            if (!bad.length) { console.info(`[geometry] ${results.length} formations validated — no issues`); return results; }
-            console.groupCollapsed(`[geometry] ${bad.length}/${results.length} formations have diagnostics`);
-            bad.forEach(r => console.log(r.formation, r));
-            console.groupEnd();
-            return results;
+            const res = Object.keys(FORMATION_TOPOLOGY).map(k => withTestSquad(k, {}, () => validateShape(k, 'normal', computeAllShapeTargets('normal'), getCardFootprint())));
+            const bad = res.filter(r => !r.ok);
+            if (!bad.length) console.info(`[geometry] ${res.length} formations: structural geometry valid`);
+            else { console.groupCollapsed(`[geometry] ${bad.length}/${res.length} formations have structural errors`); bad.forEach(r => console.log(r.formation, r.errors)); console.groupEnd(); }
+            return res;
         }
         window.validateFormationGeometry = validateFormationGeometry;
+        window.runFormationGeometryTests = runFormationGeometryTests;
         window.getFormationGeometry = getFormationGeometry;
 
-        validateAllFormations();
+        document.addEventListener('DOMContentLoaded', () => { try { validateAllFormations(); } catch (e) { console.warn('[geometry] validation failed', e); } });
 
         // Switches the pitch between its normal formation grid and the
         // attacking/defending shape. Deliberately does NOT call the full
@@ -3029,15 +3506,7 @@
         // renderFootballPitch) picks that up as a smooth slide for free.
         window.setPitchShapeMode = function(mode) {
             squadState.pitchShapeMode = mode;
-            const slots = formationSlots[squadState.formation];
-            document.querySelectorAll('#pitch-container [data-slot-idx]').forEach(wrapper => {
-                const idx = Number(wrapper.dataset.slotIdx);
-                const slot = slots[idx];
-                if (!slot) return;
-                const pos = getSlotPixelPosition(getShapeAdjustedSlot(slot, idx));
-                wrapper.style.top = pos.top + '%';
-                wrapper.style.left = pos.left + '%';
-            });
+            applyPitchPositions();
             ['normal', 'attack', 'defend'].forEach(m => {
                 const btn = document.getElementById(`shape-btn-${m}`);
                 if (btn) btn.classList.toggle('active', m === mode);
@@ -3091,62 +3560,54 @@
             if (!geo) { layer.innerHTML = ''; return; }
             const mode = squadState.pitchShapeMode || 'normal';
             const targets = computeAllShapeTargets(mode);
+            const meta = targets.meta || {};
+            const fp = meta.footprint || getCardFootprint();
             const slots = geo.slots;
             const px = (top, left) => getSlotPixelPosition({ top, left });
             const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
-            const sgn = v => (v > 0 ? '+' : '') + f1(v);
+            const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + f1(Math.abs(v));
+            const fin = i => targets[i] ? px(targets[i].top, targets[i].left) : px(slots[i].top, slots[i].left);
+            const finLocal = slots.map((s, i) => targets[i] ? { top: targets[i].top, left: targets[i].left } : { top: s.top, left: s.left });
+            const hitIdx = new Set();
+            findCardCollisions(finLocal, fp, false).forEach(h => { hitIdx.add(h.i); hitIdx.add(h.j); });
+            const touchIdx = new Set();
+            findCardCollisions(finLocal, fp, true).forEach(h => { touchIdx.add(h.i); touchIdx.add(h.j); });
 
             let svg = '';
-            // Lanes: centre, half-spaces and wide lanes, from the widest line.
             const maxW = Math.max(...slots.filter(s => s.geo.line !== 'GK').map(s => Math.abs(s.geo.x - 0.5))) * 2;
             [-0.5, -0.25, 0, 0.25, 0.5].forEach(f => {
-                const lx = 50 + f * maxW * 100;
-                const a = px(2, lx), b = px(98, lx);
+                const lx = 50 + f * maxW * 100, a = px(2, lx), b = px(98, lx);
                 svg += `<line x1="${a.left}" y1="2" x2="${b.left}" y2="98" stroke="#ffffff" stroke-opacity="0.18" stroke-dasharray="1.2 1.2" vector-effect="non-scaling-stroke" stroke-width="1"/>`;
             });
-            // Formation lines at each line's base depth.
             Object.values(geo.lines).forEach(l => {
                 if (l.key === 'GK') return;
-                const t = l.depth * 100;
-                const a = px(t, 2), b = px(t, 98);
+                const t = l.depth * 100, a = px(t, 2), b = px(t, 98);
                 svg += `<line x1="${a.left}" y1="${t}" x2="${b.left}" y2="${t}" stroke="${GEO_DEBUG_LINE_COLORS[l.key]}" stroke-opacity="0.55" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" stroke-width="1.5"/>`;
             });
-            // Relationships (between FINAL positions — what the user sees).
-            const fin = i => targets[i] ? px(targets[i].top, targets[i].left) : px(slots[i].top, slots[i].left);
             geo.relationships.forEach(r => {
                 const a = fin(r.a), b = fin(r.b);
                 svg += `<line x1="${a.left}" y1="${a.top}" x2="${b.left}" y2="${b.top}" stroke="${GEO_DEBUG_REL_COLORS[r.type] || '#94a3b8'}" stroke-opacity="${r.type === 'support' ? 0.35 : 0.7}" stroke-width="${r.type === 'support' ? 1 : 2}" vector-effect="non-scaling-stroke"/>`;
             });
-            // Collision zones, base anchors, base→final arrows.
             slots.forEach((s, i) => {
-                const t = targets[i];
-                const f = fin(i);
-                const b = px(s.top, s.left);
-                const local = t ? t : s;
-                const hw = getSlotPixelPosition({ top: local.top, left: local.left + HORIZONTAL_SAFE_DIST / 2 }).left - f.left;
-                const colliding = slots.some((_, j) => j !== i && targets[j] && t &&
-                    Math.abs(targets[j].top - t.top) < MIN_DEPTH_GAP * 0.6 && Math.abs(targets[j].left - t.left) < HORIZONTAL_SAFE_DIST * 0.6);
-                svg += `<ellipse cx="${f.left}" cy="${f.top}" rx="${Math.abs(hw)}" ry="${MIN_DEPTH_GAP / 2}" fill="${colliding ? '#ef4444' : '#ffffff'}" fill-opacity="${colliding ? 0.22 : 0.05}" stroke="${colliding ? '#ef4444' : '#ffffff'}" stroke-opacity="${colliding ? 0.8 : 0.2}" vector-effect="non-scaling-stroke" stroke-width="1"/>`;
+                const f = fin(i), b = px(s.top, s.left);
+                const col = hitIdx.has(i) ? '#ef4444' : (touchIdx.has(i) ? '#f59e0b' : '#ffffff');
+                // the REAL card rectangle the collision solver works with
+                svg += `<rect x="${f.left - fp.w / 2}" y="${f.top - fp.h / 2}" width="${fp.w}" height="${fp.h}" fill="${col}" fill-opacity="${hitIdx.has(i) ? 0.2 : 0.04}" stroke="${col}" stroke-opacity="${hitIdx.has(i) || touchIdx.has(i) ? 0.9 : 0.25}" vector-effect="non-scaling-stroke" stroke-width="1"/>`;
                 if (Math.hypot(f.left - b.left, f.top - b.top) > 0.4) {
                     svg += `<line x1="${b.left}" y1="${b.top}" x2="${f.left}" y2="${f.top}" stroke="#facc15" stroke-width="2" vector-effect="non-scaling-stroke" marker-end="url(#geo-arrow)"/>`;
                 }
                 svg += `<circle cx="${b.left}" cy="${b.top}" r="0.9" fill="none" stroke="${GEO_DEBUG_LINE_COLORS[s.geo.line]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+                const tr = targets[i] && targets[i].trace;
+                if (tr && tr.heatTarget) {
+                    const h = px(tr.heatTarget.top, tr.heatTarget.left);
+                    svg += `<line x1="${f.left}" y1="${f.top}" x2="${h.left}" y2="${h.top}" stroke="#fb923c" stroke-opacity="0.6" stroke-dasharray="1 1" vector-effect="non-scaling-stroke" stroke-width="1"/><circle cx="${h.left}" cy="${h.top}" r="0.7" fill="#fb923c"/>`;
+                }
             });
-
-            // HTML labels: anchor tag at each final point, spacing numbers
-            // between same-line neighbours.
             let labels = '';
             slots.forEach((s, i) => {
                 const f = fin(i);
-                labels += `<div class="absolute text-[9px] font-mono font-bold px-1 rounded" style="top:calc(${f.top}% - 34px);left:${f.left}%;transform:translateX(-50%);background:${GEO_DEBUG_LINE_COLORS[s.geo.line]};color:#0b1220;z-index:40">${s.geo.side !== 'C' ? s.geo.side : ''}${s.geo.anchor}</div>`;
+                labels += `<div class="absolute text-[9px] font-mono font-bold px-1 rounded" style="top:calc(${f.top}% - 34px);left:${f.left}%;transform:translateX(-50%);background:${GEO_DEBUG_LINE_COLORS[s.geo.line]};color:#0b1220;z-index:40">${i}·${s.geo.side !== 'C' ? s.geo.side : ''}${s.geo.anchor}</div>`;
             });
-            geo.relationships.filter(r => r.type !== 'support').forEach(r => {
-                const ta = targets[r.a] || slots[r.a], tb = targets[r.b] || slots[r.b];
-                const d = Math.hypot(ta.left - tb.left, ta.top - tb.top);
-                const a = fin(r.a), b = fin(r.b);
-                labels += `<div class="absolute text-[9px] font-mono text-white/90 bg-black/60 px-1 rounded" style="top:${(a.top + b.top) / 2}%;left:${(a.left + b.left) / 2}%;transform:translate(-50%,-50%);z-index:40">${f1(d)}</div>`;
-            });
-
             layer.innerHTML = `
                 <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <defs><marker id="geo-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#facc15"/></marker></defs>
@@ -3154,48 +3615,55 @@
                 </svg>
                 ${labels}`;
 
-            // Floating panel: pipeline table + validation.
             if (!panel) {
                 panel = document.createElement('div');
                 panel.id = 'geometry-debug-panel';
                 panel.setAttribute('dir', 'ltr');
-                panel.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:9999;max-width:min(760px,calc(100vw - 24px));max-height:46vh;overflow:auto;background:rgba(8,12,24,0.94);border:1px solid #334155;border-radius:12px;padding:10px 12px;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#e2e8f0;box-shadow:0 10px 30px rgba(0,0,0,.5)';
+                panel.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:9999;width:min(820px,calc(100vw - 24px));max-height:52vh;overflow:auto;background:rgba(8,12,24,0.95);border:1px solid #334155;border-radius:12px;padding:10px 12px;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#e2e8f0;box-shadow:0 10px 30px rgba(0,0,0,.5)';
                 document.body.appendChild(panel);
             }
-            const report = validateFormationGeometry(key, { mode: mode === 'normal' ? 'normal' : mode });
-            const rows = slots.map((s, i) => {
+            const report = validateShape(key, mode, targets, fp);
+            const row = (label, v, extra) => `<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#94a3b8">${label}</span><span>${v}${extra || ''}</span></div>`;
+            const pair = d => `${sgn(d.dTop)} / ${sgn(d.dLeft)}`;
+            const blocks = slots.map((s, i) => {
                 const t = targets[i], tr = t && t.trace;
-                const roleInfo = squadState.teamRoles && squadState.teamRoles[i];
                 if (!tr) return '';
-                const mod = (m) => `${sgn(m.dTop)}/${sgn(m.dLeft)}`;
-                return `<tr style="border-top:1px solid #1e293b">
-                    <td style="color:${GEO_DEBUG_LINE_COLORS[s.geo.line]}">${i}</td>
-                    <td>${s.pos}</td>
-                    <td title="${s.geo.anchorDesc} · ${s.geo.unit} · ${s.geo.lane}">${s.geo.side}${s.geo.anchor} <span style="color:#64748b">${s.geo.unit}</span></td>
-                    <td>${roleInfo ? `${roleInfo.role} · ${roleInfo.focus}` : '<span style="color:#64748b">—</span>'}</td>
-                    <td>${f1(tr.base.top)},${f1(tr.base.left)}</td>
-                    <td>${mod(tr.role)}</td>
-                    <td>${mod(tr.focus)}</td>
-                    <td>${mod(tr.heatmap)}<span style="color:#64748b">${tr.source === 'fallback' ? ' fb' : ''}</span></td>
-                    <td>${mod(tr.phase)}</td>
-                    <td>${tr.guard ? sgn(tr.guard) : '·'}</td>
-                    <td style="color:${tr.spacing ? '#fbbf24' : 'inherit'}">${tr.spacing ? sgn(tr.spacing) + (tr.blocker != null ? ` ←${tr.blocker}` : '') : '·'}</td>
-                    <td style="color:#facc15">${f1(tr.final.top)},${f1(tr.final.left)}</td>
-                </tr>`;
+                const roleInfo = squadState.teamRoles && squadState.teamRoles[i];
+                const border = hitIdx.has(i) ? '#ef4444' : (touchIdx.has(i) ? '#f59e0b' : '#1e293b');
+                return `<div style="border:1px solid ${border};border-radius:8px;padding:6px 8px;background:#0f172a">
+                    <div style="display:flex;justify-content:space-between;gap:6px;border-bottom:1px solid #1e293b;padding-bottom:3px;margin-bottom:3px">
+                        <b style="color:${GEO_DEBUG_LINE_COLORS[s.geo.line]}">${i} · ${s.pos}</b>
+                        <span style="color:#64748b">${s.geo.side}${s.geo.anchor} · ${s.geo.unit}</span>
+                    </div>
+                    <div style="color:#cbd5e1;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${roleInfo ? `${roleInfo.role} · ${roleInfo.focus}` : '—'}</div>
+                    ${row('Base', `${f1(tr.base.top)} / ${f1(tr.base.left)}`)}
+                    ${tr.fit && (tr.fit.dTop || tr.fit.dLeft) ? row('Fit', pair(tr.fit)) : ''}
+                    ${row('Role', pair(tr.role))}
+                    ${row('Focus', pair(tr.focus))}
+                    ${row('Heatmap', pair(tr.heatmap), tr.heatDamp < 1 ? ` <span style="color:#f59e0b">×${tr.heatDamp.toFixed(2)}</span>` : (tr.source === 'fallback' ? ' <span style="color:#64748b">fb</span>' : ''))}
+                    ${row('Phase', pair(tr.phase))}
+                    ${tr.guard ? row('Guard', sgn(tr.guard)) : ''}
+                    ${row('Collision', pair(tr.collision), tr.collisionNote ? ` <span style="color:#64748b">${tr.collisionNote}</span>` : '')}
+                    <div style="border-top:1px solid #1e293b;margin-top:3px;padding-top:3px">${row('<b style="color:#e2e8f0">Final</b>', `<b style="color:#facc15">${f1(tr.final.top)} / ${f1(tr.final.left)}</b>`)}</div>
+                </div>`;
             }).join('');
-            const issues = [...report.errors.map(e => `<div style="color:#f87171">✖ ${e}</div>`), ...report.warnings.map(w => `<div style="color:#fbbf24">▲ ${w}</div>`)].join('') || '<div style="color:#4ade80">✔ no geometry issues</div>';
+            const issues = [...report.errors.map(e => `<div style="color:#f87171">✖ ${e}</div>`), ...report.warnings.map(w => `<div style="color:#fbbf24">▲ ${w}</div>`)].join('') || '<div style="color:#4ade80">✔ all checks pass</div>';
+            const fitSteps = meta.fit && meta.fit.steps.length ? `structural fit: ${meta.fit.steps.length} steps` : 'structural fit: none needed';
             panel.innerHTML = `
-                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:6px">
-                    <b>Geometry debug · ${key} · ${mode}</b>
-                    <span style="color:#64748b">width ${f1(report.metrics.teamWidth * 100)} · depth ${f1(report.metrics.teamDepth * 100)} · <a href="#" onclick="window.toggleGeometryDebug(false);return false" style="color:#93c5fd">close</a></span>
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:4px">
+                    <b>Geometry debug · ${key} · ${mode.toUpperCase()}</b>
+                    <span style="color:#64748b"><a href="#" onclick="window.runFormationGeometryTestsInPanel();return false" style="color:#93c5fd">run test suite</a> · <a href="#" onclick="window.toggleGeometryDebug(false);return false" style="color:#93c5fd">close</a></span>
                 </div>
-                <div style="color:#94a3b8;margin-bottom:4px">${FORMATION_TOPOLOGY[key].desc}</div>
-                <table style="border-collapse:collapse;width:100%;white-space:nowrap">
-                    <thead style="color:#94a3b8;text-align:left"><tr><th>#</th><th>pos</th><th>anchor</th><th>role · focus</th><th>base t,l</th><th>role Δ</th><th>focus Δ</th><th>heatmap Δ</th><th>phase Δ</th><th>guard</th><th>spacing</th><th>final t,l</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>
-                <div style="margin-top:6px">${issues}</div>`;
+                <div style="color:#94a3b8;margin-bottom:6px">${FORMATION_TOPOLOGY[key].desc} · card ${f1(fp.w)}%×${f1(fp.h)}% (${fp.source}) · ${fitSteps}${mode !== 'normal' ? ` · integrity ${meta.integrityPre}→${meta.integrity}` : ''}</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:6px">${blocks}</div>
+                <div style="margin-top:8px">${issues}</div>
+                <pre id="geometry-test-output" style="margin-top:8px;white-space:pre;color:#cbd5e1"></pre>`;
         }
+        window.runFormationGeometryTestsInPanel = function() {
+            const out = document.getElementById('geometry-test-output');
+            const res = runFormationGeometryTests({ log: true });
+            if (out) out.textContent = res.text;
+        };
 
         // Paints the individual roam-area "cloud" for whichever slot is
         // currently selected (squadState.heatZoneSlotIdx) using the exact
@@ -3220,13 +3688,14 @@
             const focusEntry = getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx);
             if (!focusEntry) { container.innerHTML = ''; return; }
 
-            const OPACITY = { '0': 0, '1': 0.16, '2': 0.30, '3': 0.48 };
-            const grid = HEATMAP_RAW.grid;
+            // Drawn from buildHeatmapDistribution — the exact object the
+            // tactical engine derives its targets from (one interpretation).
+            const dist = buildHeatmapDistribution(focusEntry.levels);
+            if (!dist) { container.innerHTML = ''; return; }
             let html = '';
-            for (let i = 0; i < focusEntry.levels.length; i++) {
-                const op = OPACITY[focusEntry.levels[i]];
-                if (!op) continue;
-                const tile = grid[i];
+            for (const cell of dist.cells) {
+                const op = cell.opacity;
+                const tile = cell;
                 // Grid tile coordinates are already absolute container-
                 // relative percentages (that's what Futbin's own viewBox
                 // gave us) — used directly, NOT run through
@@ -3237,6 +3706,13 @@
                 // this exact slot via getPositionSideKey, so tile.left is
                 // already on the right side of the pitch as scraped.
                 html += `<div class="absolute" style="top:${tile.top}%; left:${tile.left}%; width:150px; height:110px; transform:translate(-50%,-50%); background:radial-gradient(circle, rgba(255,100,20,${op}) 0%, rgba(255,100,20,0) 72%); filter:blur(4px);"></div>`;
+            }
+            // Debug mode: mark the centre / attack / defend targets the
+            // engine computed from this same distribution.
+            if (geometryDebugEnabled) {
+                [['centre', dist.centre, '#ffffff', 'C'], ['attack', dist.attack, '#f87171', 'A'], ['defend', dist.defend, '#60a5fa', 'D']].forEach(([n, pt, col, t]) => {
+                    html += `<div class="absolute flex items-center justify-center text-[9px] font-black" title="heat-map ${n} target" style="top:${pt.top}%;left:${pt.left}%;width:16px;height:16px;transform:translate(-50%,-50%);border-radius:9999px;background:${col};color:#0b1220;box-shadow:0 0 0 2px rgba(0,0,0,.5);z-index:2">${t}</div>`;
+                });
             }
             container.innerHTML = html;
         }
@@ -8640,6 +9116,9 @@
             });
             renderPlayerHeatZoneOverlay();
             renderGeometryDebugOverlay();
+            // Re-solve if the real rendered card size differs from the
+            // estimate positions were computed with (first paint, resize).
+            syncMeasuredCardFootprint();
         }
 
         // ===================================================================
