@@ -8955,19 +8955,27 @@
         function renderFootballPitch() {
             const container = document.getElementById('pitch-container');
             if (!container) return;
-            // Formation change → remember where every card was, so the new
-            // layout can animate FROM there (see runFormationTransition).
+            // FORMATION CHANGE → keep the existing card elements.
+            // Only on a formation change, the container is NOT cleared: each
+            // new card is matched by key (same player, or the Nth empty slot
+            // of that position) to the element already on screen, which is
+            // updated in place and simply given its new top/left — the
+            // browser's own CSS transition then carries it from wherever it
+            // currently is to its new slot (even mid-way through a previous
+            // formation change). Destinations come from the unchanged
+            // formation pipeline below; this is purely DOM/animation.
+            // Every other render keeps the original full rebuild.
             const prevFormation = container.dataset.formation;
             const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            const flipTransition = !!prevFormation && prevFormation !== squadState.formation && !reduceMotion;
-            const prevCards = {};
-            if (flipTransition) {
-                container.querySelectorAll('[data-flip-key]').forEach(el => {
-                    prevCards[el.dataset.flipKey] = { el, top: el.style.top, left: el.style.left };
-                });
+            const animateFormation = !!prevFormation && prevFormation !== squadState.formation && !reduceMotion;
+            const existingCards = {};
+            const keptCards = [], enteringCards = [];
+            if (animateFormation) {
+                container.querySelectorAll(':scope > [data-flip-key]').forEach(el => { existingCards[el.dataset.flipKey] = el; });
+            } else {
+                container.innerHTML = '';
             }
             const emptyOrdinal = {};
-            container.innerHTML = '';
 
             const slots = formationSlots[squadState.formation];
             // Team-aware role assignment — computed once per render for the
@@ -9129,87 +9137,102 @@
                     `;
                     wrapper.onclick = () => window.openAddPlayerModal(idx);
                 }
-                container.appendChild(wrapper);
+                const kept = animateFormation ? existingCards[wrapper.dataset.flipKey] : null;
+                if (kept) {
+                    delete existingCards[wrapper.dataset.flipKey];
+                    adoptCardState(kept, wrapper);
+                    keptCards.push({ el: kept, top: wrapper.style.top, left: wrapper.style.left });
+                } else {
+                    container.appendChild(wrapper);
+                    if (animateFormation) enteringCards.push(wrapper);
+                }
             });
+            if (animateFormation) animateFormationChange(container, keptCards, enteringCards, Object.values(existingCards));
             renderPlayerHeatZoneOverlay();
             renderGeometryDebugOverlay();
             // Re-solve if the real rendered card size differs from the
             // estimate positions were computed with (first paint, resize).
             syncMeasuredCardFootprint();
             container.dataset.formation = squadState.formation;
-            if (flipTransition) runFormationTransition(container, prevCards);
         }
 
-        // Smooth formation change (FLIP): every card is first built at its
-        // FINAL spot, then pulled back to where that same player stood in
-        // the old formation and released, so it slides across the pitch
-        // into its new slot. Cards glide in a front-to-back wave. Players
-        // who left the XI fade out where they stood; players new to the XI
-        // (or a slot that didn't exist before) fade and scale in once the
-        // others are on their way. Purely visual — squad state was already
-        // final before this runs.
+        // Moves a freshly rendered card's state onto the card element that
+        // is already on screen for the same player/empty slot: classes,
+        // slot index, click handler and markup (slot-specific bits like
+        // chemistry, role strip and lock can change with the formation).
+        // The player photo <img> node itself is kept when its src is the
+        // same, so the image never reloads or blinks. Position is NOT
+        // copied here — animateFormationChange moves it.
+        function adoptCardState(kept, fresh) {
+            kept.className = fresh.className;
+            kept.dataset.slotIdx = fresh.dataset.slotIdx;
+            kept.dataset.flipKey = fresh.dataset.flipKey;
+            kept.onclick = fresh.onclick;
+            kept.style.transform = fresh.style.transform;
+            kept.style.opacity = '';
+            kept.style.pointerEvents = '';
+            if (kept.innerHTML !== fresh.innerHTML) {
+                const oldImg = kept.querySelector('img');
+                kept.innerHTML = fresh.innerHTML;
+                const newImg = kept.querySelector('img');
+                if (oldImg && newImg && oldImg.getAttribute('src') === newImg.getAttribute('src')) {
+                    oldImg.className = newImg.className;
+                    newImg.replaceWith(oldImg);
+                }
+            }
+        }
+
+        // Formation-change choreography (DOM only):
+        //   kept     — same element, new top/left; a front-to-back wave
+        //   entering — new to the XI: fade + scale in once the others move
+        //   leaving  — no longer in the XI: fade out where they stand
+        // Afterwards every card gets its normal Attack/Defend slide back.
         const FORMATION_MOVE_MS = 700;
         const FORMATION_EASE = 'cubic-bezier(.22,.8,.26,1)';
         const CARD_REST_TRANSITION = 'top 0.6s ease, left 0.6s ease';
-        function runFormationTransition(container, prevCards) {
-            const moving = [], entering = [];
-            container.querySelectorAll('[data-flip-key]').forEach(el => {
-                const prev = prevCards[el.dataset.flipKey];
-                const target = { top: el.style.top, left: el.style.left };
-                const moves = prev && (prev.top !== target.top || prev.left !== target.left);
-                if (moves || !prev) el.style.transition = 'none'; // unmoved cards keep their normal slide
-                if (moves) {
-                    el.style.top = prev.top;
-                    el.style.left = prev.left;
-                    moving.push({ el, target });
-                } else if (!prev) {
-                    el.style.opacity = '0';
-                    el.style.transform = 'translate(-50%, -50%) scale(0.8)';
-                    entering.push({ el, target });
-                }
-                if (prev) delete prevCards[el.dataset.flipKey];
+        function animateFormationChange(container, kept, entering, leaving) {
+            // kept: elements are still attached with their OLD top/left, so
+            // setting the new values triggers a real CSS transition.
+            kept.sort((a, b) => parseFloat(a.top) - parseFloat(b.top));
+            kept.forEach(({ el, top, left }, k) => {
+                const d = k * 25;
+                el.style.transition = `top ${FORMATION_MOVE_MS}ms ${FORMATION_EASE} ${d}ms, left ${FORMATION_MOVE_MS}ms ${FORMATION_EASE} ${d}ms`;
+                el.style.top = top;
+                el.style.left = left;
             });
-            // Leaving players: re-attach the old card as a non-interactive
-            // ghost and fade it out in place.
-            Object.values(prevCards).forEach(({ el }) => {
+            leaving.forEach(el => {
                 el.removeAttribute('data-slot-idx');
                 el.removeAttribute('data-flip-key');
                 el.style.pointerEvents = 'none';
                 el.style.transition = 'opacity 320ms ease, transform 320ms ease';
-                container.appendChild(el);
-                requestAnimationFrame(() => {
-                    el.style.opacity = '0';
-                    el.style.transform = 'translate(-50%, -50%) scale(0.8)';
-                });
+                el.style.opacity = '0';
+                el.style.transform = 'translate(-50%, -50%) scale(0.8)';
                 setTimeout(() => el.remove(), 380);
             });
-            void container.offsetHeight; // commit the start positions
-            // front-to-back wave: attackers first, keeper last
-            moving.sort((a, b) => parseFloat(a.target.top) - parseFloat(b.target.top));
-            requestAnimationFrame(() => {
-                moving.forEach(({ el, target }, k) => {
-                    const d = k * 25;
-                    el.style.transition = `top ${FORMATION_MOVE_MS}ms ${FORMATION_EASE} ${d}ms, left ${FORMATION_MOVE_MS}ms ${FORMATION_EASE} ${d}ms`;
-                    el.style.top = target.top;
-                    el.style.left = target.left;
-                });
-                entering.forEach(({ el }, k) => {
+            entering.forEach(el => {
+                el.style.transition = 'none';
+                el.style.opacity = '0';
+                el.style.transform = 'translate(-50%, -50%) scale(0.8)';
+            });
+            if (entering.length) {
+                void container.offsetHeight; // commit the entering start state
+                requestAnimationFrame(() => entering.forEach((el, k) => {
                     const d = 220 + k * 45;
                     el.style.transition = `opacity 380ms ease ${d}ms, transform 420ms ${FORMATION_EASE} ${d}ms`;
                     el.style.opacity = '1';
                     el.style.transform = 'translate(-50%, -50%)';
+                }));
+            }
+            const total = FORMATION_MOVE_MS + kept.length * 25 + 220 + entering.length * 45 + 450;
+            clearTimeout(animateFormationChange.restTimer);
+            animateFormationChange.restTimer = setTimeout(() => {
+                container.querySelectorAll(':scope > [data-flip-key]').forEach(el => {
+                    el.style.transition = CARD_REST_TRANSITION;
+                    el.style.opacity = '';
                 });
-                // Hand the cards back to the normal Attack/Defend slide.
-                const total = FORMATION_MOVE_MS + moving.length * 25 + 220 + entering.length * 45 + 450;
-                setTimeout(() => {
-                    [...moving, ...entering].forEach(({ el }) => {
-                        if (!el.isConnected) return;
-                        el.style.transition = CARD_REST_TRANSITION;
-                        el.style.opacity = '';
-                    });
-                }, total);
-            });
+            }, total);
         }
+
 
         // ===================================================================
         // SQUAD IDENTITY — quick "how does this squad play" read
