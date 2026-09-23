@@ -10493,42 +10493,305 @@
         }
 
         // ===================================================================
-        // PLAYER DEEP-DIVE — on-demand per-player detail fetch
+        // API INFRASTRUCTURE — shared by the bulk DB sync and player detail
+        // ===================================================================
+        // Diagnostics: counters are always collected (cheap) and readable
+        // any time via window.fc27ApiStats. Event logging to the console
+        // only happens when enabled with ?debug=api (or ?debug=all), or
+        // localStorage.fc27_debug_api = '1'. Normal use logs nothing new.
+        const API_DEBUG = (() => {
+            try {
+                return /[?&]debug=(api|all)\b/.test(location.search) || localStorage.getItem('fc27_debug_api') === '1';
+            } catch (e) { return false; }
+        })();
+        const fc27ApiStats = {
+            db: { cacheHit: null, cacheAgeMs: null, refreshRequired: null, conditional: null, sourceVersion: null,
+                  pagesFetched: 0, pagesFailed: 0, pagesRecovered: 0, concurrency: null, transport: null, durationMs: null, changed: null, fingerprint: null },
+            detail: { memoryHit: 0, memoryStaleHit: 0, idbHit: 0, idbStaleHit: 0, apiRequests: 0, directSuccess: 0, proxyFallback: 0,
+                      proxySuccess: 0, timeouts: 0, failures: 0, deduplicated: 0, notFound: 0, rateLimited: 0, backgroundRefreshes: 0, lastDurationMs: null }
+        };
+        window.fc27ApiStats = fc27ApiStats;
+        function apiDebug(event, data) {
+            if (!API_DEBUG) return;
+            try { console.debug(`[api] ${event}`, data || ''); } catch (e) { /* ignore */ }
+        }
+
+        // What the browser has taught us this session about reaching
+        // EasySBC directly. Browsers deliberately don't expose WHY a fetch
+        // failed at the network level (a CORS rejection and an offline
+        // network both surface as a TypeError), so this is learned, not
+        // detected: once a direct request fails at the network level while
+        // the proxy works, later requests go straight to the proxy instead
+        // of paying for a doomed direct attempt every time. The bulk sync
+        // records the same lesson from its page-1 probe.
+        const apiTransport = { directBlocked: false, rateLimitedUntil: 0 };
+
+        // fetch() with a hard timeout via AbortController. Rejects with an
+        // error whose .kind is 'timeout' on expiry.
+        async function fetchWithTimeout(url, options, timeoutMs) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await fetch(url, { ...(options || {}), signal: controller.signal });
+            } catch (err) {
+                if (err && err.name === 'AbortError') { const e = new Error(`timed out after ${timeoutMs}ms`); e.kind = 'timeout'; throw e; }
+                const e = new Error((err && err.message) || 'network error'); e.kind = 'network'; throw e;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+        // Coarse, honest failure classes:
+        //   network   — TypeError from fetch: CORS rejection OR offline OR
+        //               DNS; the browser does not say which → fall back
+        //   timeout   — our AbortController fired → fall back
+        //   not-found — HTTP 404 → the card isn't there; never retried
+        //   rate-limited — HTTP 429 → back off, don't hammer
+        //   server    — HTTP 5xx → one fallback attempt is reasonable
+        //   http      — any other non-OK status
+        //   malformed — body wasn't the JSON shape we expect
+        function httpError(status) {
+            const e = new Error(`HTTP ${status}`);
+            e.status = status;
+            e.kind = status === 404 ? 'not-found' : status === 429 ? 'rate-limited' : status >= 500 ? 'server' : 'http';
+            return e;
+        }
+        const errorKind = err => (err && err.kind) || 'network';
+        // Kinds where trying the OTHER transport can plausibly help.
+        const FALLBACK_KINDS = new Set(['network', 'timeout', 'server']);
+
+        // ===================================================================
+        // PLAYER DEEP-DIVE — on-demand per-player detail
         // ===================================================================
         // https://api-fc27.easysbc.io/players/{resourceId} returns MUCH more
         // than the bulk list endpoint: real height (cm), weight, gender,
         // bodyTypeId, and all 34 granular in-game sub-attributes — including
         // the actual Acceleration/Agility/Strength substats the real
-        // AcceleRATE formula needs (the bulk list only has 6 broad
-        // composites, forcing the proxy-based estimate used elsewhere).
-        // This is deliberately NOT fetched for all ~300 loaded players (that
-        // would mean 300 extra requests just to open the squad view) — only
-        // lazily, for whichever single player's modal is currently open, and
-        // cached afterward so reopening the same player is instant.
-        const playerDetailCache = {};
+        // AcceleRATE formula needs. It is deliberately NEVER fetched in bulk
+        // (and the bulk DB sync never touches it) — only lazily, for the one
+        // player whose modal is open.
+        //
+        //   getPlayerDetail(id)
+        //     1. memory cache      fresh → return · stale → return + refresh
+        //     2. in-flight lookup  same player already loading → SAME promise
+        //     3. IndexedDB         fresh → return · stale → return + refresh
+        //     4. API               direct → (network/timeout/5xx) → proxy
+        //   A successful API result is written to memory, then IndexedDB
+        //   (an IndexedDB failure never affects the returned data).
+        //
+        // Detail freshness is independent of the 6-hour bulk TTL: height,
+        // body type and sub-stats of a card change rarely.
+        const PLAYER_DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+        const PLAYER_DETAIL_CACHE_VERSION = 1;          // bump to invalidate stored details after a shape change
+        const PLAYER_DETAIL_TIMEOUT_MS = 5000;          // direct request
+        const PLAYER_DETAIL_PROXY_TIMEOUT_MS = 8000;    // the public proxy is slower
+        const PLAYER_DETAIL_NOT_FOUND_TTL_MS = 60 * 60 * 1000;   // don't re-ask about a 404'd card for an hour
+        const PLAYER_DETAIL_RATE_LIMIT_BACKOFF_MS = 30 * 1000;   // default 429 back-off when no Retry-After
+        const PLAYER_DETAIL_IDB_PRUNE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+        // resourceId → { data, fetchedAt }
+        const playerDetailCache = new Map();
+        // resourceId → Promise (a full lookup: IndexedDB then API)
+        const playerDetailLookupInflight = new Map();
+        // resourceId → Promise (the network request itself — shared by a
+        // foreground miss and any background revalidation)
+        const playerDetailInflight = new Map();
+        // resourceId → expiry time, for cards the API says don't exist
+        const playerDetailNotFound = new Map();
         let currentModalResourceId = null;
 
-        async function fetchPlayerDetailOnce(url) {
-            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return await res.json();
+        const isDetailFresh = entry => entry && (Date.now() - entry.fetchedAt) < PLAYER_DETAIL_CACHE_TTL_MS;
+
+        async function requestPlayerDetailJson(url, timeoutMs) {
+            const res = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } }, timeoutMs);
+            if (!res.ok) {
+                const err = httpError(res.status);
+                if (res.status === 429) {
+                    const ra = parseInt(res.headers.get('retry-after'), 10);
+                    err.retryAfterMs = Number.isFinite(ra) ? ra * 1000 : PLAYER_DETAIL_RATE_LIMIT_BACKOFF_MS;
+                }
+                throw err;
+            }
+            let data;
+            try { data = await res.json(); } catch (e) { const m = new Error('malformed JSON'); m.kind = 'malformed'; throw m; }
+            if (!data || typeof data !== 'object' || Array.isArray(data)) { const m = new Error('unexpected response shape'); m.kind = 'malformed'; throw m; }
+            return data;
         }
 
-        async function fetchPlayerDetail(resourceId) {
-            if (playerDetailCache[resourceId]) return playerDetailCache[resourceId];
+        // ONE attempt per transport, never a retry loop — a modal needs a
+        // fast answer more than a persistent one:
+        //   direct → ok ✓ | network/timeout/5xx → proxy → ok ✓ | fail ✗
+        //   (skips straight to the proxy once direct is known blocked)
+        async function fetchPlayerDetailFromApi(resourceId) {
             const directUrl = `https://api-fc27.easysbc.io/players/${resourceId}`;
-            let data = null;
+            const proxyUrl = CORS_PROXY + encodeURIComponent(directUrl);
+            const started = performance.now();
+            fc27ApiStats.detail.apiRequests++;
             try {
-                data = await fetchPlayerDetailOnce(directUrl);
-            } catch (e) {
-                try {
-                    data = await fetchPlayerDetailOnce(CORS_PROXY + encodeURIComponent(directUrl));
-                } catch (e2) {
-                    data = null;
+                if (!apiTransport.directBlocked) {
+                    try {
+                        const data = await requestPlayerDetailJson(directUrl, PLAYER_DETAIL_TIMEOUT_MS);
+                        fc27ApiStats.detail.directSuccess++;
+                        apiDebug('detail: direct ok', { resourceId, ms: Math.round(performance.now() - started) });
+                        return data;
+                    } catch (err) {
+                        const kind = errorKind(err);
+                        if (kind === 'timeout') fc27ApiStats.detail.timeouts++;
+                        apiDebug('detail: direct failed', { resourceId, kind, message: err.message });
+                        if (!FALLBACK_KINDS.has(kind)) throw err;   // 404 / 429 / malformed: the proxy won't fix it
+                        if (kind === 'network') apiTransport.directBlocked = true; // most likely CORS — learn it
+                    }
                 }
+                fc27ApiStats.detail.proxyFallback++;
+                try {
+                    const data = await requestPlayerDetailJson(proxyUrl, PLAYER_DETAIL_PROXY_TIMEOUT_MS);
+                    fc27ApiStats.detail.proxySuccess++;
+                    apiDebug('detail: proxy ok', { resourceId, ms: Math.round(performance.now() - started) });
+                    return data;
+                } catch (err) {
+                    if (errorKind(err) === 'timeout') fc27ApiStats.detail.timeouts++;
+                    // If the proxy itself can't be reached at all, the
+                    // earlier "direct is blocked" lesson may have been an
+                    // offline blip — let the next request try direct again.
+                    if (errorKind(err) === 'network') apiTransport.directBlocked = false;
+                    apiDebug('detail: proxy failed', { resourceId, kind: errorKind(err), message: err.message });
+                    throw err;
+                }
+            } finally {
+                fc27ApiStats.detail.lastDurationMs = Math.round(performance.now() - started);
             }
-            if (data) playerDetailCache[resourceId] = data;
-            return data;
+        }
+
+        // Network step with in-flight de-duplication: every caller asking
+        // for the same player while a request is running gets the SAME
+        // promise. Resolves to { data } or { data: null, error: kind } —
+        // never rejects, so the UI can't get stuck.
+        function revalidatePlayerDetail(resourceId) {
+            if (playerDetailInflight.has(resourceId)) {
+                fc27ApiStats.detail.deduplicated++;
+                return playerDetailInflight.get(resourceId);
+            }
+            if (Date.now() < apiTransport.rateLimitedUntil) {
+                fc27ApiStats.detail.rateLimited++;
+                return Promise.resolve({ data: null, error: 'rate-limited' });
+            }
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                return Promise.resolve({ data: null, error: 'offline' });
+            }
+            const promise = fetchPlayerDetailFromApi(resourceId)
+                .then(data => {
+                    const entry = { data, fetchedAt: Date.now() };
+                    playerDetailCache.set(resourceId, entry);
+                    playerDetailNotFound.delete(resourceId);
+                    savePlayerDetailCache(resourceId, data, entry.fetchedAt); // fire-and-forget; never throws
+                    return { data };
+                })
+                .catch(err => {
+                    const kind = errorKind(err);
+                    fc27ApiStats.detail.failures++;
+                    if (kind === 'not-found') { fc27ApiStats.detail.notFound++; playerDetailNotFound.set(resourceId, Date.now() + PLAYER_DETAIL_NOT_FOUND_TTL_MS); }
+                    if (kind === 'rate-limited') { fc27ApiStats.detail.rateLimited++; apiTransport.rateLimitedUntil = Date.now() + (err.retryAfterMs || PLAYER_DETAIL_RATE_LIMIT_BACKOFF_MS); }
+                    return { data: null, error: kind };
+                })
+                .finally(() => playerDetailInflight.delete(resourceId));
+            playerDetailInflight.set(resourceId, promise);
+            return promise;
+        }
+
+        // The public entry point. Resolves (never rejects) to:
+        //   { data, source, stale, error, refresh }
+        //   source  — 'memory' | 'idb' | 'network' | 'none'
+        //   stale   — true when cached data older than the TTL is returned
+        //   refresh — a Promise<{data}|{data:null,error}> when a background
+        //             revalidation was started for stale data, else null
+        //   error   — failure kind when no data could be produced
+        function getPlayerDetail(resourceId) {
+            const mem = playerDetailCache.get(resourceId);
+            if (mem) {
+                if (isDetailFresh(mem)) { fc27ApiStats.detail.memoryHit++; return Promise.resolve({ data: mem.data, source: 'memory', stale: false, refresh: null }); }
+                fc27ApiStats.detail.memoryStaleHit++;
+                fc27ApiStats.detail.backgroundRefreshes++;
+                return Promise.resolve({ data: mem.data, source: 'memory', stale: true, refresh: revalidatePlayerDetail(resourceId) });
+            }
+            const nf = playerDetailNotFound.get(resourceId);
+            if (nf && nf > Date.now()) return Promise.resolve({ data: null, source: 'none', stale: false, error: 'not-found', refresh: null });
+
+            if (playerDetailLookupInflight.has(resourceId)) {
+                fc27ApiStats.detail.deduplicated++;
+                return playerDetailLookupInflight.get(resourceId);
+            }
+            const lookup = (async () => {
+                const stored = await getCachedPlayerDetail(resourceId);
+                if (stored) {
+                    const entry = { data: stored.data, fetchedAt: stored.fetchedAt };
+                    playerDetailCache.set(resourceId, entry);
+                    if (isDetailFresh(entry)) { fc27ApiStats.detail.idbHit++; return { data: entry.data, source: 'idb', stale: false, refresh: null }; }
+                    fc27ApiStats.detail.idbStaleHit++;
+                    fc27ApiStats.detail.backgroundRefreshes++;
+                    return { data: entry.data, source: 'idb', stale: true, refresh: revalidatePlayerDetail(resourceId) };
+                }
+                const net = await revalidatePlayerDetail(resourceId);
+                return { data: net.data, source: net.data ? 'network' : 'none', stale: false, error: net.error, refresh: null };
+            })().finally(() => playerDetailLookupInflight.delete(resourceId));
+            playerDetailLookupInflight.set(resourceId, lookup);
+            return lookup;
+        }
+
+        // Kept for compatibility with the original API: data or null.
+        async function fetchPlayerDetail(resourceId) {
+            return (await getPlayerDetail(resourceId)).data || null;
+        }
+
+        // --- IndexedDB detail store (see openFc27IndexedDB for the schema) ---
+        // Record: { resourceId, data, fetchedAt, expiresAt, version }.
+        // Every function here swallows its own errors: caching must never
+        // be the reason a modal fails.
+        async function getCachedPlayerDetail(resourceId) {
+            try {
+                const db = await openFc27IndexedDB();
+                const rec = await new Promise((resolve, reject) => {
+                    const req = db.transaction(FC27_IDB_DETAIL_STORE, 'readonly').objectStore(FC27_IDB_DETAIL_STORE).get(String(resourceId));
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => reject(req.error);
+                });
+                if (!rec || rec.version !== PLAYER_DETAIL_CACHE_VERSION || !rec.data) return null;
+                return rec;
+            } catch (e) {
+                apiDebug('detail: IndexedDB read failed', e && e.message);
+                return null;
+            }
+        }
+        let playerDetailPruned = false;
+        async function savePlayerDetailCache(resourceId, data, fetchedAt) {
+            try {
+                const db = await openFc27IndexedDB();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(FC27_IDB_DETAIL_STORE, 'readwrite');
+                    tx.objectStore(FC27_IDB_DETAIL_STORE).put({
+                        resourceId: String(resourceId), data, fetchedAt,
+                        expiresAt: fetchedAt + PLAYER_DETAIL_CACHE_TTL_MS, version: PLAYER_DETAIL_CACHE_VERSION
+                    });
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+                if (!playerDetailPruned) { playerDetailPruned = true; prunePlayerDetailCache(db); }
+            } catch (e) {
+                apiDebug('detail: IndexedDB write failed (data still used)', e && e.message);
+            }
+        }
+        // Once per session: drop details nobody has looked at for a week,
+        // so the store can't grow without bound.
+        function prunePlayerDetailCache(db) {
+            try {
+                const cutoff = Date.now() - PLAYER_DETAIL_IDB_PRUNE_AGE_MS;
+                const tx = db.transaction(FC27_IDB_DETAIL_STORE, 'readwrite');
+                const req = tx.objectStore(FC27_IDB_DETAIL_STORE).openCursor();
+                req.onsuccess = () => {
+                    const cur = req.result;
+                    if (!cur) return;
+                    if (!cur.value || cur.value.fetchedAt < cutoff || cur.value.version !== PLAYER_DETAIL_CACHE_VERSION) cur.delete();
+                    cur.continue();
+                };
+            } catch (e) { /* best effort */ }
         }
 
         // Real AcceleRATE using genuine height/gender/substats from the
@@ -11149,176 +11412,225 @@
         }
 
 
+        // Player modal ← detail. The modal always opens instantly from bulk
+        // data; this fills the detail-dependent sections afterwards.
+        //   • cached detail (memory / IndexedDB) paints immediately, even if
+        //     stale — a stale entry is then refreshed in the background and
+        //     re-painted only if the data actually changed
+        //   • every open gets a token; a response is applied only if its
+        //     token is still current AND the modal is still open, so a slow
+        //     answer for player A can never overwrite player B's modal, and
+        //     a response arriving after close is simply cached for later
+        //   • no data → a plain "unavailable" state with Retry (no raw
+        //     errors); the rest of the modal stays fully usable
+        let modalDetailToken = 0;
+        let lastPlayerModalArgs = null;
+        const isPlayerModalOpen = () => {
+            const m = document.getElementById('player-modal');
+            return !!m && !m.classList.contains('hidden');
+        };
         function loadPlayerDeepDive(player, effectivePos) {
             if (typeof player.id !== 'string' || !player.id.startsWith('easysbc_')) return;
             const resourceId = player.id.replace('easysbc_', '');
             currentModalResourceId = resourceId;
+            const token = ++modalDetailToken;
+            const isCurrent = () => token === modalDetailToken && currentModalResourceId === resourceId && isPlayerModalOpen();
 
-            fetchPlayerDetail(resourceId).then(detail => {
-                if (currentModalResourceId !== resourceId) return;
-                const badgeEl = document.getElementById('accel-badge-live');
-                const feelEl = document.getElementById('movement-feel-live');
-                const isAr = currentLanguage === 'ar';
-
-                // Independent of AcceleRATE verification below (which can
-                // legitimately be null for GKs) — the granular attribute
-                // breakdown should still render whenever we have detail.
-                renderGranularAttrs(effectivePos, detail);
-                // Same reasoning for the vulnerability report — it should
-                // pick up the detail-dependent points (granular attrs,
-                // real height, body type) regardless of what happens with
-                // AcceleRATE below.
-                renderVulnerabilityReport(player, effectivePos, detail);
-
-                // Real short-passing + vision commentary — independent of
-                // AcceleRATE too, since it only needs the granular
-                // attributes (which come from this same detail fetch).
-                const passingNoteEl = document.getElementById('passing-whypick-note');
-                if (passingNoteEl) {
-                    if (!detail || !detail.inGameAttributes) {
-                        passingNoteEl.classList.remove('animate-pulse');
-                        passingNoteEl.textContent = isAr ? 'تعذّر التحقق من إحصائيات التمرير الحقيقية لهذا اللاعب.' : "Couldn't verify this player's real passing data.";
-                    } else {
-                        const spVal = getGranularValue(detail, GRANULAR_ATTR_DEFS.shortPassing.candidates, GRANULAR_ATTR_DEFS.shortPassing.en);
-                        const visionVal = getGranularValue(detail, GRANULAR_ATTR_DEFS.vision.candidates, GRANULAR_ATTR_DEFS.vision.en);
-                        const passingNote = buildPassingNote(spVal, visionVal, isAr);
-                        passingNoteEl.classList.remove('animate-pulse', 'italic', 'text-gray-500');
-                        passingNoteEl.classList.add('text-gray-300');
-                        passingNoteEl.textContent = passingNote || (isAr ? 'لا تتوفر بيانات تمرير دقيقة إضافية لهذه البطاقة.' : 'No additional passing data available for this card.');
-                    }
-                }
-
-                if (!detail) {
-                    // Fetch failed — say so plainly rather than leaving a
-                    // perpetual "checking…" spinner. No badge, no guess.
-                    if (badgeEl) badgeEl.remove();
-                    if (feelEl) {
-                        feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
-                    }
-                    markPhysicalProfileUnavailable(isAr);
-                    return;
-                }
-
-                // Height/Body Type render regardless of what happens with
-                // AcceleRATE below (including GKs, where AcceleRATE is
-                // skipped entirely) — they're independent biographical
-                // fields, not part of the pace classification.
-                renderPhysicalProfile(detail, isAr);
-
-                // The REAL "does this body type help him here" verdict —
-                // only fills in when it's a genuine asset for this exact
-                // player/role (evaluateBodyTypeForRole); left empty
-                // otherwise rather than forcing a generic note.
-                const bodyTypeNoteEl = document.getElementById('bodytype-whypick-note');
-                if (bodyTypeNoteEl) {
-                    const verdict = detail.bodyTypeId != null ? evaluateBodyTypeForRole(detail.bodyTypeId, effectivePos, player) : null;
-                    bodyTypeNoteEl.innerHTML = (verdict && verdict.positive)
-                        ? (isAr ? verdict.positive.ar : verdict.positive.en)
-                        : '';
-                }
-
-                const verified = computeVerifiedAccelerateType(detail);
-
-                if (!verified) {
-                    if (badgeEl) badgeEl.remove();
-                    if (feelEl) {
-                        feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'غير متاح لهذه البطاقة.' : 'Not available for this card.'}</span>`;
-                    }
-                    return;
-                }
-
-                if (verified) {
-                    if (badgeEl) {
-                        badgeEl.outerHTML = `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border" style="direction:ltr;unicode-bidi:isolate;background-color:${verified.color}22;color:${verified.color};border-color:${verified.color}55;" title="${isAr ? verified.ar : verified.en}">⚡ ${verified.type} ✓</span>`;
-                    }
-                    if (feelEl) {
-                        const heightLine = isAr
-                            ? `الطول: ${detail.height} سم، الوزن: ${detail.weight} كجم${detail.gender ? `، ${detail.gender === 'FEMALE' ? 'أنثى' : 'ذكر'}` : ''} — بيانات حقيقية من EasySBC.`
-                            : `Height: ${detail.height}cm, Weight: ${detail.weight}kg${detail.gender ? `, ${detail.gender === 'FEMALE' ? 'Female' : 'Male'}` : ''} — real data from EasySBC.`;
-
-                        // Ties the two independent "how does this feel"
-                        // signals together — AcceleRATE (pace style) and
-                        // body type (animations/duels) — only when the
-                        // body type is one we actually have a real label
-                        // for, never guessed for an unmapped id.
-                        const bodyTypeProfile = detail.bodyTypeId != null ? BODY_TYPE_PROFILE[detail.bodyTypeId] : null;
-                        const bodyTypeCombinedNote = bodyTypeProfile
-                            ? `<p class="text-gray-500 mt-1">${isAr
-                                ? `مع بنية ${bodyTypeProfile.label.ar}، يُضاف هذا فوق إحساس ${verified.type} أعلاه — راجع «نمط الجسم» أدناه للتفاصيل الكاملة.`
-                                : `Combined with a ${bodyTypeProfile.label.en} build, this stacks on top of the ${verified.type} feel above — see "Body Type" below for the full breakdown.`}</p>`
-                            : '';
-
-                        // Only relevant for players who AREN'T already Lengthy —
-                        // no point suggesting a "conversion" to what they
-                        // already are.
-                        let conversionHtml = '';
-                        if (verified.type !== 'Lengthy') {
-                            const conv = checkLengthyConversion(detail);
-                            if (conv && conv.eligible && conv.bestStyle) {
-                                const recommended = recommendedLengthyStyleFor(effectivePos);
-                                const bestIsRecommended = recommended.includes(conv.bestStyle.style);
-                                const styleNote = isAr
-                                    ? (recommended.includes('Anchor') || recommended.includes('Sentinel')
-                                        ? 'مناسب للمدافعين — يجمع بين تعزيز الدفاع والبدنية لتجاوز عتبة القوة.'
-                                        : recommended.includes('Architect')
-                                        ? 'الخيار الأساسي لصناع الألعاب العمقاء — أقصى تعزيز للتمرير والبدنية.'
-                                        : 'مثالي للمهاجمين — يرفع القوة إلى جانب التسديد/المراوغة.')
-                                    : (recommended.includes('Anchor') || recommended.includes('Sentinel')
-                                        ? 'Suited to defenders — combines Defending + Physical boosts to clear the Strength threshold.'
-                                        : recommended.includes('Architect')
-                                        ? 'The primary pick for deep midfielders — max boost to Passing and Physical.'
-                                        : 'Ideal for attackers — raises Strength alongside Shooting/Dribbling.');
-                                conversionHtml = `
-                                    <div class="mt-2 pt-2 border-t border-fc-border/60">
-                                        <span class="font-bold text-orange-400">⚡ ${isAr ? 'يمكن تحويله إلى Lengthy' : 'Can convert to Lengthy'}</span>
-                                        <span class="text-gray-300"> — ${isAr ? 'باستخدام نمط كيمياء' : 'with'} <span class="font-bold text-white">${conv.bestStyle.style}</span> (${isAr ? 'قوة' : 'STR'} ${detail.inGameAttributes.strength}→${conv.bestStyle.boostedStr}, ${isAr ? 'رشاقة' : 'AGI'} ${detail.inGameAttributes.agility}, ${isAr ? 'الفارق' : 'diff'} ${conv.bestStyle.diff})</span>
-                                        <p class="text-gray-500 mt-1">${styleNote}</p>
-                                        <p class="text-gray-600 text-[10px] mt-1">${isAr ? 'ملاحظة: القيم الدقيقة لأنماط الكيمياء تختلف بين المصادر — هذا يستخدم الحد الأدنى المتحفظ. تحقق داخل اللعبة قبل قرارات مهمة.' : 'Note: exact chemistry style values vary between sources — this uses a conservative lower-bound estimate. Verify in-game before relying on this for important decisions.'}</p>
-                                    </div>
-                                `;
-                            } else if (conv && !conv.eligible) {
-                                const reasonText = conv.gateFailed === 'height'
-                                    ? (isAr ? `الطول أقل من الحد الأدنى للتحويل (${conv.heightMin} سم).` : `Height is below the conversion minimum (${conv.heightMin}cm).`)
-                                    : conv.gateFailed === 'acceleration'
-                                    ? (isAr ? 'التسارع الأساسي أقل من 40.' : 'Base Acceleration is below 40.')
-                                    : conv.gateFailed === 'strength'
-                                    ? (isAr ? 'القوة الأساسية أقل من 65.' : 'Base Strength is below 65.')
-                                    : (isAr ? 'لا يوجد نمط كيمياء من القائمة يرفع الفارق (القوة-الرشاقة) إلى 4 أو أكثر.' : 'No style in the checked list pushes the Strength-Agility gap to 4+.');
-                                conversionHtml = `
-                                    <div class="mt-2 pt-2 border-t border-fc-border/60">
-                                        <span class="text-gray-500 italic text-[11px]">${isAr ? 'لا يمكن تحويله إلى Lengthy عبر أنماط الكيمياء المتاحة: ' : 'Cannot convert to Lengthy with available chemistry styles: '}${reasonText}</span>
-                                    </div>
-                                `;
-                            }
-                        }
-
-                        feelEl.innerHTML = `
-                            <span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE مُتحقق منه ✓):' : 'Movement Feel (verified AcceleRATE ✓):'}</span>
-                            <span class="font-bold" style="color:${verified.color}">${verified.type}</span> —
-                            ${isAr ? verified.ar : verified.en}
-                            <div class="text-gray-500 mt-1">${heightLine}</div>
-                            ${bodyTypeCombinedNote}
-                            ${conversionHtml}
-                        `;
-                    }
+            getPlayerDetail(resourceId).then(res => {
+                if (!isCurrent()) return;
+                applyPlayerDetailToModal(player, effectivePos, res.data, res.error);
+                if (res.refresh) {
+                    res.refresh.then(r => {
+                        if (!isCurrent() || !r || !r.data) return;
+                        let same = false;
+                        try { same = JSON.stringify(r.data) === JSON.stringify(res.data); } catch (e) { same = false; }
+                        if (!same) { apiDebug('detail: background refresh changed data — repainting', { resourceId }); applyPlayerDetailToModal(player, effectivePos, r.data); }
+                    });
                 }
             }).catch(() => {
-                if (currentModalResourceId !== resourceId) return;
-                const badgeEl = document.getElementById('accel-badge-live');
-                const feelEl = document.getElementById('movement-feel-live');
-                const isAr = currentLanguage === 'ar';
-                renderGranularAttrs(effectivePos, null);
-                const passingNoteEl = document.getElementById('passing-whypick-note');
-                if (passingNoteEl) {
+                if (isCurrent()) applyPlayerDetailToModal(player, effectivePos, null, 'network');
+            });
+        }
+
+        // Friendly, non-technical status for a missing detail, with Retry
+        // where a retry can plausibly help.
+        function showPlayerDetailUnavailable(errorKind) {
+            const statusEl = document.getElementById('granular-status');
+            if (!statusEl) return;
+            const isAr = currentLanguage === 'ar';
+            const msg = errorKind === 'not-found'
+                ? (isAr ? 'البيانات التفصيلية غير متوفرة لهذه البطاقة.' : 'Detailed data isn\'t available for this card.')
+                : errorKind === 'rate-limited'
+                ? (isAr ? 'الخادم مشغول حالياً — حاول مرة أخرى بعد قليل.' : 'The data source is busy right now — try again in a moment.')
+                : errorKind === 'offline'
+                ? (isAr ? 'أنت غير متصل بالإنترنت — البيانات التفصيلية غير متاحة.' : 'You\'re offline — detailed data is unavailable.')
+                : (isAr ? 'البيانات التفصيلية غير متاحة مؤقتاً.' : 'Detailed data is temporarily unavailable.');
+            const canRetry = errorKind !== 'not-found';
+            statusEl.classList.remove('hidden');
+            statusEl.innerHTML = `${msg}${canRetry ? ` <button type="button" onclick="window.retryPlayerDetail()" class="not-italic font-bold text-fc-accent hover:underline ms-1">${isAr ? 'إعادة المحاولة' : 'Retry'}</button>` : ''}`;
+        }
+
+        // Re-opens the same modal (same player, same slot) to run the
+        // detail load again, keeping the reader's scroll position.
+        window.retryPlayerDetail = function() {
+            if (!lastPlayerModalArgs) return;
+            const scrollWrap = document.getElementById('player-modal-scroll');
+            const keep = scrollWrap ? scrollWrap.scrollTop : 0;
+            window.openPlayerModal(...lastPlayerModalArgs);
+            setTimeout(() => { const w = document.getElementById('player-modal-scroll'); if (w) w.scrollTop = keep; }, 60);
+        };
+
+        // Paints every detail-dependent section of the open modal. Called
+        // once per load, and again only if a background refresh changed the
+        // data. `detail` null → unavailable state.
+        function applyPlayerDetailToModal(player, effectivePos, detail, errorKind) {
+            const badgeEl = document.getElementById('accel-badge-live');
+            const feelEl = document.getElementById('movement-feel-live');
+            const isAr = currentLanguage === 'ar';
+
+            // Independent of AcceleRATE verification below (which can
+            // legitimately be null for GKs) — the granular attribute
+            // breakdown should still render whenever we have detail.
+            renderGranularAttrs(effectivePos, detail);
+            // Same reasoning for the vulnerability report — it should
+            // pick up the detail-dependent points (granular attrs,
+            // real height, body type) regardless of what happens with
+            // AcceleRATE below.
+            renderVulnerabilityReport(player, effectivePos, detail);
+
+            // Real short-passing + vision commentary — independent of
+            // AcceleRATE too, since it only needs the granular
+            // attributes (which come from this same detail fetch).
+            const passingNoteEl = document.getElementById('passing-whypick-note');
+            if (passingNoteEl) {
+                if (!detail || !detail.inGameAttributes) {
                     passingNoteEl.classList.remove('animate-pulse');
                     passingNoteEl.textContent = isAr ? 'تعذّر التحقق من إحصائيات التمرير الحقيقية لهذا اللاعب.' : "Couldn't verify this player's real passing data.";
+                } else {
+                    const spVal = getGranularValue(detail, GRANULAR_ATTR_DEFS.shortPassing.candidates, GRANULAR_ATTR_DEFS.shortPassing.en);
+                    const visionVal = getGranularValue(detail, GRANULAR_ATTR_DEFS.vision.candidates, GRANULAR_ATTR_DEFS.vision.en);
+                    const passingNote = buildPassingNote(spVal, visionVal, isAr);
+                    passingNoteEl.classList.remove('animate-pulse', 'italic', 'text-gray-500');
+                    passingNoteEl.classList.add('text-gray-300');
+                    passingNoteEl.textContent = passingNote || (isAr ? 'لا تتوفر بيانات تمرير دقيقة إضافية لهذه البطاقة.' : 'No additional passing data available for this card.');
                 }
+            }
+
+            if (!detail) {
+                // Fetch failed — say so plainly rather than leaving a
+                // perpetual "checking…" spinner. No badge, no guess.
                 if (badgeEl) badgeEl.remove();
                 if (feelEl) {
                     feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لهذا اللاعب.' : "Couldn't verify this player's real data."}</span>`;
                 }
                 markPhysicalProfileUnavailable(isAr);
-            });
+                showPlayerDetailUnavailable(errorKind);
+                return;
+            }
+
+            // Height/Body Type render regardless of what happens with
+            // AcceleRATE below (including GKs, where AcceleRATE is
+            // skipped entirely) — they're independent biographical
+            // fields, not part of the pace classification.
+            renderPhysicalProfile(detail, isAr);
+
+            // The REAL "does this body type help him here" verdict —
+            // only fills in when it's a genuine asset for this exact
+            // player/role (evaluateBodyTypeForRole); left empty
+            // otherwise rather than forcing a generic note.
+            const bodyTypeNoteEl = document.getElementById('bodytype-whypick-note');
+            if (bodyTypeNoteEl) {
+                const verdict = detail.bodyTypeId != null ? evaluateBodyTypeForRole(detail.bodyTypeId, effectivePos, player) : null;
+                bodyTypeNoteEl.innerHTML = (verdict && verdict.positive)
+                    ? (isAr ? verdict.positive.ar : verdict.positive.en)
+                    : '';
+            }
+
+            const verified = computeVerifiedAccelerateType(detail);
+
+            if (!verified) {
+                if (badgeEl) badgeEl.remove();
+                if (feelEl) {
+                    feelEl.innerHTML = `<span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):'}</span> <span class="text-gray-500 italic">${isAr ? 'غير متاح لهذه البطاقة.' : 'Not available for this card.'}</span>`;
+                }
+                return;
+            }
+
+            if (verified) {
+                if (badgeEl) {
+                    badgeEl.outerHTML = `<span id="accel-badge-live" class="px-2.5 py-0.5 rounded text-xs font-black border" style="direction:ltr;unicode-bidi:isolate;background-color:${verified.color}22;color:${verified.color};border-color:${verified.color}55;" title="${isAr ? verified.ar : verified.en}">⚡ ${verified.type} ✓</span>`;
+                }
+                if (feelEl) {
+                    const heightLine = isAr
+                        ? `الطول: ${detail.height} سم، الوزن: ${detail.weight} كجم${detail.gender ? `، ${detail.gender === 'FEMALE' ? 'أنثى' : 'ذكر'}` : ''} — بيانات حقيقية من EasySBC.`
+                        : `Height: ${detail.height}cm, Weight: ${detail.weight}kg${detail.gender ? `, ${detail.gender === 'FEMALE' ? 'Female' : 'Male'}` : ''} — real data from EasySBC.`;
+
+                    // Ties the two independent "how does this feel"
+                    // signals together — AcceleRATE (pace style) and
+                    // body type (animations/duels) — only when the
+                    // body type is one we actually have a real label
+                    // for, never guessed for an unmapped id.
+                    const bodyTypeProfile = detail.bodyTypeId != null ? BODY_TYPE_PROFILE[detail.bodyTypeId] : null;
+                    const bodyTypeCombinedNote = bodyTypeProfile
+                        ? `<p class="text-gray-500 mt-1">${isAr
+                            ? `مع بنية ${bodyTypeProfile.label.ar}، يُضاف هذا فوق إحساس ${verified.type} أعلاه — راجع «نمط الجسم» أدناه للتفاصيل الكاملة.`
+                            : `Combined with a ${bodyTypeProfile.label.en} build, this stacks on top of the ${verified.type} feel above — see "Body Type" below for the full breakdown.`}</p>`
+                        : '';
+
+                    // Only relevant for players who AREN'T already Lengthy —
+                    // no point suggesting a "conversion" to what they
+                    // already are.
+                    let conversionHtml = '';
+                    if (verified.type !== 'Lengthy') {
+                        const conv = checkLengthyConversion(detail);
+                        if (conv && conv.eligible && conv.bestStyle) {
+                            const recommended = recommendedLengthyStyleFor(effectivePos);
+                            const bestIsRecommended = recommended.includes(conv.bestStyle.style);
+                            const styleNote = isAr
+                                ? (recommended.includes('Anchor') || recommended.includes('Sentinel')
+                                    ? 'مناسب للمدافعين — يجمع بين تعزيز الدفاع والبدنية لتجاوز عتبة القوة.'
+                                    : recommended.includes('Architect')
+                                    ? 'الخيار الأساسي لصناع الألعاب العمقاء — أقصى تعزيز للتمرير والبدنية.'
+                                    : 'مثالي للمهاجمين — يرفع القوة إلى جانب التسديد/المراوغة.')
+                                : (recommended.includes('Anchor') || recommended.includes('Sentinel')
+                                    ? 'Suited to defenders — combines Defending + Physical boosts to clear the Strength threshold.'
+                                    : recommended.includes('Architect')
+                                    ? 'The primary pick for deep midfielders — max boost to Passing and Physical.'
+                                    : 'Ideal for attackers — raises Strength alongside Shooting/Dribbling.');
+                            conversionHtml = `
+                                <div class="mt-2 pt-2 border-t border-fc-border/60">
+                                    <span class="font-bold text-orange-400">⚡ ${isAr ? 'يمكن تحويله إلى Lengthy' : 'Can convert to Lengthy'}</span>
+                                    <span class="text-gray-300"> — ${isAr ? 'باستخدام نمط كيمياء' : 'with'} <span class="font-bold text-white">${conv.bestStyle.style}</span> (${isAr ? 'قوة' : 'STR'} ${detail.inGameAttributes.strength}→${conv.bestStyle.boostedStr}, ${isAr ? 'رشاقة' : 'AGI'} ${detail.inGameAttributes.agility}, ${isAr ? 'الفارق' : 'diff'} ${conv.bestStyle.diff})</span>
+                                    <p class="text-gray-500 mt-1">${styleNote}</p>
+                                    <p class="text-gray-600 text-[10px] mt-1">${isAr ? 'ملاحظة: القيم الدقيقة لأنماط الكيمياء تختلف بين المصادر — هذا يستخدم الحد الأدنى المتحفظ. تحقق داخل اللعبة قبل قرارات مهمة.' : 'Note: exact chemistry style values vary between sources — this uses a conservative lower-bound estimate. Verify in-game before relying on this for important decisions.'}</p>
+                                </div>
+                            `;
+                        } else if (conv && !conv.eligible) {
+                            const reasonText = conv.gateFailed === 'height'
+                                ? (isAr ? `الطول أقل من الحد الأدنى للتحويل (${conv.heightMin} سم).` : `Height is below the conversion minimum (${conv.heightMin}cm).`)
+                                : conv.gateFailed === 'acceleration'
+                                ? (isAr ? 'التسارع الأساسي أقل من 40.' : 'Base Acceleration is below 40.')
+                                : conv.gateFailed === 'strength'
+                                ? (isAr ? 'القوة الأساسية أقل من 65.' : 'Base Strength is below 65.')
+                                : (isAr ? 'لا يوجد نمط كيمياء من القائمة يرفع الفارق (القوة-الرشاقة) إلى 4 أو أكثر.' : 'No style in the checked list pushes the Strength-Agility gap to 4+.');
+                            conversionHtml = `
+                                <div class="mt-2 pt-2 border-t border-fc-border/60">
+                                    <span class="text-gray-500 italic text-[11px]">${isAr ? 'لا يمكن تحويله إلى Lengthy عبر أنماط الكيمياء المتاحة: ' : 'Cannot convert to Lengthy with available chemistry styles: '}${reasonText}</span>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    feelEl.innerHTML = `
+                        <span class="font-bold text-gray-400">${isAr ? 'الإحساس الحركي (AcceleRATE مُتحقق منه ✓):' : 'Movement Feel (verified AcceleRATE ✓):'}</span>
+                        <span class="font-bold" style="color:${verified.color}">${verified.type}</span> —
+                        ${isAr ? verified.ar : verified.en}
+                        <div class="text-gray-500 mt-1">${heightLine}</div>
+                        ${bodyTypeCombinedNote}
+                        ${conversionHtml}
+                    `;
+                }
+            }
         }
 
         // ===================================================================
@@ -12361,6 +12673,7 @@
         // official in-game Role Description, which is explicitly
         // suppressed further down when standalone is true.
         window.openPlayerModal = function(player, slotLabel, slotIdx, preserveFocus, standalone) {
+            lastPlayerModalArgs = [player, slotLabel, slotIdx, preserveFocus, standalone];
             const modal = document.getElementById('player-modal');
             const content = document.getElementById('modal-player-content');
             if (!modal || !content) return;
@@ -13046,6 +13359,10 @@
         };
 
         window.closePlayerModal = function() {
+            // Any detail response still in flight will be cached, but no
+            // longer painted (see loadPlayerDeepDive's token check).
+            modalDetailToken++;
+            currentModalResourceId = null;
             const modal = document.getElementById('player-modal');
             if (modal) {
                 modal.classList.add('hidden');
@@ -13175,6 +13492,7 @@
                 const parsed = JSON.parse(txt);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     fc27Database = parsed;
+                    fc27DatabaseFingerprint = null; // unknown until next compare
                     computePositionFitBaselines();
                     computeGeneralPlayerStats();
                     window.updateDatabaseStats();
@@ -13482,6 +13800,9 @@
         // gets back 200 with fresh data, exactly like before, so nothing
         // breaks either way. Returns { notModified: true } (no `data`)
         // on a 304; callers must check that before touching `data`.
+        // Each attempt has a hard timeout (a stuck proxy request used to be
+        // able to hold a worker — and so the whole sync — indefinitely).
+        const PAGE_REQUEST_TIMEOUT_MS = 15000;
         async function fetchEasySbcPage(baseUrl, page, preferProxy, conditionalHeaders) {
             const pageUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=' + page;
             const strategies = preferProxy
@@ -13502,11 +13823,12 @@
                     // direct path. They're still harmless to send through
                     // the proxy (worst case the server just ignores them
                     // and returns 200 as usual), so no special-casing here.
-                    const res = await fetch(s.url, { headers });
+                    const res = await fetchWithTimeout(s.url, { headers }, PAGE_REQUEST_TIMEOUT_MS);
                     if (res.status === 304) return { notModified: true, usedProxy: s.label === 'proxy' };
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const data = await res.json();
-                    if (!data || !Array.isArray(data.players)) throw new Error('Unexpected response shape (no players[] array)');
+                    if (!res.ok) throw httpError(res.status);
+                    let data;
+                    try { data = await res.json(); } catch (e) { const m = new Error('Malformed JSON'); m.kind = 'malformed'; throw m; }
+                    if (!data || !Array.isArray(data.players)) { const m = new Error('Unexpected response shape (no players[] array)'); m.kind = 'malformed'; throw m; }
                     // Reading these is harmless even when the server/proxy
                     // doesn't send them at all — .get() just returns null,
                     // and callers already treat a missing etag/lastModified
@@ -13516,6 +13838,9 @@
                     return { data, usedProxy: s.label === 'proxy', notModified: false, etag, lastModified };
                 } catch (err) {
                     lastErr = err;
+                    // 404 / 429 / malformed won't be fixed by the other
+                    // transport — don't spend a second request on it.
+                    if (!FALLBACK_KINDS.has(errorKind(err))) break;
                 }
             }
             throw lastErr || new Error('All fetch strategies failed');
@@ -13530,6 +13855,10 @@
         // the overwhelming majority of these without any user action —
         // only a page that fails on every attempt actually gets logged
         // as failed and skipped.
+        // Retry policy by failure kind (still bounded to maxRetries):
+        //   404 / malformed → no retry (won't change)
+        //   429             → longer back-off, don't hammer
+        //   network/timeout/5xx → short increasing back-off (as before)
         async function fetchEasySbcPageWithRetry(baseUrl, page, preferProxy, conditionalHeaders, maxRetries = 2) {
             let lastErr = null;
             for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -13537,10 +13866,42 @@
                     return await fetchEasySbcPage(baseUrl, page, preferProxy, conditionalHeaders);
                 } catch (err) {
                     lastErr = err;
-                    if (attempt < maxRetries) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+                    const kind = errorKind(err);
+                    if (kind === 'not-found' || kind === 'malformed') break;
+                    if (attempt < maxRetries) await new Promise(r => setTimeout(r, (kind === 'rate-limited' ? 2000 : 400) * (attempt + 1)));
                 }
             }
             throw lastErr;
+        }
+
+        // Deterministic 32-bit FNV-1a fingerprint of a string — a cheap,
+        // dependency-free "did the normalized database change" signature.
+        // Not cryptographic; collisions are astronomically unlikely for
+        // this use and the only cost of one would be a skipped re-render.
+        function fingerprintString(str) {
+            let h = 0x811c9dc5;
+            for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+            return (h >>> 0).toString(16).padStart(8, '0');
+        }
+        // Fingerprint of whatever is in fc27Database right now, or null when
+        // unknown (e.g. after a manual JSON import) — then it's computed
+        // on demand from the data itself.
+        let fc27DatabaseFingerprint = null;
+
+        // A dataset-level version (hash / revision / updated timestamp) is
+        // the ONLY thing that could prove the whole catalog is unchanged.
+        // EasySBC's list response isn't documented to include one, so this
+        // simply looks for a small set of conventional top-level fields and
+        // returns null when none exist — in which case the page-1
+        // conditional check below remains a heuristic, not a guarantee.
+        const SOURCE_VERSION_FIELDS = ['datasetVersion', 'dataVersion', 'version', 'revision', 'hash', 'lastUpdated', 'updatedAt', 'updated'];
+        function detectSourceVersion(pageData) {
+            if (!pageData || typeof pageData !== 'object') return null;
+            for (const k of SOURCE_VERSION_FIELDS) {
+                const v = pageData[k];
+                if (typeof v === 'string' || typeof v === 'number') return `${k}:${v}`;
+            }
+            return null;
         }
 
         // Runs `worker` over `items` with at most `concurrency` calls in
@@ -13573,8 +13934,18 @@
         // space), so raising "Pages to fetch" never risks silently failing
         // to cache.
         const FC27_IDB_NAME = 'fc27_app_db';
-        const FC27_IDB_VERSION = 1;
+        // v1: players_cache (bulk DB + its meta)
+        // v2: + player_details (keyPath resourceId) — per-player detail
+        //     cache. The upgrade only ADDS a store; players_cache and its
+        //     contents are never touched, so existing caches survive.
+        const FC27_IDB_VERSION = 2;
         const FC27_IDB_STORE = 'players_cache';
+        const FC27_IDB_DETAIL_STORE = 'player_details';
+        // An upgrade is BLOCKED while another tab still holds the old
+        // version open — without a timeout, open() would wait forever and
+        // take the startup cache load with it. On timeout callers just
+        // behave as if IndexedDB were unavailable (no cache, live fetch).
+        const FC27_IDB_OPEN_TIMEOUT_MS = 3000;
         const FC27_IDB_KEY = 'players';
         // Separate key in the same store — cache freshness/conditional-
         // request bookkeeping, kept apart from the (much larger) player
@@ -13588,20 +13959,51 @@
         // button always runs regardless of this — it's only the automatic
         // background check on page load that respects it.
         const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+        // A sync where some pages failed is kept (see scrapeEasySBCPlayers)
+        // but trusted for a shorter window, so the missing pages are retried
+        // soon instead of 6 hours later.
+        const PARTIAL_CACHE_TTL_MS = 30 * 60 * 1000;
 
+        // One shared connection per page (previously every read/write opened
+        // a fresh one). Reset on failure or when another tab upgrades.
+        let fc27IdbConnection = null;
+        let fc27IdbUnavailableUntil = 0; // after a failed open, fail fast for a minute
         function openFc27IndexedDB() {
-            return new Promise((resolve, reject) => {
+            if (fc27IdbConnection) return fc27IdbConnection;
+            if (Date.now() < fc27IdbUnavailableUntil) return Promise.reject(new Error('IndexedDB unavailable (recent open failure)'));
+            fc27IdbConnection = new Promise((resolve, reject) => {
                 if (!('indexedDB' in window)) { reject(new Error('IndexedDB not supported in this browser')); return; }
-                const req = indexedDB.open(FC27_IDB_NAME, FC27_IDB_VERSION);
+                let settled = false;
+                const timer = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    reject(new Error('IndexedDB open timed out (another tab may be holding an older version open)'));
+                }, FC27_IDB_OPEN_TIMEOUT_MS);
+                let req;
+                try { req = indexedDB.open(FC27_IDB_NAME, FC27_IDB_VERSION); }
+                catch (e) { settled = true; clearTimeout(timer); reject(e); return; }
                 req.onupgradeneeded = () => {
                     const db = req.result;
                     if (!db.objectStoreNames.contains(FC27_IDB_STORE)) {
                         db.createObjectStore(FC27_IDB_STORE);
                     }
+                    if (!db.objectStoreNames.contains(FC27_IDB_DETAIL_STORE)) {
+                        db.createObjectStore(FC27_IDB_DETAIL_STORE, { keyPath: 'resourceId' });
+                    }
                 };
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(req.error);
-            });
+                req.onblocked = () => apiDebug('IndexedDB upgrade blocked by another open tab');
+                req.onsuccess = () => {
+                    const db = req.result;
+                    // Let a newer version in another tab upgrade instead of
+                    // being blocked by this one.
+                    db.onversionchange = () => { db.close(); fc27IdbConnection = null; };
+                    if (settled) { db.close(); return; }
+                    settled = true; clearTimeout(timer);
+                    resolve(db);
+                };
+                req.onerror = () => { if (settled) return; settled = true; clearTimeout(timer); reject(req.error); };
+            }).catch(err => { fc27IdbConnection = null; fc27IdbUnavailableUntil = Date.now() + 60 * 1000; throw err; });
+            return fc27IdbConnection;
         }
 
         async function idbGetCachedDatabase() {
@@ -13746,14 +14148,22 @@
             const logBox = document.getElementById('scrape-status-log');
             if (logBox) logBox.dataset.fresh = 'false';
 
+            const syncStarted = performance.now();
             const cacheMeta = await idbGetCacheMeta();
+            const dbStats = fc27ApiStats.db;
+            dbStats.cacheHit = fc27Database.length > 0;
+            dbStats.cacheAgeMs = cacheMeta && typeof cacheMeta.cachedAt === 'number' ? Date.now() - cacheMeta.cachedAt : null;
             if (skipIfFresh && cacheMeta && typeof cacheMeta.cachedAt === 'number') {
                 const age = Date.now() - cacheMeta.cachedAt;
-                if (age < CACHE_TTL_MS) {
+                const ttl = cacheMeta.partial ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS;
+                if (age < ttl) {
+                    dbStats.refreshRequired = false;
+                    apiDebug('db: cache fresh, no request', { ageMs: age, partial: !!cacheMeta.partial });
                     scrapeLog(`Cached data is ${formatCacheAge(age)} old — within the freshness window, skipping the EasySBC check for now.`, 'info');
                     return;
                 }
             }
+            dbStats.refreshRequired = true;
 
             const urlInput = document.getElementById('scrape-url-input');
             const pagesInput = document.getElementById('scrape-pages-input');
@@ -13776,7 +14186,13 @@
                 ? `Checking EasySBC for changes (conditional request) before deciding whether to fetch ${pageCount} page(s)...`
                 : `Fetching ${pageCount} page(s) (~${pageCount * EASYSBC_PLAYERS_PER_PAGE} players) from ${baseUrl} ...`, 'info');
 
-            const collected = [];
+            // Results are stored PER PAGE and flattened in page order at the
+            // end — concurrent workers finish in random order, and pushing
+            // into one array as they complete made the same data arrive
+            // shuffled, defeating the "unchanged → skip" check below.
+            const pageResults = [];
+            const failedPages = [];
+            let sourceVersion = null;
             let preferProxy = false;
             let failures = 0;
             let completed = 0;
@@ -13792,26 +14208,53 @@
             try {
                 const result = await fetchEasySbcPageWithRetry(baseUrl, 1, false, conditionalHeaders);
                 if (result.notModified) {
-                    scrapeLog('EasySBC confirmed no changes since the last check (304 Not Modified) — skipping the rest of the fetch entirely.', 'ok');
+                    // IMPORTANT: a 304 proves PAGE 1 is unchanged — nothing
+                    // more. Without a dataset-level version from the API it
+                    // is used as a cheap freshness HEURISTIC for the whole
+                    // catalog (the alternative, a conditional request per
+                    // page, would cost hundreds of requests just to decide
+                    // whether to fetch). Note it only works on the direct
+                    // path: the CORS proxy strips ETag/Last-Modified.
+                    dbStats.conditional = '304';
+                    apiDebug('db: page 1 → 304 (heuristic: treat catalog as unchanged)');
+                    scrapeLog('Page 1 is unchanged (304 Not Modified) — treating the catalog as unchanged for this check (a heuristic: only page 1 was verified). Skipping the rest of the fetch.', 'ok');
                     await idbSetCacheMeta({ ...cacheMeta, cachedAt: Date.now() }); // just refresh the freshness window
+                    dbStats.durationMs = Math.round(performance.now() - syncStarted);
                     setScrapeProgress(null);
                     if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-not-allowed'); }
                     return;
                 }
                 const { data, usedProxy, etag, lastModified } = result;
                 preferProxy = usedProxy;
+                if (usedProxy) apiTransport.directBlocked = true; // the detail loader reuses this lesson
                 firstPageOk = true;
                 newEtag = etag;
                 newLastModified = lastModified;
+                dbStats.conditional = hasConditional ? '200 (changed or unsupported)' : 'none sent';
+                dbStats.transport = usedProxy ? 'proxy' : 'direct';
+                // Preferred global change detector — only if the API
+                // actually provides one (see detectSourceVersion).
+                sourceVersion = detectSourceVersion(data);
+                dbStats.sourceVersion = sourceVersion;
+                if (sourceVersion && cacheMeta && cacheMeta.sourceVersion === sourceVersion && fc27Database.length > 0) {
+                    apiDebug('db: dataset version unchanged', { sourceVersion });
+                    scrapeLog(`EasySBC reports the same dataset version (${sourceVersion}) — catalog unchanged, skipping the rest of the fetch.`, 'ok');
+                    await idbSetCacheMeta({ ...cacheMeta, etag: newEtag, lastModified: newLastModified, cachedAt: Date.now() });
+                    dbStats.durationMs = Math.round(performance.now() - syncStarted);
+                    setScrapeProgress(null);
+                    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-not-allowed'); }
+                    return;
+                }
                 scrapeLog(usedProxy ? 'Direct request was blocked (CORS) — using proxy for remaining pages.' : 'Direct request succeeded — no proxy needed.', usedProxy ? 'warn' : 'ok');
                 if (typeof data.totalPages === 'number') {
                     scrapeLog(`EasySBC reports ${data.totalPages} total pages available (~${data.totalPages * EASYSBC_PLAYERS_PER_PAGE} players). Fetching ${pageCount} of them.`, 'info');
                 }
-                collected.push(...data.players);
+                pageResults[1] = data.players;
                 completed++;
                 setScrapeProgress((completed / pageCount) * 100);
             } catch (err) {
                 failures++;
+                failedPages.push(1);
                 scrapeLog(`Page 1 failed: ${err.message}`, 'err');
                 scrapeLog('Could not reach the EasySBC API at all (network blocked or URL changed). Falling back to whatever is in the Import box, if anything.', 'warn');
             }
@@ -13824,14 +14267,16 @@
                 // to reduce how often that happens in the first place,
                 // rather than only reacting to it after the fact via retries.
                 const PAGE_CONCURRENCY = preferProxy ? 5 : 12;
+                dbStats.concurrency = PAGE_CONCURRENCY;
                 const remainingPages = Array.from({ length: pageCount - 1 }, (_, i) => i + 2);
                 scrapeLog(`Fetching the remaining ${remainingPages.length} page(s) concurrently (${PAGE_CONCURRENCY} at a time)...`, 'info');
                 await runWithConcurrency(remainingPages, PAGE_CONCURRENCY, async (page) => {
                     try {
                         const { data } = await fetchEasySbcPageWithRetry(baseUrl, page, preferProxy);
-                        collected.push(...data.players);
+                        pageResults[page] = data.players;
                     } catch (err) {
                         failures++;
+                        failedPages.push(page);
                         scrapeLog(`Page ${page} failed after retries: ${err.message}`, 'err');
                     } finally {
                         completed++;
@@ -13840,22 +14285,46 @@
                 });
             }
 
+            const collected = pageResults.filter(Array.isArray).flat();
+            dbStats.pagesFetched = pageResults.filter(Array.isArray).length;
+            dbStats.pagesFailed = failures;
             if (collected.length > 0) {
-                const normalized = collected.map(mapEasySbcPlayer);
-                // Cheap-but-exact "did anything change" check against what's
-                // already on screen (whether that came from cache or an
-                // earlier fetch this session). If nothing changed, skip the
-                // re-render and re-write entirely — no visible flicker, no
-                // wasted work.
-                let changed = true;
+                let normalized = collected.map(mapEasySbcPlayer);
+                // FAILURE ISOLATION: a page that failed after retries must not
+                // silently delete its players. We can't know which cached
+                // players lived on that page, so every cached player the
+                // fresh pages didn't return is kept (appended). A player that
+                // genuinely left the catalog then lingers until the next
+                // fully successful sync — which, because the sync is marked
+                // partial, is attempted after PARTIAL_CACHE_TTL_MS, not 6h.
+                let recovered = 0;
+                if (failures > 0 && fc27Database.length > 0) {
+                    const seen = new Set(normalized.map(p => p.id));
+                    const keep = fc27Database.filter(p => p && !seen.has(p.id));
+                    recovered = keep.length;
+                    if (recovered) normalized = normalized.concat(keep);
+                }
+                dbStats.pagesRecovered = recovered;
+                // "Did anything change?" — deterministic fingerprint of the
+                // normalized data (page order is now stable), compared with
+                // the fingerprint of what's in memory. Skips the IndexedDB
+                // write, re-render and optimizer entirely when equal.
+                let changed = true, newFingerprint = null;
                 try {
-                    changed = JSON.stringify(normalized) !== JSON.stringify(fc27Database);
+                    newFingerprint = fingerprintString(JSON.stringify(normalized));
+                    const currentFingerprint = fc27DatabaseFingerprint
+                        || (fc27Database.length ? fingerprintString(JSON.stringify(fc27Database)) : null);
+                    changed = newFingerprint !== currentFingerprint;
                 } catch (e) {
                     changed = true; // if comparison fails for any reason, be safe and update
                 }
+                dbStats.changed = changed;
+                dbStats.fingerprint = newFingerprint;
+                if (recovered) scrapeLog(`${failures} page(s) failed — kept ${recovered} cached player(s) the fresh pages didn't return, and will re-check sooner than usual.`, 'warn');
 
                 if (changed) {
                     fc27Database = normalized;
+                    fc27DatabaseFingerprint = newFingerprint;
                     computePositionFitBaselines();
                     computeGeneralPlayerStats();
                     window.updateDatabaseStats();
@@ -13864,17 +14333,26 @@
                     await persistDatabaseCache(normalized);
                     scrapeLog(`Database synced with ${normalized.length} players from EasySBC` + (failures > 0 ? ` (${failures} page(s) failed and were skipped).` : '.'), 'ok');
                 } else {
+                    fc27DatabaseFingerprint = newFingerprint;
                     scrapeLog(`Checked EasySBC — ${normalized.length} players, no changes since last sync.`, 'ok');
                 }
                 // Remember this fetch's ETag/Last-Modified (if the server
                 // sent any) and reset the freshness clock, regardless of
                 // whether the DATA itself turned out to have changed —
                 // the request itself succeeded just now either way.
-                await idbSetCacheMeta({ etag: newEtag, lastModified: newLastModified, cachedAt: Date.now() });
+                // (fetchedAt/cachedAt kept as one field for compatibility.)
+                await idbSetCacheMeta({
+                    etag: newEtag, lastModified: newLastModified, cachedAt: Date.now(),
+                    playerCount: normalized.length, databaseHash: newFingerprint, sourceVersion,
+                    pagesFetched: dbStats.pagesFetched, pagesFailed: failures, partial: failures > 0,
+                    transport: preferProxy ? 'proxy' : 'direct'
+                });
             } else {
                 scrapeLog('No players were retrieved. Use the "How do I find the real data endpoint?" guide above to re-check the URL, or paste JSON directly into the Import box.', 'warn');
             }
 
+            dbStats.durationMs = Math.round(performance.now() - syncStarted);
+            apiDebug('db: sync finished', { ...dbStats });
             setScrapeProgress(null);
             if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-not-allowed'); }
         };
