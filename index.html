@@ -626,6 +626,9 @@
                          the pitch. Only ever shows one player at a time —
                          see window.togglePlayerHeatZone. -->
                     <div id="pitch-heatzone-overlay" class="absolute inset-0 z-[6] pointer-events-none"></div>
+                    <!-- Geometry debug layer (empty unless debug mode is on —
+                         see renderGeometryDebugOverlay). Above the cards. -->
+                    <div id="pitch-geometry-debug" class="absolute inset-0 z-[30] pointer-events-none"></div>
 
                     <!-- Dynamic Pitch Row Container -->
                     <!-- dir="ltr" forced: a football pitch is a spatial
@@ -1837,203 +1840,568 @@
         // Starts empty; populated asynchronously right after load.
         let fc27Database = [];
 
-        /* Formation slot layouts & coordinates */
-        // Every slot has an explicit (top, left) position instead of a
-        // loose row number. "top" is the vertical position on the pitch
-        // (0 = furthest forward, 100 = goal line where the GK stands).
-        // "left" is NOT an absolute pitch coordinate — it's a 0-100
-        // fraction of however much width is actually available at that
-        // depth (see getSlotPixelPosition), since the pitch graphic is a
-        // trapezoid that's narrower near the top. This mirrors how
-        // EasySBC's own formation diagrams lay a squad out: back four/
-        // three as one clean line, a single midfield band for a flat
-        // formation, and — for a lone deep pivot (CDM) or advanced
-        // playmaker (CAM) — that one player nudged toward the center
-        // circle instead of forced onto its own full-width row. That
-        // per-slot placement is also what keeps the pitch a fixed size
-        // regardless of formation: nothing here is measured from content,
-        // so a 5-tier formation never needs a taller box than a 4-tier one.
-        const formationSlots = {
-            '4-3-3': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 68, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 68, left: 88 },
-                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 22 },
-                { pos: 'CM', label: 'Central Mid 2', top: 48, left: 50 },
-                { pos: 'CM', label: 'Central Mid 3', top: 44, left: 78 },
-                { pos: 'LW', label: 'Left Winger', top: 12, left: 14 },
-                { pos: 'ST', label: 'Striker', top: 10, left: 50 },
-                { pos: 'RW', label: 'Right Winger', top: 12, left: 86 }
-            ],
-            '4-4-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 64, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 66, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 66, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 64, left: 88 },
-                { pos: 'LM', label: 'Left Mid', top: 38, left: 10 },
-                { pos: 'CM', label: 'Central Mid 1', top: 38, left: 37 },
-                { pos: 'CM', label: 'Central Mid 2', top: 38, left: 63 },
-                { pos: 'RM', label: 'Right Mid', top: 38, left: 90 },
-                { pos: 'ST', label: 'Striker 1', top: 12, left: 37 },
-                { pos: 'ST', label: 'Striker 2', top: 12, left: 63 }
-            ],
-            '4-2-3-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 50, left: 32 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 50, left: 68 },
-                { pos: 'LM', label: 'Left Mid', top: 34, left: 12 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 33, left: 50 },
-                { pos: 'RM', label: 'Right Mid', top: 34, left: 88 },
-                { pos: 'ST', label: 'Striker', top: 11, left: 50 }
-            ],
-            '4-1-2-1-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 33 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 66 },
-                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
-                { pos: 'CDM', label: 'Defensive Mid', top: 54, left: 50 },
-                { pos: 'CM', label: 'Left Mid', top: 44, left: 26 },
-                { pos: 'CM', label: 'Right Mid', top: 44, left: 74 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 33, left: 50 },
-                { pos: 'ST', label: 'Striker 1', top: 11, left: 36 },
-                { pos: 'ST', label: 'Striker 2', top: 11, left: 64 }
-            ],
-            '3-5-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 22 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 78 },
-                { pos: 'CB', label: 'Center Back 3', top: 70, left: 50 },
-                { pos: 'LM', label: 'Left Mid', top: 40, left: 8 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 50, left: 28 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 50, left: 72 },
-                { pos: 'RM', label: 'Right Mid', top: 40, left: 92 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 33, left: 50 },
-                { pos: 'ST', label: 'Striker 1', top: 10, left: 36 },
-                { pos: 'ST', label: 'Striker 2', top: 10, left: 64 }
-            ],
-            '4-5-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
-                { pos: 'LM', label: 'Left Mid', top: 40, left: 6 },
-                { pos: 'CM', label: 'Central Mid 1', top: 40, left: 30 },
-                { pos: 'CDM', label: 'Defensive Mid', top: 50, left: 50 },
-                { pos: 'CM', label: 'Central Mid 2', top: 40, left: 70 },
-                { pos: 'RM', label: 'Right Mid', top: 40, left: 94 },
-                { pos: 'ST', label: 'Striker', top: 10, left: 50 }
-            ],
-            '4-4-1-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 68, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 68, left: 88 },
-                { pos: 'LM', label: 'Left Mid', top: 44, left: 10 },
-                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 31 },
-                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 69 },
-                { pos: 'RM', label: 'Right Mid', top: 44, left: 90 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 31, left: 50 },
-                { pos: 'ST', label: 'Striker', top: 10, left: 50 }
-            ],
-            // 3 CB, 1 holding CDM, 4 across the middle (LM/CM/CM/RM), 2 ST.
-            '3-1-4-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 25 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 50 },
-                { pos: 'CB', label: 'Center Back 3', top: 70, left: 75 },
-                { pos: 'CDM', label: 'Defensive Mid', top: 54, left: 50 },
-                { pos: 'LM', label: 'Left Mid', top: 38, left: 12 },
-                { pos: 'CM', label: 'Central Mid 1', top: 38, left: 31 },
-                { pos: 'CM', label: 'Central Mid 2', top: 38, left: 69 },
-                { pos: 'RM', label: 'Right Mid', top: 38, left: 88 },
-                { pos: 'ST', label: 'Striker 1', top: 11, left: 38 },
-                { pos: 'ST', label: 'Striker 2', top: 11, left: 62 }
-            ],
-            // Back 4, 2 holding CDM, a single central CAM, front 3 (LW/ST/RW).
-            '4-2-1-3': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 50, left: 32 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 50, left: 68 },
-                { pos: 'CAM', label: 'Attacking Mid', top: 33, left: 50 },
-                { pos: 'LW', label: 'Left Winger', top: 12, left: 14 },
-                { pos: 'ST', label: 'Striker', top: 10, left: 50 },
-                { pos: 'RW', label: 'Right Winger', top: 12, left: 86 }
-            ],
-            // Back 4, 2 holding CDM, 2 CAM pushed WIDE (not central), 2 ST.
-            '4-2-2-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
-                { pos: 'CAM', label: 'Attacking Mid 1', top: 30, left: 15 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 50, left: 37 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 50, left: 63 },
-                { pos: 'CAM', label: 'Attacking Mid 2', top: 30, left: 85 },
-                { pos: 'ST', label: 'Striker 1', top: 11, left: 38 },
-                { pos: 'ST', label: 'Striker 2', top: 11, left: 62 }
-            ],
-            // A second 4-4-2 shape: LM/RM wingers with 2 holding CDM through
-            // the center, instead of the existing '4-4-2' entry's flat
-            // CM-CM-LM-RM line — a distinct enough shape (and Futbin's own
-            // default roles for it) to warrant its own formation key.
-            '4-4-2 (2)': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 70, left: 12 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 37 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 63 },
-                { pos: 'RB', label: 'Right Back', top: 70, left: 88 },
-                { pos: 'LM', label: 'Left Mid', top: 34, left: 10 },
-                { pos: 'CDM', label: 'Defensive Mid 1', top: 52, left: 37 },
-                { pos: 'CDM', label: 'Defensive Mid 2', top: 52, left: 63 },
-                { pos: 'RM', label: 'Right Mid', top: 34, left: 90 },
-                { pos: 'ST', label: 'Striker 1', top: 12, left: 37 },
-                { pos: 'ST', label: 'Striker 2', top: 12, left: 63 }
-            ],
-            // Back 5 (wingback-less — pure CB x3 + LB/RB), 4 across the
-            // middle (LM/CM/CM/RM), lone striker up top.
-            '5-4-1': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 68, left: 8 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 29 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 50 },
-                { pos: 'CB', label: 'Center Back 3', top: 70, left: 71 },
-                { pos: 'RB', label: 'Right Back', top: 68, left: 92 },
-                { pos: 'LM', label: 'Left Mid', top: 42, left: 12 },
-                { pos: 'CM', label: 'Central Mid 1', top: 42, left: 35 },
-                { pos: 'CM', label: 'Central Mid 2', top: 42, left: 65 },
-                { pos: 'RM', label: 'Right Mid', top: 42, left: 88 },
-                { pos: 'ST', label: 'Striker', top: 11, left: 50 }
-            ],
-            // Back 5, a compact central 3 (CM, holding CDM, CM), 2 ST.
-            '5-3-2': [
-                { pos: 'GK', label: 'Goalkeeper', top: 90, left: 50 },
-                { pos: 'LB', label: 'Left Back', top: 68, left: 10 },
-                { pos: 'CB', label: 'Center Back 1', top: 70, left: 30 },
-                { pos: 'CB', label: 'Center Back 2', top: 70, left: 50 },
-                { pos: 'CB', label: 'Center Back 3', top: 70, left: 70 },
-                { pos: 'RB', label: 'Right Back', top: 68, left: 90 },
-                { pos: 'CM', label: 'Central Mid 1', top: 44, left: 25 },
-                { pos: 'CDM', label: 'Defensive Mid', top: 50, left: 50 },
-                { pos: 'CM', label: 'Central Mid 2', top: 44, left: 75 },
-                { pos: 'ST', label: 'Striker 1', top: 11, left: 38 },
-                { pos: 'ST', label: 'Striker 2', top: 11, left: 62 }
-            ]
+        /* ===================================================================
+           FORMATION GEOMETRY ENGINE
+           ===================================================================
+           Coordinates are the OUTPUT of football structure, not the input.
+
+             FORMATION_TOPOLOGY  (lines, depth, width, spacing, anchors)
+                     ↓
+             buildFormationGeometry()   → BASE positions (normalized x/y)
+                     ↓
+             formationSlots[key]        → same shape as before: {pos, label,
+                                          top, left} + a `geo` block; top/left
+                                          are just y*100 / x*100, so every
+                                          existing consumer (getSlotPixelPosition,
+                                          getPositionSideKey, saved-squad pitch,
+                                          ~30 pos/label readers) is unchanged
+                     ↓
+             computeAllShapeTargets()   → TACTICAL positions:
+                                          base + role + focus + heatmap
+                                          + phase + spacing = final
+
+           Coordinate model (normalized, 0..1):
+             y = 0  → the attacking end (top of the pitch graphic)
+             y = 1  → own goal line (bottom). GK sits at PITCH_GEOMETRY.gkDepth.
+             x = 0  → left touchline, x = 1 → right touchline, 0.5 = centre.
+           x is LOCAL width (a fraction of the grass available at that
+           depth) — the trapezoid perspective is applied afterwards, only by
+           getSlotPixelPosition(), exactly as before.
+
+           Symmetry: a formation never stores a left AND a right position.
+           Each slot only says which side it is on (L / C / R); the lateral
+           distance comes from its line's parameters, so LB/RB, LCB/RCB,
+           LCM/RCM, LW/RW are mirror images by construction. Asymmetry is a
+           TACTICAL output (role/focus/heatmap), never a structural input.
+        */
+        const PITCH_GEOMETRY = {
+            gkDepth: 0.90,
+            // A goalkeeper outside this box is flagged by validation and
+            // clamped back by the tactical layer.
+            gkZone: { minY: 0.84, maxY: 0.96, maxLateral: 0.12 },
+            // Card-safe bounds (card half-size must stay on the grass) —
+            // same numbers the shape solver has always used.
+            minY: 0.06, maxY: 0.96, minX: 0.08, maxX: 0.92
         };
+
+        // Structural lines, deepest first. Every slot belongs to exactly one.
+        const FORMATION_LINES = ['GK', 'DEF', 'DM', 'MID', 'AM', 'ATT'];
+        const FORMATION_LINE_NAMES = {
+            GK: 'Goalkeeper', DEF: 'Defensive line', DM: 'Pivot line',
+            MID: 'Midfield line', AM: 'Attacking-midfield line', ATT: 'Attacking line'
+        };
+
+        // Structural anchors: WHAT a slot does inside its line, independent
+        // of any coordinate. `wide` anchors sit on the line's width edges;
+        // central anchors are spread across the line's spacing. depthOffset
+        // is a structural relationship to the line (fraction of pitch
+        // length): full-backs sit a touch higher than the CBs they flank,
+        // wingers a touch deeper than the striker they support.
+        const ANCHOR_TYPES = {
+            GK:  { wide: false, depthOffset: 0,     desc: 'Goalkeeper' },
+            CB:  { wide: false, depthOffset: 0,     desc: 'Centre-back' },
+            FB:  { wide: true,  depthOffset: -0.02, desc: 'Full-back' },
+            WB:  { wide: true,  depthOffset: -0.02, desc: 'Wing-back (back five)' },
+            DM:  { wide: false, depthOffset: 0,     desc: 'Holding midfielder' },
+            CM:  { wide: false, depthOffset: 0,     desc: 'Central midfielder' },
+            WM:  { wide: true,  depthOffset: 0,     desc: 'Wide midfielder' },
+            AM:  { wide: false, depthOffset: 0,     desc: 'Attacking midfielder' },
+            WAM: { wide: true,  depthOffset: 0,     desc: 'Wide attacking midfielder' },
+            W:   { wide: true,  depthOffset: 0.02,  desc: 'Winger' },
+            ST:  { wide: false, depthOffset: 0,     desc: 'Striker' }
+        };
+
+        // Which anchors a card position code may legally occupy — used by
+        // validation to catch a topology typo (e.g. a CB code on a winger
+        // anchor).
+        const ANCHOR_ALLOWED_POS = {
+            GK: ['GK'], CB: ['CB'], FB: ['LB', 'RB'], WB: ['LB', 'RB'],
+            DM: ['CDM', 'CM'], CM: ['CM', 'CDM'], WM: ['LM', 'RM'],
+            AM: ['CAM'], WAM: ['CAM', 'LM', 'RM'], W: ['LW', 'RW'], ST: ['ST']
+        };
+
+        // ------------------------------------------------------------------
+        // FORMATION TOPOLOGY
+        // ------------------------------------------------------------------
+        // Per formation: its lines (structural parameters only) and its
+        // slots, each as [line, anchor, side, pos, label].
+        //
+        //   depth   — where the line sits (0 = attacking end, 1 = own goal)
+        //   width   — distance between the line's two WIDE anchors (0..1)
+        //   spacing — distance between neighbouring CENTRAL anchors
+        //   stagger — in a central group of 3+, the middle player drops
+        //             this much deeper (single pivot behind two interiors,
+        //             the centre CB of a back three covering behind)
+        //   team    — optional { width, compactness } scaling for the whole
+        //             outfield (1 = as defined)
+        //
+        // SLOT ORDER IS LOAD-BEARING: squadState.selectedXI, saved squads and
+        // share codes are keyed by slot index, so each formation lists its
+        // slots in exactly the order the old hand-authored table did.
+        const FORMATION_TOPOLOGY = {
+            '4-3-3': {
+                desc: 'Back four, single pivot with two interiors, front three',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    MID: { depth: 0.44, spacing: 0.28, stagger: 0.04 },
+                    ATT: { depth: 0.10, width: 0.72 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['MID', 'CM', 'C', 'CM', 'Central Mid 2'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 3'],
+                    ['ATT', 'W', 'L', 'LW', 'Left Winger'],
+                    ['ATT', 'ST', 'C', 'ST', 'Striker'],
+                    ['ATT', 'W', 'R', 'RW', 'Right Winger']
+                ]
+            },
+            '4-4-2': {
+                desc: 'Two flat banks of four, strike partnership',
+                lines: {
+                    DEF: { depth: 0.66, width: 0.76, spacing: 0.26 },
+                    MID: { depth: 0.38, width: 0.80, spacing: 0.26 },
+                    ATT: { depth: 0.12, spacing: 0.26 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            },
+            '4-2-3-1': {
+                desc: 'Back four, double pivot, attacking three behind a lone striker',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    DM:  { depth: 0.50, spacing: 0.36 },
+                    AM:  { depth: 0.33, width: 0.76 },
+                    ATT: { depth: 0.11 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['DM', 'DM', 'L', 'CDM', 'Defensive Mid 1'],
+                    ['DM', 'DM', 'R', 'CDM', 'Defensive Mid 2'],
+                    ['AM', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['AM', 'AM', 'C', 'CAM', 'Attacking Mid'],
+                    ['AM', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['ATT', 'ST', 'C', 'ST', 'Striker']
+                ]
+            },
+            '4-1-2-1-2': {
+                desc: 'Narrow diamond: single pivot, two shuttlers, a #10, two strikers',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.30 },
+                    DM:  { depth: 0.54 },
+                    MID: { depth: 0.44, spacing: 0.48 },
+                    AM:  { depth: 0.33 },
+                    ATT: { depth: 0.11, spacing: 0.28 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['DM', 'DM', 'C', 'CDM', 'Defensive Mid'],
+                    ['MID', 'CM', 'L', 'CM', 'Left Mid'],
+                    ['MID', 'CM', 'R', 'CM', 'Right Mid'],
+                    ['AM', 'AM', 'C', 'CAM', 'Attacking Mid'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            },
+            '3-5-2': {
+                desc: 'Back three, wing-backs, double pivot, #10, two strikers',
+                lines: {
+                    DEF: { depth: 0.70, spacing: 0.28, stagger: 0.01 },
+                    DM:  { depth: 0.50, spacing: 0.44 },
+                    MID: { depth: 0.40, width: 0.84 },
+                    AM:  { depth: 0.33 },
+                    ATT: { depth: 0.10, spacing: 0.28 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'CB', 'C', 'CB', 'Center Back 3'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['DM', 'DM', 'L', 'CDM', 'Defensive Mid 1'],
+                    ['DM', 'DM', 'R', 'CDM', 'Defensive Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['AM', 'AM', 'C', 'CAM', 'Attacking Mid'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            },
+            '4-5-1': {
+                desc: 'Back four, single pivot behind a flat four, lone striker',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    DM:  { depth: 0.50 },
+                    MID: { depth: 0.40, width: 0.84, spacing: 0.40 },
+                    ATT: { depth: 0.10 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['DM', 'DM', 'C', 'CDM', 'Defensive Mid'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['ATT', 'ST', 'C', 'ST', 'Striker']
+                ]
+            },
+            '4-4-1-1': {
+                desc: 'Two banks of four, a second striker/#10 behind the striker',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    MID: { depth: 0.44, width: 0.80, spacing: 0.36 },
+                    AM:  { depth: 0.31 },
+                    ATT: { depth: 0.10 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['AM', 'AM', 'C', 'CAM', 'Attacking Mid'],
+                    ['ATT', 'ST', 'C', 'ST', 'Striker']
+                ]
+            },
+            '3-1-4-2': {
+                desc: 'Back three, single pivot, flat four, two strikers',
+                lines: {
+                    DEF: { depth: 0.70, spacing: 0.25, stagger: 0.01 },
+                    DM:  { depth: 0.54 },
+                    MID: { depth: 0.38, width: 0.80, spacing: 0.34 },
+                    ATT: { depth: 0.11, spacing: 0.24 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'C', 'CB', 'Center Back 2'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 3'],
+                    ['DM', 'DM', 'C', 'CDM', 'Defensive Mid'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            },
+            '4-2-1-3': {
+                desc: 'Back four, double pivot, #10, front three',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    DM:  { depth: 0.50, spacing: 0.36 },
+                    AM:  { depth: 0.33 },
+                    ATT: { depth: 0.10, width: 0.72 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['DM', 'DM', 'L', 'CDM', 'Defensive Mid 1'],
+                    ['DM', 'DM', 'R', 'CDM', 'Defensive Mid 2'],
+                    ['AM', 'AM', 'C', 'CAM', 'Attacking Mid'],
+                    ['ATT', 'W', 'L', 'LW', 'Left Winger'],
+                    ['ATT', 'ST', 'C', 'ST', 'Striker'],
+                    ['ATT', 'W', 'R', 'RW', 'Right Winger']
+                ]
+            },
+            '4-2-2-2': {
+                desc: 'Back four, double pivot, two wide #10s, two strikers',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    DM:  { depth: 0.50, spacing: 0.26 },
+                    AM:  { depth: 0.30, width: 0.70 },
+                    ATT: { depth: 0.11, spacing: 0.24 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['AM', 'WAM', 'L', 'CAM', 'Attacking Mid 1'],
+                    ['DM', 'DM', 'L', 'CDM', 'Defensive Mid 1'],
+                    ['DM', 'DM', 'R', 'CDM', 'Defensive Mid 2'],
+                    ['AM', 'WAM', 'R', 'CAM', 'Attacking Mid 2'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            },
+            '4-4-2 (2)': {
+                desc: 'Back four, double pivot, wide midfielders pushed up, two strikers',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.76, spacing: 0.26 },
+                    DM:  { depth: 0.52, spacing: 0.26 },
+                    MID: { depth: 0.34, width: 0.80 },
+                    ATT: { depth: 0.12, spacing: 0.26 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'FB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 2'],
+                    ['DEF', 'FB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['DM', 'DM', 'L', 'CDM', 'Defensive Mid 1'],
+                    ['DM', 'DM', 'R', 'CDM', 'Defensive Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            },
+            '5-4-1': {
+                desc: 'Back five, flat four, lone striker',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.84, spacing: 0.21 },
+                    MID: { depth: 0.42, width: 0.76, spacing: 0.30 },
+                    ATT: { depth: 0.11 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'WB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'C', 'CB', 'Center Back 2'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 3'],
+                    ['DEF', 'WB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'WM', 'L', 'LM', 'Left Mid'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 2'],
+                    ['MID', 'WM', 'R', 'RM', 'Right Mid'],
+                    ['ATT', 'ST', 'C', 'ST', 'Striker']
+                ]
+            },
+            '5-3-2': {
+                desc: 'Back five, compact three with a single pivot, two strikers',
+                lines: {
+                    DEF: { depth: 0.70, width: 0.80, spacing: 0.20 },
+                    MID: { depth: 0.44, spacing: 0.25, stagger: 0.06 },
+                    ATT: { depth: 0.11, spacing: 0.24 }
+                },
+                slots: [
+                    ['GK', 'GK', 'C', 'GK', 'Goalkeeper'],
+                    ['DEF', 'WB', 'L', 'LB', 'Left Back'],
+                    ['DEF', 'CB', 'L', 'CB', 'Center Back 1'],
+                    ['DEF', 'CB', 'C', 'CB', 'Center Back 2'],
+                    ['DEF', 'CB', 'R', 'CB', 'Center Back 3'],
+                    ['DEF', 'WB', 'R', 'RB', 'Right Back'],
+                    ['MID', 'CM', 'L', 'CM', 'Central Mid 1'],
+                    ['MID', 'DM', 'C', 'CDM', 'Defensive Mid'],
+                    ['MID', 'CM', 'R', 'CM', 'Central Mid 2'],
+                    ['ATT', 'ST', 'L', 'ST', 'Striker 1'],
+                    ['ATT', 'ST', 'R', 'ST', 'Striker 2']
+                ]
+            }
+        };
+
+        // Approximate on-pitch card footprint in PIXEL-space percent of the
+        // pitch box (a lg:w-28 card + role strip on the 680px desktop
+        // pitch). Validation measures overlap in this space — after the
+        // trapezoid transform — because that's what the user actually sees.
+        const GEO_CARD_BOX = { w: 14, h: 14 };
+        const SIDE_SIGN = { L: -1, C: 0, R: 1 };
+        const SIDE_RANK = { L: 0, C: 1, R: 2 };
+        const roundGeo = v => Math.round(v * 1000) / 1000;
+
+        // Describes what a line's members form structurally — the football
+        // name for the unit (double pivot, back three, #10...). Used by the
+        // debug overlay, validation messages and slot.geo.unit.
+        function describeStructuralUnit(lineKey, members) {
+            const central = members.filter(m => !ANCHOR_TYPES[m.anchor].wide);
+            const wide = members.filter(m => ANCHOR_TYPES[m.anchor].wide);
+            const nCB = members.filter(m => m.anchor === 'CB').length;
+            if (lineKey === 'GK') return 'goalkeeper';
+            if (lineKey === 'DEF') {
+                if (nCB === 3 && wide.length === 2) return 'back five';
+                if (nCB === 3) return 'back three';
+                return 'back four';
+            }
+            if (lineKey === 'DM') return central.length >= 2 ? 'double pivot' : 'single pivot';
+            if (lineKey === 'AM') {
+                if (wide.length && central.length) return 'attacking-midfield three';
+                if (wide.length) return 'wide #10s';
+                return 'number 10';
+            }
+            if (lineKey === 'ATT') {
+                if (wide.length) return 'front three';
+                return central.length >= 2 ? 'strike partnership' : 'lone striker';
+            }
+            // MID
+            if (central.length >= 3) return 'midfield three';
+            if (central.length === 0 && wide.length) return 'wide pair';
+            if (wide.length) return `flat ${members.length}`;
+            return `central ${central.length}`;
+        }
+
+        // Relationship types the geometry keeps coherent (and the debug
+        // overlay draws). Derived from the topology — never listed by hand.
+        function buildFormationRelationships(slots) {
+            const rel = [];
+            const byLine = {};
+            slots.forEach((s, i) => { (byLine[s.geo.line] = byLine[s.geo.line] || []).push(i); });
+            const lineOrder = FORMATION_LINES.filter(l => byLine[l]);
+            // Same-line neighbours, left to right.
+            lineOrder.forEach(l => {
+                const sorted = byLine[l].slice().sort((a, b) => slots[a].geo.x - slots[b].geo.x);
+                for (let k = 0; k < sorted.length - 1; k++) {
+                    const a = slots[sorted[k]], b = slots[sorted[k + 1]];
+                    let type = 'line';
+                    if (a.geo.anchor === 'CB' && b.geo.anchor === 'CB') type = 'cb-pair';
+                    else if ((a.geo.anchor === 'FB' || a.geo.anchor === 'WB') || (b.geo.anchor === 'FB' || b.geo.anchor === 'WB')) type = 'fullback-cb';
+                    else if (l === 'DM') type = 'pivot-pair';
+                    rel.push({ a: sorted[k], b: sorted[k + 1], type });
+                }
+            });
+            // Vertical support: every outfield player links to the nearest
+            // player in the next deeper occupied line (lane connection).
+            for (let li = 1; li < lineOrder.length; li++) {
+                const deeper = byLine[lineOrder[li - 1]];
+                if (lineOrder[li - 1] === 'GK') continue;
+                byLine[lineOrder[li]].forEach(i => {
+                    let best = null, bestD = Infinity;
+                    deeper.forEach(j => {
+                        const d = Math.abs(slots[i].geo.x - slots[j].geo.x);
+                        if (d < bestD) { bestD = d; best = j; }
+                    });
+                    if (best != null) rel.push({ a: i, b: best, type: 'support' });
+                });
+            }
+            return rel;
+        }
+
+        // THE GEOMETRY CALCULATION. Topology in, normalized base positions
+        // out. No coordinate is read from the formation — only depths,
+        // widths, spacings and anchor relationships.
+        function buildFormationGeometry(key) {
+            const topo = FORMATION_TOPOLOGY[key];
+            if (!topo) return null;
+            const team = Object.assign({ width: 1, compactness: 1 }, topo.team || {});
+            const lineDefs = Object.assign({ GK: { depth: PITCH_GEOMETRY.gkDepth } }, topo.lines);
+
+            const members = topo.slots.map(([line, anchor, side, pos, label], idx) => ({ idx, line, anchor, side, pos, label }));
+            const byLine = {};
+            members.forEach(m => { (byLine[m.line] = byLine[m.line] || []).push(m); });
+
+            const placed = [];
+            Object.keys(byLine).forEach(lineKey => {
+                const line = lineDefs[lineKey] || {};
+                const group = byLine[lineKey];
+                const unit = describeStructuralUnit(lineKey, group);
+                // Central group: ordered L → C → R (stable within a side),
+                // spread symmetrically around the centre by `spacing`.
+                const central = group.filter(m => !ANCHOR_TYPES[m.anchor].wide)
+                    .sort((a, b) => (SIDE_RANK[a.side] - SIDE_RANK[b.side]) || (a.idx - b.idx));
+                const n = central.length;
+                const spacing = line.spacing || 0;
+                central.forEach((m, k) => {
+                    const offset = n > 1 ? (k - (n - 1) / 2) * spacing : 0;
+                    const isMiddleOfThree = n >= 3 && n % 2 === 1 && k === (n - 1) / 2;
+                    const depth = line.depth + ANCHOR_TYPES[m.anchor].depthOffset + (isMiddleOfThree ? (line.stagger || 0) : 0);
+                    placed.push({ ...m, x: 0.5 + offset, y: depth, unit, laneOffset: offset });
+                });
+                // Wide anchors: on the line's width edges, mirrored by side.
+                group.filter(m => ANCHOR_TYPES[m.anchor].wide).forEach(m => {
+                    const half = (line.width || 0.76) / 2;
+                    const offset = SIDE_SIGN[m.side] * half;
+                    placed.push({ ...m, x: 0.5 + offset, y: line.depth + ANCHOR_TYPES[m.anchor].depthOffset, unit, laneOffset: offset });
+                });
+            });
+
+            // Team width + compactness (outfield only; GK stays in goal).
+            const outfield = placed.filter(p => p.line !== 'GK');
+            const yCentre = outfield.reduce((s, p) => s + p.y, 0) / Math.max(1, outfield.length);
+            placed.forEach(p => {
+                if (p.line === 'GK') return;
+                p.x = 0.5 + (p.x - 0.5) * team.width;
+                p.y = yCentre + (p.y - yCentre) * team.compactness;
+            });
+
+            const slots = placed.sort((a, b) => a.idx - b.idx).map(p => {
+                const x = roundGeo(Math.min(PITCH_GEOMETRY.maxX, Math.max(PITCH_GEOMETRY.minX, p.x)));
+                const y = roundGeo(Math.min(PITCH_GEOMETRY.maxY, Math.max(PITCH_GEOMETRY.minY, p.y)));
+                return {
+                    pos: p.pos,
+                    label: p.label,
+                    // Legacy-compatible percentages — the ONLY thing every
+                    // pre-existing consumer reads. They are derived here,
+                    // never authored.
+                    top: Math.round(y * 1000) / 10,
+                    left: Math.round(x * 1000) / 10,
+                    geo: {
+                        x, y, line: p.line, anchor: p.anchor, side: p.side, unit: p.unit,
+                        anchorDesc: ANCHOR_TYPES[p.anchor].desc,
+                        lane: p.laneOffset === 0 ? 'centre' : (Math.abs(p.laneOffset) >= 0.3 ? (p.laneOffset < 0 ? 'left wide' : 'right wide') : (p.laneOffset < 0 ? 'left half-space' : 'right half-space'))
+                    }
+                };
+            });
+            return slots;
+        }
+
+        // Resolved view of a formation for tools/debugging: slots, line
+        // depths, relationships, team width/depth metrics.
+        const formationGeometryCache = {};
+        function getFormationGeometry(key) {
+            if (formationGeometryCache[key]) return formationGeometryCache[key];
+            const slots = formationSlots[key];
+            if (!slots) return null;
+            const lines = {};
+            slots.forEach((s, i) => {
+                const l = s.geo.line;
+                (lines[l] = lines[l] || { key: l, name: FORMATION_LINE_NAMES[l], unit: s.geo.unit, members: [], depth: 0 }).members.push(i);
+            });
+            Object.values(lines).forEach(l => { l.depth = l.members.reduce((sum, i) => sum + slots[i].geo.y, 0) / l.members.length; });
+            const outfield = slots.filter(s => s.geo.line !== 'GK');
+            const xs = outfield.map(s => s.geo.x), ys = outfield.map(s => s.geo.y);
+            const geometry = {
+                key,
+                topology: FORMATION_TOPOLOGY[key],
+                slots,
+                lines,
+                relationships: buildFormationRelationships(slots),
+                metrics: {
+                    teamWidth: roundGeo(Math.max(...xs) - Math.min(...xs)),
+                    teamDepth: roundGeo(Math.max(...ys) - Math.min(...ys))
+                }
+            };
+            formationGeometryCache[key] = geometry;
+            return geometry;
+        }
+
+        // The table every existing function already reads — now generated.
+        const formationSlots = Object.fromEntries(
+            Object.keys(FORMATION_TOPOLOGY).map(key => [key, buildFormationGeometry(key)])
+        );
 
         // Converts a slot's (top, left) into real pitch-container
         // percentages. "top" is used as-is. "left" is a 0-100 fraction of
@@ -2137,7 +2505,10 @@
             };
             return {
                 attack: centroid(pts.filter(p => p.top <= cTop)),
-                defend: centroid(pts.filter(p => p.top > cTop))
+                defend: centroid(pts.filter(p => p.top > cTop)),
+                // Whole-map weighted centre — used by the tactical layer's
+                // resting role/focus nudge (see computeRoleFocusModifiers).
+                overall: { top: cTop, left: cLeft }
             };
         }
 
@@ -2221,117 +2592,431 @@
         const MIN_DEPTH_GAP = 10;
         const HORIZONTAL_SAFE_DIST = 20;
 
-        function computeAllShapeTargets(mode) {
-            const slots = formationSlots[squadState.formation] || [];
-            // Local-left bounds are [8,92], not [4,96] — a wide-slot
-            // player (fullback, winger) already sits close to the edge
-            // at REST, and a card has real pixel width: at local-left 96,
-            // the card's own half-width can extend past the visible
-            // pitch entirely even though the anchor POINT is technically
-            // still "on" the trapezoid. [8,92] leaves enough margin for
-            // the card itself, not just its center point, to stay
-            // visible.
-            const raw = slots.map((slot, idx) => {
-                const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
-                const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
-                const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
-                let rawTop, left;
-                if (zones) {
-                    const target = zones[mode];
-                    const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
-                    rawTop = slot.top + (target.top - slot.top) * HEATMAP_BLEND.top;
-                    left = Math.min(92, Math.max(8, slot.left + (targetLocalLeft - slot.left) * HEATMAP_BLEND.left));
-                } else {
-                    const fallback = computeShapeOffsetFallback(slot, idx, mode);
-                    rawTop = slot.top + fallback.dTop;
-                    left = Math.min(92, Math.max(8, slot.left + fallback.dLeft));
-                }
+        // ===================================================================
+        // TACTICAL LAYER — base position → final position
+        // ===================================================================
+        //   base          formation geometry (symmetric, structural)
+        // + role          where this ROLE lives on average (heat-map centroid
+        //                 across all its focuses), as a small bounded nudge
+        // + focus         how THIS focus differs from the role's average
+        //   = tactical    the resting spot shown in Normal view (controlled
+        //                 asymmetry: an Inverted Wingback tucks in, an
+        //                 Attacking Wingback sits higher, etc.)
+        // + heatmap       Attack/Defend only: blend toward the real scraped
+        //                 advanced/withdrawn zone (HEATMAP_BLEND, unchanged)
+        // + phase         Attack/Defend only: whole-LINE structural shift —
+        //                 the team pushes up and stretches wide in
+        //                 possession, drops and narrows into a compact block
+        //                 out of it (PHASE_STRUCTURE)
+        // + guard         Attack never ends behind the resting spot, Defend
+        //                 never ahead of it (unchanged rule)
+        // + spacing       collision cascade (MIN_DEPTH_GAP /
+        //                 HORIZONTAL_SAFE_DIST, unchanged algorithm)
+        //   = final
+        //
+        // All modifier values are in the legacy % units (0-100) the pitch
+        // renderer uses, so the numbers read the same as slot.top/left.
+        const TACTICAL_MODIFIER = {
+            // Fraction of (heat-map centroid − base) applied as the resting
+            // role/focus nudge, and the hard caps on it. Deliberately small:
+            // the base formation stays recognisable in Normal view.
+            strength: 0.12,
+            maxDepth: 3,
+            maxLateral: 4,
+            applyInNormal: true
+        };
+        const PHASE_STRUCTURE = {
+            attack: {
+                lineShift: { GK: 0, DEF: -3, DM: -2, MID: -2, AM: -1, ATT: 0 },
+                widthScale: 1.06
+            },
+            defend: {
+                lineShift: { GK: 0, DEF: 1, DM: 2, MID: 3, AM: 4, ATT: 5 },
+                widthScale: 0.90
+            }
+        };
 
-                // A genuine out-and-out attacker's heat map can be so
-                // concentrated in advanced areas that even its "less
-                // advanced" half still sits ahead of the SLOT's own
-                // formation-template resting spot (e.g. an Inside
-                // Forward barely tracks back at all) — which, run through
-                // the blend unguarded, would show the DEFEND button
-                // pushing that player MORE forward than they start,
-                // exactly backwards from what the button means. Users
-                // expect a direction, not just a data point: Attacking
-                // never moves a player behind their own resting spot,
-                // Defending never moves them ahead of it. Roles that
-                // already move in the expected direction (the vast
-                // majority) are unaffected by this — it only catches the
-                // rare case where the raw data would invert it.
-                if (mode === 'attack') rawTop = Math.min(rawTop, slot.top);
-                else rawTop = Math.max(rawTop, slot.top);
+        // Every focus of one role at one slot (side-specific, same lookup
+        // rules as getHeatmapFocusEntry) — needed to separate the ROLE's
+        // average tendency from the FOCUS's deviation from it.
+        function getHeatmapRoleEntry(pos, roleName, idx) {
+            const effPos = ROLE_CATALOG_POS_ALIAS[pos] || pos;
+            const sideKey = typeof idx === 'number' ? getPositionSideKey(effPos, idx) : effPos;
+            const roles = HEATMAP_RAW.data[sideKey] || HEATMAP_RAW.data[effPos];
+            if (!roles || !roleName) return null;
+            const roleKey = normalizeAttrKey(String(roleName).split(/[/(]/)[0]);
+            return roles.find(r => normalizeAttrKey(r.role) === roleKey)
+                || roles.find(r => normalizeAttrKey(r.role).includes(roleKey) || roleKey.includes(normalizeAttrKey(r.role)))
+                || null;
+        }
 
-                return { idx, baseTop: slot.top, rawTop, left };
-            });
+        // Overall weighted centroid of one focus's heat map, in the app's
+        // local (top, left) convention.
+        function heatmapCentroidLocal(levels) {
+            const zones = decodeHeatmapZones(levels);
+            if (!zones || !zones.overall) return null;
+            return { top: zones.overall.top, left: absoluteToLocalLeft(zones.overall.top, zones.overall.left) };
+        }
 
-            // Sort by natural depth (most advanced/lowest top first) —
-            // this is the ordering being preserved, not whatever order
-            // the raw heat-map targets alone would suggest.
-            const sorted = [...raw].sort((a, b) => a.baseTop - b.baseTop);
+        function computeRoleFocusModifiers(slot, idx) {
+            const none = { role: { dTop: 0, dLeft: 0 }, focus: { dTop: 0, dLeft: 0 } };
+            const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
+            if (!roleInfo) return none;
+            const roleEntry = getHeatmapRoleEntry(slot.pos, roleInfo.role, idx);
+            const focusEntry = getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx);
+            if (!roleEntry || !focusEntry) return none;
+            const centroids = roleEntry.focuses.map(f => heatmapCentroidLocal(f.levels)).filter(Boolean);
+            const focusC = heatmapCentroidLocal(focusEntry.levels);
+            if (!centroids.length || !focusC) return none;
+            const roleC = {
+                top: centroids.reduce((s, c) => s + c.top, 0) / centroids.length,
+                left: centroids.reduce((s, c) => s + c.left, 0) / centroids.length
+            };
+            const k = TACTICAL_MODIFIER.strength;
+            let role = { dTop: (roleC.top - slot.top) * k, dLeft: (roleC.left - slot.left) * k };
+            let focus = { dTop: (focusC.top - roleC.top) * k, dLeft: (focusC.left - roleC.left) * k };
+            // Cap the COMBINED nudge, scaling both parts proportionally so
+            // the role/focus split stays truthful in the debug trace.
+            const sumTop = role.dTop + focus.dTop, sumLeft = role.dLeft + focus.dLeft;
+            const sT = Math.abs(sumTop) > TACTICAL_MODIFIER.maxDepth ? TACTICAL_MODIFIER.maxDepth / Math.abs(sumTop) : 1;
+            const sL = Math.abs(sumLeft) > TACTICAL_MODIFIER.maxLateral ? TACTICAL_MODIFIER.maxLateral / Math.abs(sumLeft) : 1;
+            role = { dTop: role.dTop * sT, dLeft: role.dLeft * sL };
+            focus = { dTop: focus.dTop * sT, dLeft: focus.dLeft * sL };
+            return { role, focus };
+        }
 
-            let runningMin = -Infinity;
+        const clampLeft = v => Math.min(PITCH_GEOMETRY.maxX * 100, Math.max(PITCH_GEOMETRY.minX * 100, v));
+        const clampTop = v => Math.min(PITCH_GEOMETRY.maxY * 100, Math.max(PITCH_GEOMETRY.minY * 100, v));
+        // Keeps the goalkeeper inside a sensible GK zone whatever the
+        // heat map says (a Sweeper Keeper's advanced cluster can otherwise
+        // drag the card out toward the edge of the box).
+        function clampToGkZone(p) {
+            const z = PITCH_GEOMETRY.gkZone;
+            return {
+                top: Math.min(z.maxY * 100, Math.max(z.minY * 100, p.top)),
+                left: Math.min(50 + z.maxLateral * 100, Math.max(50 - z.maxLateral * 100, p.left))
+            };
+        }
+
+        // Spacing / collision solver — the SAME cascade as before, just
+        // lifted into its own function so it runs identically for every
+        // mode (Normal included, since role/focus nudges now exist there
+        // too). See the MIN_DEPTH_GAP comment block above for the rules.
+        // Tier = structural line (GK 0 … ATT 5). "Genuinely more advanced"
+        // used to be inferred from raw base depth, which misfires as soon as
+        // two members of the SAME line sit at slightly different depths
+        // (full-backs 2 units above their CBs, a staggered midfield three):
+        // the solver then treated them as different tiers and cascaded them
+        // against each other. With real topology, same line = same tier.
+        // The goalkeeper gets a full card-height of clearance (a GK card
+        // is a card too); everyone else keeps MIN_DEPTH_GAP.
+        const GK_CLEARANCE = 14;
+        function resolveShapeSpacing(raw) {
+            const sorted = [...raw].sort((a, b) => (b.tier - a.tier) || (a.baseTop - b.baseTop));
             const result = {};
-            sorted.forEach(item => {
-                // Only inherit a constraint from a predecessor that's
-                // GENUINELY more advanced (a strictly lower natural base
-                // depth) — not merely earlier in the sort. Same-depth
-                // siblings (e.g. all 4 back-line slots sharing base=70)
-                // are otherwise adjacent in this sorted list purely by
-                // tie-breaking, and checking "nearest predecessor" without
-                // this guard let them daisy-chain against EACH OTHER
-                // through marginal horizontal proximity — CB pushed by LB,
-                // the next CB pushed by that CB, and so on down the back
-                // line, each adding another full MIN_DEPTH_GAP until the
-                // last one in the chain hammered the hard ceiling. Same-
-                // tier teammates should never stack gaps against each
-                // other this way; only a real depth-tier difference
-                // (like a CDM genuinely ahead of the back line) should.
+            sorted.forEach((item, pos) => {
                 let constraint = -Infinity;
-                for (let j = sorted.indexOf(item) - 1; j >= 0; j--) {
+                let blocker = null;
+                // The goalkeeper is an ANCHOR, not a cascade member: it
+                // stays in its GK zone and everyone else is solved around
+                // it (see the back-pressure pass below). Previously the GK,
+                // being deepest, inherited every constraint and got shoved
+                // into the 96% floor on top of a dropping centre-back.
+                if (item.fixed) { result[item.idx] = { top: item.rawTop, left: item.left, blocker: null }; return; }
+                for (let j = pos - 1; j >= 0; j--) {
                     const prev = sorted[j];
-                    if (prev.baseTop >= item.baseTop) continue;
+                    if (prev.tier <= item.tier) continue;
                     const prevFinal = result[prev.idx];
                     if (!prevFinal) continue;
                     if (Math.abs(item.left - prevFinal.left) < HORIZONTAL_SAFE_DIST) {
                         constraint = Math.max(constraint, prevFinal.top + MIN_DEPTH_GAP);
-                        break; // nearest horizontally-close, genuinely-more-advanced predecessor is enough
+                        blocker = prev.idx;
+                        break;
                     }
                 }
                 const finalTop = Math.min(96, Math.max(6, Math.max(item.rawTop, constraint)));
-                result[item.idx] = { top: finalTop, left: item.left };
+                result[item.idx] = { top: finalTop, left: item.left, blocker: finalTop > item.rawTop ? blocker : null };
             });
 
-            // Final pass: the cascade above can still nudge a slot to
-            // maintain minimum spacing from a neighbor, which can undo
-            // the per-slot direction guarantee applied before sorting.
-            // Re-assert it here as the LAST word — Attacking must never
-            // finish behind a player's own resting spot, Defending must
-            // never finish ahead of it — even if that means a slightly
-            // tighter (but still real) gap with a neighbor in the rare
-            // case both can't be fully satisfied. Wrong-direction
-            // movement is a worse, more confusing failure than a
-            // marginally tighter gap.
+            // BACK-PRESSURE pass (new). The forward cascade only ever pushes
+            // players DEEPER, so when a chain reaches something that can't
+            // move (the GK anchor, or the 96% floor) the last two cards end
+            // up stacked. Here, anything immovable pushes a genuinely
+            // more-advanced, horizontally-close teammate back UP the pitch
+            // by MIN_DEPTH_GAP — and a pushed player becomes immovable in
+            // turn, so the correction propagates up the chain (GK → CB →
+            // pivot) instead of stopping at the first link. Same-tier
+            // teammates (equal base depth) are never pushed against each
+            // other, exactly like the forward rule, so a back line stays a
+            // line.
+            const byIdx = {};
+            raw.forEach(r => { byIdx[r.idx] = r; });
+            const immovable = new Set(raw.filter(r => r.fixed || result[r.idx].top >= 95.5).map(r => r.idx));
+            for (let iter = 0; iter < 11; iter++) {
+                let changed = false;
+                [...immovable].sort((a, b) => result[b].top - result[a].top).forEach(deepIdx => {
+                    raw.forEach(r => {
+                        if (r.idx === deepIdx || r.fixed) return;
+                        if (byIdx[r.idx].tier <= byIdx[deepIdx].tier) return;
+                        if (Math.abs(result[r.idx].left - result[deepIdx].left) >= HORIZONTAL_SAFE_DIST) return;
+                        const ceiling = result[deepIdx].top - (byIdx[deepIdx].fixed ? GK_CLEARANCE : MIN_DEPTH_GAP);
+                        if (result[r.idx].top > ceiling) {
+                            result[r.idx].top = Math.max(6, ceiling);
+                            result[r.idx].blocker = deepIdx;
+                            if (!immovable.has(r.idx)) { immovable.add(r.idx); }
+                            changed = true;
+                        }
+                    });
+                });
+                if (!changed) break;
+            }
+            return result;
+        }
+
+        const shapeTargetsCache = { key: null, byMode: {} };
+        function shapeCacheKey() {
+            const roles = squadState.teamRoles || {};
+            return squadState.formation + '|' + Object.keys(roles).sort().map(i => `${i}:${roles[i].role}/${roles[i].focus}`).join(',');
+        }
+
+        // Returns { [slotIdx]: {top, left, trace} } for 'normal' | 'attack'
+        // | 'defend'. `trace` is the full base → final breakdown used by the
+        // debug overlay; callers that only want the position ignore it.
+        function computeAllShapeTargets(mode) {
+            const cacheKey = shapeCacheKey();
+            if (shapeTargetsCache.key !== cacheKey) { shapeTargetsCache.key = cacheKey; shapeTargetsCache.byMode = {}; }
+            if (shapeTargetsCache.byMode[mode]) return shapeTargetsCache.byMode[mode];
+
+            const slots = formationSlots[squadState.formation] || [];
+            const phase = PHASE_STRUCTURE[mode] || null;
+            const raw = slots.map((slot, idx) => {
+                const isGK = slot.geo && slot.geo.line === 'GK';
+                const base = { top: slot.top, left: slot.left };
+                const mods = (mode !== 'normal' || TACTICAL_MODIFIER.applyInNormal)
+                    ? computeRoleFocusModifiers(slot, idx)
+                    : { role: { dTop: 0, dLeft: 0 }, focus: { dTop: 0, dLeft: 0 } };
+                let tactical = {
+                    top: base.top + mods.role.dTop + mods.focus.dTop,
+                    left: clampLeft(base.left + mods.role.dLeft + mods.focus.dLeft)
+                };
+                if (isGK) tactical = clampToGkZone(tactical);
+
+                const trace = { base, role: mods.role, focus: mods.focus, tactical: { ...tactical },
+                    heatmap: { dTop: 0, dLeft: 0 }, phase: { dTop: 0, dLeft: 0 }, guard: 0, spacing: 0, source: 'formation' };
+
+                let rawTop = tactical.top, left = tactical.left;
+                if (mode !== 'normal') {
+                    // HEATMAP modifier — same blend as always, now anchored
+                    // on the TACTICAL resting spot instead of the raw slot.
+                    const roleInfo = squadState.teamRoles && squadState.teamRoles[idx];
+                    const focusEntry = roleInfo ? getHeatmapFocusEntry(slot.pos, roleInfo.role, roleInfo.focus, idx) : null;
+                    const zones = focusEntry ? decodeHeatmapZones(focusEntry.levels) : null;
+                    if (zones) {
+                        const target = zones[mode];
+                        const targetLocalLeft = absoluteToLocalLeft(target.top, target.left);
+                        rawTop = tactical.top + (target.top - tactical.top) * HEATMAP_BLEND.top;
+                        left = clampLeft(tactical.left + (targetLocalLeft - tactical.left) * HEATMAP_BLEND.left);
+                        trace.source = 'heatmap';
+                    } else {
+                        const fallback = computeShapeOffsetFallback(slot, idx, mode);
+                        rawTop = tactical.top + fallback.dTop;
+                        left = clampLeft(tactical.left + fallback.dLeft);
+                        trace.source = 'fallback';
+                    }
+                    trace.heatmap = { dTop: rawTop - tactical.top, dLeft: left - tactical.left };
+
+                    // PHASE modifier — whole-line structure.
+                    if (phase && !isGK) {
+                        const line = slot.geo ? slot.geo.line : 'MID';
+                        const dTop = phase.lineShift[line] || 0;
+                        const newLeft = clampLeft(50 + (left - 50) * phase.widthScale);
+                        trace.phase = { dTop, dLeft: newLeft - left };
+                        rawTop += dTop;
+                        left = newLeft;
+                    }
+
+                    // Direction guard vs. the resting (tactical) spot.
+                    const beforeGuard = rawTop;
+                    if (mode === 'attack') rawTop = Math.min(rawTop, tactical.top);
+                    else rawTop = Math.max(rawTop, tactical.top);
+                    trace.guard = rawTop - beforeGuard;
+                }
+                if (isGK) { const z = clampToGkZone({ top: rawTop, left }); rawTop = z.top; left = z.left; }
+                const tier = slot.geo ? FORMATION_LINES.indexOf(slot.geo.line) : 0;
+                return { idx, baseTop: slot.top, restTop: tactical.top, rawTop, left, trace, fixed: isGK, tier };
+            });
+
+            const solved = resolveShapeSpacing(raw);
+
+            const result = {};
             raw.forEach(item => {
-                const r = result[item.idx];
+                const r = solved[item.idx];
                 if (!r) return;
-                if (mode === 'attack') r.top = Math.min(r.top, item.baseTop);
-                else r.top = Math.max(r.top, item.baseTop);
+                let top = r.top;
+                // Final direction guarantee (unchanged rule) — Attack never
+                // finishes behind the resting spot, Defend never ahead.
+                if (mode === 'attack') top = Math.min(top, item.restTop);
+                else if (mode === 'defend') top = Math.max(top, item.restTop);
+                item.trace.spacing = top - item.rawTop;
+                item.trace.blocker = r.blocker;
+                item.trace.final = { top, left: r.left };
+                result[item.idx] = { top, left: r.left, trace: item.trace };
             });
-
+            shapeTargetsCache.byMode[mode] = result;
             return result;
         }
 
         function getShapeAdjustedSlot(slot, idx) {
             const mode = squadState.pitchShapeMode || 'normal';
-            if (mode === 'normal') return slot;
-            const targets = computeAllShapeTargets(mode);
-            const t = targets[idx];
+            if (mode === 'normal' && !TACTICAL_MODIFIER.applyInNormal) return slot;
+            const t = computeAllShapeTargets(mode)[idx];
             if (!t) return slot;
             return { ...slot, top: t.top, left: t.left };
         }
+
+        // ===================================================================
+        // FORMATION VALIDATION
+        // ===================================================================
+        // validateFormationGeometry('4-3-3')                → base geometry
+        // validateFormationGeometry('4-3-3', { mode: 'attack' }) → the live
+        //   tactical output for the CURRENT squad (needs that formation to
+        //   be the active one, since roles come from squadState).
+        // Returns { formation, mode, ok, errors[], warnings[], metrics }.
+        function validateFormationGeometry(formationKey, opts) {
+            const mode = (opts && opts.mode) || 'base';
+            const errors = [], warnings = [];
+            const topo = FORMATION_TOPOLOGY[formationKey];
+            const slots = formationSlots[formationKey];
+            if (!topo || !slots) return { formation: formationKey, mode, ok: false, errors: ['Unknown formation'], warnings, metrics: {} };
+
+            // --- topology ---
+            if (slots.length !== 11) errors.push(`Topology has ${slots.length} slots, expected 11`);
+            const gkCount = topo.slots.filter(s => s[1] === 'GK').length;
+            if (gkCount !== 1) errors.push(`Topology has ${gkCount} goalkeepers`);
+            topo.slots.forEach(([line, anchor, side, pos], i) => {
+                if (!FORMATION_LINES.includes(line)) errors.push(`Slot ${i}: unknown line "${line}"`);
+                if (line !== 'GK' && !topo.lines[line]) errors.push(`Slot ${i}: line "${line}" has no parameters`);
+                if (!ANCHOR_TYPES[anchor]) errors.push(`Slot ${i}: unknown anchor "${anchor}"`);
+                else if (!(ANCHOR_ALLOWED_POS[anchor] || []).includes(pos)) errors.push(`Slot ${i}: position ${pos} can't sit on anchor ${anchor}`);
+                if (!(side in SIDE_SIGN)) errors.push(`Slot ${i}: bad side "${side}"`);
+                if (ANCHOR_TYPES[anchor] && ANCHOR_TYPES[anchor].wide && side === 'C') errors.push(`Slot ${i}: wide anchor ${anchor} can't be central`);
+            });
+            const lineDepths = Object.keys(topo.lines).map(l => ({ l, d: topo.lines[l].depth }));
+            for (let a = 0; a < lineDepths.length; a++) for (let b = 0; b < lineDepths.length; b++) {
+                const ia = FORMATION_LINES.indexOf(lineDepths[a].l), ib = FORMATION_LINES.indexOf(lineDepths[b].l);
+                if (ia < ib && lineDepths[a].d <= lineDepths[b].d) errors.push(`Line order broken: ${lineDepths[a].l} (${lineDepths[a].d}) is not deeper than ${lineDepths[b].l} (${lineDepths[b].d})`);
+            }
+            // Symmetry: every L slot needs a mirrored R twin on the same
+            // line + anchor (unless the formation declares asymmetric).
+            if (!topo.asymmetric) {
+                topo.slots.forEach(([line, anchor, side], i) => {
+                    if (side !== 'L') return;
+                    const twin = topo.slots.findIndex(([l2, a2, s2]) => l2 === line && a2 === anchor && s2 === 'R');
+                    if (twin === -1) errors.push(`Slot ${i} (${anchor} L on ${line}) has no mirrored R twin`);
+                });
+            }
+
+            // --- positions to check (base or live tactical) ---
+            let pts;
+            if (mode === 'base') {
+                pts = slots.map(s => ({ top: s.top, left: s.left }));
+            } else {
+                if (formationKey !== squadState.formation) {
+                    warnings.push(`Mode "${mode}" validates the live squad — "${formationKey}" isn't the active formation, checked base geometry instead`);
+                    pts = slots.map(s => ({ top: s.top, left: s.left }));
+                } else {
+                    const t = computeAllShapeTargets(mode);
+                    pts = slots.map((s, i) => t[i] ? { top: t[i].top, left: t[i].left } : { top: s.top, left: s.left });
+                }
+            }
+            const Y = i => pts[i].top / 100, X = i => pts[i].left / 100;
+            const lineOf = i => slots[i].geo.line, anchorOf = i => slots[i].geo.anchor;
+
+            // duplicates / overlap — measured in PIXEL space (after the
+            // trapezoid transform) against the real card footprint.
+            const pix = pts.map(p => getSlotPixelPosition(p));
+            for (let i = 0; i < 11; i++) for (let j = i + 1; j < 11; j++) {
+                const dy = Math.abs(pix[i].top - pix[j].top), dx = Math.abs(pix[i].left - pix[j].left);
+                if (dy < 1 && dx < 1) errors.push(`Duplicate position: slots ${i} (${slots[i].pos}) and ${j} (${slots[j].pos})`);
+                // ERROR = the solver's own guarantee is broken (closer than
+                // MIN_DEPTH_GAP in the same column). WARNING = cards touch
+                // (inside the card footprint) but the guarantee holds.
+                else if (dy < MIN_DEPTH_GAP - 0.5 && dx < GEO_CARD_BOX.w * 0.75) errors.push(`Overlap: ${slots[i].label} and ${slots[j].label} (Δy ${dy.toFixed(1)}%, Δx ${dx.toFixed(1)}%)`);
+                else if (dy < GEO_CARD_BOX.h * 0.9 && dx < GEO_CARD_BOX.w * 0.9) warnings.push(`Tight: ${slots[i].label} / ${slots[j].label} (Δy ${dy.toFixed(1)}%, Δx ${dx.toFixed(1)}%)`);
+            }
+            // defensive line coherence
+            const def = slots.map((_, i) => i).filter(i => lineOf(i) === 'DEF');
+            if (def.length) {
+                const spread = Math.max(...def.map(Y)) - Math.min(...def.map(Y));
+                if (spread > (mode === 'base' ? 0.05 : 0.14)) warnings.push(`Defensive line broken: depth spread ${(spread * 100).toFixed(1)}`);
+                const deepestNonDef = Math.max(...slots.map((_, i) => i).filter(i => !['GK', 'DEF'].includes(lineOf(i))).map(Y));
+                const cbs = def.filter(i => anchorOf(i) === 'CB');
+                if (cbs.length && Math.min(...cbs.map(Y)) < deepestNonDef - 0.02) warnings.push('A midfielder sits deeper than a centre-back');
+            }
+            // line gaps
+            const occupied = FORMATION_LINES.filter(l => l !== 'GK' && slots.some(s => s.geo.line === l));
+            const lineY = l => { const m = slots.map((_, i) => i).filter(i => lineOf(i) === l); return m.reduce((s, i) => s + Y(i), 0) / m.length; };
+            const gaps = [];
+            for (let k = 0; k < occupied.length - 1; k++) {
+                const gap = lineY(occupied[k]) - lineY(occupied[k + 1]);
+                gaps.push({ from: occupied[k], to: occupied[k + 1], gap: roundGeo(gap) });
+                if (gap > 0.36) warnings.push(`Large vertical gap ${occupied[k]}→${occupied[k + 1]}: ${(gap * 100).toFixed(1)}`);
+                // Line proximity is a STRUCTURAL check — in Attack/Defend the
+                // heat map legitimately merges lines (a pivot dropping into
+                // the back line), so there only an inverted order is flagged.
+                if (mode === 'base' && gap < 0.06) warnings.push(`Lines ${occupied[k]} and ${occupied[k + 1]} nearly merged (${(gap * 100).toFixed(1)})`);
+                if (mode !== 'base' && gap < -0.04) warnings.push(`Lines inverted: ${occupied[k + 1]} sits deeper than ${occupied[k]} (${(gap * 100).toFixed(1)})`);
+            }
+            const midLines = occupied.filter(l => ['DM', 'MID', 'AM'].includes(l));
+            if (midLines.length && occupied.includes('ATT')) {
+                const mostAdvancedMid = Math.min(...midLines.map(lineY));
+                if (mostAdvancedMid - lineY('ATT') < (mode === 'base' ? 0.12 : 0.05)) warnings.push(`Midfield too close to attack (${((mostAdvancedMid - lineY('ATT')) * 100).toFixed(1)})`);
+            }
+            // horizontal gaps within lines — only between neighbours where
+            // at least one is central (two wide anchors with nobody between
+            // them on the same line, e.g. 3-5-2 wing-backs, is the design:
+            // the centre is covered by another line).
+            occupied.forEach(l => {
+                const m = slots.map((_, i) => i).filter(i => lineOf(i) === l).sort((a, b) => X(a) - X(b));
+                for (let k = 0; k < m.length - 1; k++) {
+                    const bothWide = ANCHOR_TYPES[anchorOf(m[k])].wide && ANCHOR_TYPES[anchorOf(m[k + 1])].wide;
+                    if (!bothWide && X(m[k + 1]) - X(m[k]) > 0.5) warnings.push(`Large horizontal gap in ${l}: ${((X(m[k + 1]) - X(m[k])) * 100).toFixed(1)}`);
+                }
+            });
+            // wide players collapsing inward, striker too deep, GK zone
+            slots.forEach((s, i) => {
+                if (['W', 'WM', 'FB', 'WB'].includes(anchorOf(i)) && Math.abs(X(i) - 0.5) < 0.2) warnings.push(`${s.label} collapsed into the centre (x ${(X(i) * 100).toFixed(1)})`);
+                if (anchorOf(i) === 'ST' && Y(i) > 0.30) warnings.push(`${s.label} too deep for a striker (top ${(Y(i) * 100).toFixed(1)})`);
+                if (anchorOf(i) === 'GK') {
+                    const z = PITCH_GEOMETRY.gkZone;
+                    if (Y(i) < z.minY - 1e-6 || Y(i) > z.maxY + 1e-6 || Math.abs(X(i) - 0.5) > z.maxLateral + 1e-6) errors.push(`Goalkeeper outside GK zone (top ${(Y(i) * 100).toFixed(1)}, left ${(X(i) * 100).toFixed(1)})`);
+                }
+            });
+
+            const outfield = slots.map((_, i) => i).filter(i => lineOf(i) !== 'GK');
+            const metrics = {
+                teamWidth: roundGeo(Math.max(...outfield.map(X)) - Math.min(...outfield.map(X))),
+                teamDepth: roundGeo(Math.max(...outfield.map(Y)) - Math.min(...outfield.map(Y))),
+                lineGaps: gaps
+            };
+            return { formation: formationKey, mode, ok: errors.length === 0, errors, warnings, metrics };
+        }
+
+        // Validates every formation's base geometry once at startup — one
+        // console line when clean, a collapsed group with details otherwise.
+        function validateAllFormations() {
+            const results = Object.keys(FORMATION_TOPOLOGY).map(k => validateFormationGeometry(k));
+            const bad = results.filter(r => !r.ok || r.warnings.length);
+            if (!bad.length) { console.info(`[geometry] ${results.length} formations validated — no issues`); return results; }
+            console.groupCollapsed(`[geometry] ${bad.length}/${results.length} formations have diagnostics`);
+            bad.forEach(r => console.log(r.formation, r));
+            console.groupEnd();
+            return results;
+        }
+        window.validateFormationGeometry = validateFormationGeometry;
+        window.getFormationGeometry = getFormationGeometry;
+
+        validateAllFormations();
 
         // Switches the pitch between its normal formation grid and the
         // attacking/defending shape. Deliberately does NOT call the full
@@ -2366,7 +3051,151 @@
                 squadState.heatZoneSlotIdx = null;
                 renderPlayerHeatZoneOverlay();
             }
+            renderGeometryDebugOverlay();
         };
+
+        // ===================================================================
+        // GEOMETRY DEBUG MODE (development only — hidden by default)
+        // ===================================================================
+        // Turn on with ?debug=geometry in the URL, Ctrl+Shift+G, or
+        // window.toggleGeometryDebug() in the console. Draws, on top of the
+        // live pitch: formation lines, lanes, anchor points (base), final
+        // points with base→final arrows, relationship lines, collision
+        // zones, in-line spacing distances — plus a floating panel with the
+        // per-player pipeline (role · anchor · base · modifiers · final) and
+        // the validation report for the current mode.
+        let geometryDebugEnabled = /[?&]debug=geometry\b/.test(location.search);
+        window.toggleGeometryDebug = function(force) {
+            geometryDebugEnabled = typeof force === 'boolean' ? force : !geometryDebugEnabled;
+            renderGeometryDebugOverlay();
+            return geometryDebugEnabled;
+        };
+        document.addEventListener('keydown', e => {
+            if (e.ctrlKey && e.shiftKey && (e.key === 'G' || e.key === 'g')) { e.preventDefault(); window.toggleGeometryDebug(); }
+        });
+
+        const GEO_DEBUG_LINE_COLORS = { GK: '#e5e7eb', DEF: '#60a5fa', DM: '#a78bfa', MID: '#34d399', AM: '#fbbf24', ATT: '#f87171' };
+        const GEO_DEBUG_REL_COLORS = { 'cb-pair': '#60a5fa', 'fullback-cb': '#93c5fd', 'pivot-pair': '#a78bfa', line: '#94a3b8', support: '#64748b' };
+
+        function renderGeometryDebugOverlay() {
+            const layer = document.getElementById('pitch-geometry-debug');
+            let panel = document.getElementById('geometry-debug-panel');
+            if (!geometryDebugEnabled) {
+                if (layer) layer.innerHTML = '';
+                if (panel) panel.remove();
+                return;
+            }
+            if (!layer) return;
+            const key = squadState.formation;
+            const geo = getFormationGeometry(key);
+            if (!geo) { layer.innerHTML = ''; return; }
+            const mode = squadState.pitchShapeMode || 'normal';
+            const targets = computeAllShapeTargets(mode);
+            const slots = geo.slots;
+            const px = (top, left) => getSlotPixelPosition({ top, left });
+            const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
+            const sgn = v => (v > 0 ? '+' : '') + f1(v);
+
+            let svg = '';
+            // Lanes: centre, half-spaces and wide lanes, from the widest line.
+            const maxW = Math.max(...slots.filter(s => s.geo.line !== 'GK').map(s => Math.abs(s.geo.x - 0.5))) * 2;
+            [-0.5, -0.25, 0, 0.25, 0.5].forEach(f => {
+                const lx = 50 + f * maxW * 100;
+                const a = px(2, lx), b = px(98, lx);
+                svg += `<line x1="${a.left}" y1="2" x2="${b.left}" y2="98" stroke="#ffffff" stroke-opacity="0.18" stroke-dasharray="1.2 1.2" vector-effect="non-scaling-stroke" stroke-width="1"/>`;
+            });
+            // Formation lines at each line's base depth.
+            Object.values(geo.lines).forEach(l => {
+                if (l.key === 'GK') return;
+                const t = l.depth * 100;
+                const a = px(t, 2), b = px(t, 98);
+                svg += `<line x1="${a.left}" y1="${t}" x2="${b.left}" y2="${t}" stroke="${GEO_DEBUG_LINE_COLORS[l.key]}" stroke-opacity="0.55" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" stroke-width="1.5"/>`;
+            });
+            // Relationships (between FINAL positions — what the user sees).
+            const fin = i => targets[i] ? px(targets[i].top, targets[i].left) : px(slots[i].top, slots[i].left);
+            geo.relationships.forEach(r => {
+                const a = fin(r.a), b = fin(r.b);
+                svg += `<line x1="${a.left}" y1="${a.top}" x2="${b.left}" y2="${b.top}" stroke="${GEO_DEBUG_REL_COLORS[r.type] || '#94a3b8'}" stroke-opacity="${r.type === 'support' ? 0.35 : 0.7}" stroke-width="${r.type === 'support' ? 1 : 2}" vector-effect="non-scaling-stroke"/>`;
+            });
+            // Collision zones, base anchors, base→final arrows.
+            slots.forEach((s, i) => {
+                const t = targets[i];
+                const f = fin(i);
+                const b = px(s.top, s.left);
+                const local = t ? t : s;
+                const hw = getSlotPixelPosition({ top: local.top, left: local.left + HORIZONTAL_SAFE_DIST / 2 }).left - f.left;
+                const colliding = slots.some((_, j) => j !== i && targets[j] && t &&
+                    Math.abs(targets[j].top - t.top) < MIN_DEPTH_GAP * 0.6 && Math.abs(targets[j].left - t.left) < HORIZONTAL_SAFE_DIST * 0.6);
+                svg += `<ellipse cx="${f.left}" cy="${f.top}" rx="${Math.abs(hw)}" ry="${MIN_DEPTH_GAP / 2}" fill="${colliding ? '#ef4444' : '#ffffff'}" fill-opacity="${colliding ? 0.22 : 0.05}" stroke="${colliding ? '#ef4444' : '#ffffff'}" stroke-opacity="${colliding ? 0.8 : 0.2}" vector-effect="non-scaling-stroke" stroke-width="1"/>`;
+                if (Math.hypot(f.left - b.left, f.top - b.top) > 0.4) {
+                    svg += `<line x1="${b.left}" y1="${b.top}" x2="${f.left}" y2="${f.top}" stroke="#facc15" stroke-width="2" vector-effect="non-scaling-stroke" marker-end="url(#geo-arrow)"/>`;
+                }
+                svg += `<circle cx="${b.left}" cy="${b.top}" r="0.9" fill="none" stroke="${GEO_DEBUG_LINE_COLORS[s.geo.line]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+            });
+
+            // HTML labels: anchor tag at each final point, spacing numbers
+            // between same-line neighbours.
+            let labels = '';
+            slots.forEach((s, i) => {
+                const f = fin(i);
+                labels += `<div class="absolute text-[9px] font-mono font-bold px-1 rounded" style="top:calc(${f.top}% - 34px);left:${f.left}%;transform:translateX(-50%);background:${GEO_DEBUG_LINE_COLORS[s.geo.line]};color:#0b1220;z-index:40">${s.geo.side !== 'C' ? s.geo.side : ''}${s.geo.anchor}</div>`;
+            });
+            geo.relationships.filter(r => r.type !== 'support').forEach(r => {
+                const ta = targets[r.a] || slots[r.a], tb = targets[r.b] || slots[r.b];
+                const d = Math.hypot(ta.left - tb.left, ta.top - tb.top);
+                const a = fin(r.a), b = fin(r.b);
+                labels += `<div class="absolute text-[9px] font-mono text-white/90 bg-black/60 px-1 rounded" style="top:${(a.top + b.top) / 2}%;left:${(a.left + b.left) / 2}%;transform:translate(-50%,-50%);z-index:40">${f1(d)}</div>`;
+            });
+
+            layer.innerHTML = `
+                <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <defs><marker id="geo-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#facc15"/></marker></defs>
+                    ${svg}
+                </svg>
+                ${labels}`;
+
+            // Floating panel: pipeline table + validation.
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = 'geometry-debug-panel';
+                panel.setAttribute('dir', 'ltr');
+                panel.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:9999;max-width:min(760px,calc(100vw - 24px));max-height:46vh;overflow:auto;background:rgba(8,12,24,0.94);border:1px solid #334155;border-radius:12px;padding:10px 12px;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#e2e8f0;box-shadow:0 10px 30px rgba(0,0,0,.5)';
+                document.body.appendChild(panel);
+            }
+            const report = validateFormationGeometry(key, { mode: mode === 'normal' ? 'normal' : mode });
+            const rows = slots.map((s, i) => {
+                const t = targets[i], tr = t && t.trace;
+                const roleInfo = squadState.teamRoles && squadState.teamRoles[i];
+                if (!tr) return '';
+                const mod = (m) => `${sgn(m.dTop)}/${sgn(m.dLeft)}`;
+                return `<tr style="border-top:1px solid #1e293b">
+                    <td style="color:${GEO_DEBUG_LINE_COLORS[s.geo.line]}">${i}</td>
+                    <td>${s.pos}</td>
+                    <td title="${s.geo.anchorDesc} · ${s.geo.unit} · ${s.geo.lane}">${s.geo.side}${s.geo.anchor} <span style="color:#64748b">${s.geo.unit}</span></td>
+                    <td>${roleInfo ? `${roleInfo.role} · ${roleInfo.focus}` : '<span style="color:#64748b">—</span>'}</td>
+                    <td>${f1(tr.base.top)},${f1(tr.base.left)}</td>
+                    <td>${mod(tr.role)}</td>
+                    <td>${mod(tr.focus)}</td>
+                    <td>${mod(tr.heatmap)}<span style="color:#64748b">${tr.source === 'fallback' ? ' fb' : ''}</span></td>
+                    <td>${mod(tr.phase)}</td>
+                    <td>${tr.guard ? sgn(tr.guard) : '·'}</td>
+                    <td style="color:${tr.spacing ? '#fbbf24' : 'inherit'}">${tr.spacing ? sgn(tr.spacing) + (tr.blocker != null ? ` ←${tr.blocker}` : '') : '·'}</td>
+                    <td style="color:#facc15">${f1(tr.final.top)},${f1(tr.final.left)}</td>
+                </tr>`;
+            }).join('');
+            const issues = [...report.errors.map(e => `<div style="color:#f87171">✖ ${e}</div>`), ...report.warnings.map(w => `<div style="color:#fbbf24">▲ ${w}</div>`)].join('') || '<div style="color:#4ade80">✔ no geometry issues</div>';
+            panel.innerHTML = `
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:6px">
+                    <b>Geometry debug · ${key} · ${mode}</b>
+                    <span style="color:#64748b">width ${f1(report.metrics.teamWidth * 100)} · depth ${f1(report.metrics.teamDepth * 100)} · <a href="#" onclick="window.toggleGeometryDebug(false);return false" style="color:#93c5fd">close</a></span>
+                </div>
+                <div style="color:#94a3b8;margin-bottom:4px">${FORMATION_TOPOLOGY[key].desc}</div>
+                <table style="border-collapse:collapse;width:100%;white-space:nowrap">
+                    <thead style="color:#94a3b8;text-align:left"><tr><th>#</th><th>pos</th><th>anchor</th><th>role · focus</th><th>base t,l</th><th>role Δ</th><th>focus Δ</th><th>heatmap Δ</th><th>phase Δ</th><th>guard</th><th>spacing</th><th>final t,l</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div style="margin-top:6px">${issues}</div>`;
+        }
 
         // Paints the individual roam-area "cloud" for whichever slot is
         // currently selected (squadState.heatZoneSlotIdx) using the exact
@@ -7810,6 +8639,7 @@
                 container.appendChild(wrapper);
             });
             renderPlayerHeatZoneOverlay();
+            renderGeometryDebugOverlay();
         }
 
         // ===================================================================
