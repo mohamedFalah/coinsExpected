@@ -8955,6 +8955,18 @@
         function renderFootballPitch() {
             const container = document.getElementById('pitch-container');
             if (!container) return;
+            // Formation change → remember where every card was, so the new
+            // layout can animate FROM there (see runFormationTransition).
+            const prevFormation = container.dataset.formation;
+            const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const flipTransition = !!prevFormation && prevFormation !== squadState.formation && !reduceMotion;
+            const prevCards = {};
+            if (flipTransition) {
+                container.querySelectorAll('[data-flip-key]').forEach(el => {
+                    prevCards[el.dataset.flipKey] = { el, top: el.style.top, left: el.style.left };
+                });
+            }
+            const emptyOrdinal = {};
             container.innerHTML = '';
 
             const slots = formationSlots[squadState.formation];
@@ -8999,6 +9011,11 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = `absolute w-16 sm:w-24 lg:w-28 cursor-pointer player-card-glow transition-all group ${isLocked ? 'ring-2 ring-fc-gold/40 rounded-xl' : ''}`;
                 wrapper.dataset.slotIdx = idx;
+                // Identity across re-renders: the PLAYER for a filled slot
+                // (so he travels to wherever he ends up in the new shape),
+                // or "Nth empty slot of this position" for an empty one.
+                if (player) wrapper.dataset.flipKey = 'p:' + player.id;
+                else { emptyOrdinal[slot.pos] = (emptyOrdinal[slot.pos] || 0) + 1; wrapper.dataset.flipKey = 'e:' + slot.pos + '#' + emptyOrdinal[slot.pos]; }
                 // Explicit top/left transition (separate from the
                 // transition-all class above, which covers the card
                 // face's own hover effects) so switching Attack/Defend
@@ -9119,6 +9136,79 @@
             // Re-solve if the real rendered card size differs from the
             // estimate positions were computed with (first paint, resize).
             syncMeasuredCardFootprint();
+            container.dataset.formation = squadState.formation;
+            if (flipTransition) runFormationTransition(container, prevCards);
+        }
+
+        // Smooth formation change (FLIP): every card is first built at its
+        // FINAL spot, then pulled back to where that same player stood in
+        // the old formation and released, so it slides across the pitch
+        // into its new slot. Cards glide in a front-to-back wave. Players
+        // who left the XI fade out where they stood; players new to the XI
+        // (or a slot that didn't exist before) fade and scale in once the
+        // others are on their way. Purely visual — squad state was already
+        // final before this runs.
+        const FORMATION_MOVE_MS = 700;
+        const FORMATION_EASE = 'cubic-bezier(.22,.8,.26,1)';
+        const CARD_REST_TRANSITION = 'top 0.6s ease, left 0.6s ease';
+        function runFormationTransition(container, prevCards) {
+            const moving = [], entering = [];
+            container.querySelectorAll('[data-flip-key]').forEach(el => {
+                const prev = prevCards[el.dataset.flipKey];
+                const target = { top: el.style.top, left: el.style.left };
+                const moves = prev && (prev.top !== target.top || prev.left !== target.left);
+                if (moves || !prev) el.style.transition = 'none'; // unmoved cards keep their normal slide
+                if (moves) {
+                    el.style.top = prev.top;
+                    el.style.left = prev.left;
+                    moving.push({ el, target });
+                } else if (!prev) {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translate(-50%, -50%) scale(0.8)';
+                    entering.push({ el, target });
+                }
+                if (prev) delete prevCards[el.dataset.flipKey];
+            });
+            // Leaving players: re-attach the old card as a non-interactive
+            // ghost and fade it out in place.
+            Object.values(prevCards).forEach(({ el }) => {
+                el.removeAttribute('data-slot-idx');
+                el.removeAttribute('data-flip-key');
+                el.style.pointerEvents = 'none';
+                el.style.transition = 'opacity 320ms ease, transform 320ms ease';
+                container.appendChild(el);
+                requestAnimationFrame(() => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translate(-50%, -50%) scale(0.8)';
+                });
+                setTimeout(() => el.remove(), 380);
+            });
+            void container.offsetHeight; // commit the start positions
+            // front-to-back wave: attackers first, keeper last
+            moving.sort((a, b) => parseFloat(a.target.top) - parseFloat(b.target.top));
+            requestAnimationFrame(() => {
+                moving.forEach(({ el, target }, k) => {
+                    const d = k * 25;
+                    el.style.transition = `top ${FORMATION_MOVE_MS}ms ${FORMATION_EASE} ${d}ms, left ${FORMATION_MOVE_MS}ms ${FORMATION_EASE} ${d}ms`;
+                    el.style.top = target.top;
+                    el.style.left = target.left;
+                });
+                entering.forEach(({ el }, k) => {
+                    const d = 220 + k * 45;
+                    el.style.transition = `opacity 380ms ease ${d}ms, transform 420ms ${FORMATION_EASE} ${d}ms`;
+                    el.style.opacity = '1';
+                    el.style.transform = 'translate(-50%, -50%)';
+                });
+                // Hand the cards back to the normal Attack/Defend slide.
+                const total = FORMATION_MOVE_MS + moving.length * 25 + 220 + entering.length * 45 + 450;
+                setTimeout(() => {
+                    [...moving, ...entering].forEach(({ el }) => {
+                        if (!el.isConnected) return;
+                        el.style.transition = CARD_REST_TRANSITION;
+                        el.style.opacity = '';
+                    });
+                }, total);
+            });
         }
 
         // ===================================================================
