@@ -9296,11 +9296,21 @@
                 buildup: { en: 'passing',             ar: 'التمرير' },
                 defense: { en: 'back-line defending', ar: 'دفاع الخط الخلفي' }
             };
+            // Each contrast names an axis that is, by definition, LOWER than
+            // the dominant one here — so "rather than relying mainly on X" is
+            // always backed by this squad's own numbers.
             const SUITS = {
-                pace:    { en: 'naturally suited to attacking space quickly on transitions', ar: 'تناسبها طبيعياً مهاجمة المساحات بسرعة في التحولات' },
-                power:   { en: 'naturally suited to winning duels and second balls',          ar: 'تناسبها طبيعياً المواجهات والكرات الثانية' },
-                buildup: { en: 'naturally suited to keeping the ball and building through midfield', ar: 'يناسبها طبيعياً الاحتفاظ بالكرة والبناء عبر الوسط' },
-                defense: { en: 'naturally suited to protecting the box and holding a lead',   ar: 'يناسبها طبيعياً حماية المنطقة والحفاظ على التقدم' }
+                pace:    { en: 'naturally suited to attacking space quickly after turnovers, rather than relying mainly on slow, patient possession', ar: 'تناسبها طبيعياً مهاجمة المساحات بسرعة بعد افتكاك الكرة، بدلاً من الاعتماد أساساً على الاستحواذ البطيء' },
+                power:   { en: 'naturally suited to winning duels and second balls, rather than relying mainly on intricate passing', ar: 'تناسبها طبيعياً المواجهات والكرات الثانية، بدلاً من الاعتماد أساساً على التمرير المعقّد' },
+                buildup: { en: 'naturally suited to keeping the ball and building through midfield, rather than relying mainly on pace in behind', ar: 'يناسبها طبيعياً الاحتفاظ بالكرة والبناء عبر الوسط، بدلاً من الاعتماد أساساً على السرعة خلف الدفاع' },
+                defense: { en: 'naturally suited to protecting the box and holding a lead, rather than relying mainly on pace to break', ar: 'يناسبها طبيعياً حماية المنطقة والحفاظ على التقدم، بدلاً من الاعتماد أساساً على السرعة في الانطلاق' }
+            };
+            // Short form (no contrast) for the Takeaway's practical line.
+            const SUITS_SHORT = {
+                pace:    { en: 'quick transitions', ar: 'التحولات السريعة' },
+                power:   { en: 'winning duels and second balls', ar: 'كسب المواجهات والكرات الثانية' },
+                buildup: { en: 'controlled possession', ar: 'الاستحواذ المنظّم' },
+                defense: { en: 'defending its box', ar: 'حماية منطقتها' }
             };
             const WEAKNESS = {
                 pace:    { en: 'may struggle to break quickly, or to recover when caught upfield', ar: 'قد تجد صعوبة في الانطلاق السريع أو في العودة عند فقدان الكرة في الأمام' },
@@ -9342,9 +9352,10 @@
                 icon,
                 headline,
                 description,
+                suitsShort: dominant.dev >= NOTABLE ? L(SUITS_SHORT[dominant.axis]) : null,
                 strengthLine: dominant.dev >= NOTABLE
-                    ? (isAr ? `${L(NOUN[dominant.axis])} (${val(dominant.axis)}) — ${L(SUITS[dominant.axis])}`
-                            : `${L(NOUN[dominant.axis]).charAt(0).toUpperCase() + L(NOUN[dominant.axis]).slice(1)} (${val(dominant.axis)}) — ${L(SUITS[dominant.axis])}`)
+                    ? (isAr ? `${L(NOUN[dominant.axis])} (${val(dominant.axis)})، الأعلى بين سمات التشكيلة`
+                            : `${L(NOUN[dominant.axis]).charAt(0).toUpperCase() + L(NOUN[dominant.axis]).slice(1)} (${val(dominant.axis)}), the XI's highest trait`)
                     : null,
                 dominantAxis: dominant.axis,
                 dominantNotable: dominant.dev >= NOTABLE,
@@ -9609,8 +9620,8 @@
                 balanced: {
                     icon: 'fa-scale-balanced', color: 'text-fc-accent',
                     en: 'Balanced XI', ar: 'تشكيلة متوازنة',
-                    meaningEn: (a, d, n) => `Attack- and Defend-focused roles are close to even (${a} vs ${d} of ${n} outfield roles; the rest balanced/support) — the shape doesn't commit heavily forward or back.`,
-                    meaningAr: (a, d, n) => `الأدوار الهجومية والدفاعية متقاربة (${a} مقابل ${d} من ${n} أدوار ميدانية، والبقية متوازنة/داعمة) — البنية لا تندفع كثيراً للأمام أو للخلف.`
+                    meaningEn: (a, d, n) => `Attack- and Defend-focused roles are close to even (${a} vs ${d} of ${n} outfield roles; the rest balanced/support), so the shape should stay relatively stable rather than committing large numbers forward or sitting unusually deep.`,
+                    meaningAr: (a, d, n) => `الأدوار الهجومية والدفاعية متقاربة (${a} مقابل ${d} من ${n} أدوار ميدانية، والبقية متوازنة/داعمة)، لذا يُتوقع أن تبقى البنية مستقرة نسبياً دون الاندفاع بأعداد كبيرة للأمام أو التراجع العميق.`
                 }
             }[shape.verdictKey];
 
@@ -10054,17 +10065,42 @@
         //      squad's own attacking pace is the most defensible stand-in
         //      for it, and that reasoning is stated in the text itself
         //      rather than presented as a hard fact.
-        // Hedged "possible consequence" per line + stat, for a player who
-        // is clearly below the norm for his own position.
-        const PLAYER_RISK_CONSEQUENCE = {
-            'defence.def':  { en: 'may lose more duels and make fewer blocks or interceptions', ar: 'قد يخسر مواجهات أكثر ويقوم باعتراضات وتغطيات أقل' },
-            'defence.phy':  { en: 'may be easier to knock off the ball in physical duels',       ar: 'قد يكون أسهل في إبعاده عن الكرة في المواجهات البدنية' },
-            'midfield.pas': { en: 'may give the ball away more often under pressure',          ar: 'قد يفقد الكرة أكثر تحت الضغط' },
-            'midfield.dri': { en: 'may be easier to dispossess in tight areas',                ar: 'قد يكون أسهل في انتزاع الكرة منه في المساحات الضيقة' },
-            'midfield.def': { en: 'offers less cover when possession is lost',                 ar: 'يوفر تغطية أقل عند فقدان الكرة' },
-            'attack.sho':   { en: 'may convert fewer of the chances that fall to him',         ar: 'قد يحوّل عدداً أقل من الفرص التي تصله' },
-            'attack.dri':   { en: 'may be easier to dispossess when running at defenders',     ar: 'قد يكون أسهل في انتزاع الكرة منه عند مواجهة المدافعين' },
-            'attack.pac':   { en: 'may struggle to get in behind the defensive line',          ar: 'قد يجد صعوبة في الانطلاق خلف خط الدفاع' }
+        // Squad-level framing for a position that falls short of its
+        // typical profile: WHERE (zone from the slot) → WHY (the concern) →
+        // team CONSEQUENCE. Keyed by line + stat.
+        const SQUAD_ZONE_CONCERN = {
+            'defence.def':  { en: '1v1 defending',      ar: 'الدفاع الفردي',
+                              cons: { en: 'opponents may find more success in 1v1s down that channel', ar: 'قد يجد الخصوم نجاحاً أكبر في المواجهات الفردية في تلك المنطقة' } },
+            'defence.phy':  { en: 'physical presence',  ar: 'الحضور البدني',
+                              cons: { en: 'the XI may lose more physical duels there, for example against strong forwards', ar: 'قد تخسر التشكيلة مواجهات بدنية أكثر هناك، مثلاً أمام مهاجمين أقوياء' } },
+            'defence.pac':  { en: 'recovery pace',      ar: 'سرعة العودة',
+                              cons: { en: 'that area can be exposed to balls played in behind, especially when the line pushes up', ar: 'قد تنكشف تلك المنطقة للكرات خلف الدفاع، خاصة عند تقدم الخط' } },
+            'midfield.pas': { en: 'ball retention',     ar: 'الاحتفاظ بالكرة',
+                              cons: { en: 'possession may break down more often through that area', ar: 'قد ينقطع الاستحواذ أكثر عبر تلك المنطقة' } },
+            'midfield.dri': { en: 'press resistance',   ar: 'مقاومة الضغط',
+                              cons: { en: 'the XI may lose the ball more easily when pressed there', ar: 'قد تفقد التشكيلة الكرة بسهولة أكبر عند الضغط عليها هناك' } },
+            'midfield.def': { en: 'defensive cover',    ar: 'التغطية الدفاعية',
+                              cons: { en: 'that area can be more exposed when possession is lost', ar: 'قد تكون تلك المنطقة أكثر انكشافاً عند فقدان الكرة' } },
+            'attack.sho':   { en: 'finishing',          ar: 'إنهاء الهجمات',
+                              cons: { en: 'fewer of the chances that fall there may be converted', ar: 'قد يُحوَّل عدد أقل من الفرص التي تصل هناك' } },
+            'attack.dri':   { en: '1v1 threat',         ar: 'الخطورة في المواجهات الفردية',
+                              cons: { en: 'the XI may create less by beating defenders there', ar: 'قد تصنع التشكيلة أقل عبر تجاوز المدافعين هناك' } },
+            'attack.pac':   { en: 'pace in behind',     ar: 'السرعة خلف الدفاع',
+                              cons: { en: 'the XI may threaten less in behind a high defensive line', ar: 'قد تهدد التشكيلة أقل خلف خط دفاعي مرتفع' } }
+        };
+        // Zone (where on the pitch) from the slot the player occupies.
+        function squadZoneOf(slotPos) {
+            if (['LB', 'LWB', 'LM', 'LW'].includes(slotPos)) return { en: 'on the left', ar: 'في الجهة اليسرى' };
+            if (['RB', 'RWB', 'RM', 'RW'].includes(slotPos)) return { en: 'on the right', ar: 'في الجهة اليمنى' };
+            if (slotPos === 'CB') return { en: 'in central defence', ar: 'في قلب الدفاع' };
+            if (['ST', 'CF'].includes(slotPos)) return { en: 'in the central attack', ar: 'في الهجوم المركزي' };
+            return { en: 'in central midfield', ar: 'في الوسط المركزي' };
+        }
+        // Line-level concern for the line's own key stat (checks 2 / 3b).
+        const LINE_STAT_CONCERN = {
+            defence:  { zone: { en: 'Back-line defending', ar: 'دفاع الخط الخلفي' }, cons: { en: 'the XI may concede more when its back line is tested directly', ar: 'قد تستقبل التشكيلة أكثر عند اختبار خطها الخلفي مباشرة' } },
+            midfield: { zone: { en: 'Midfield passing', ar: 'تمرير الوسط' }, cons: { en: 'possession may break down more often in midfield', ar: 'قد ينقطع الاستحواذ أكثر في الوسط' } },
+            attack:   { zone: { en: 'Attacking pace', ar: 'سرعة الهجوم' }, cons: { en: 'the XI may threaten less in behind', ar: 'قد تهدد التشكيلة أقل خلف الدفاع' } }
         };
         const STAT_SHORT = {
             pac: { en: 'PAC', ar: 'سرعة' }, sho: { en: 'SHO', ar: 'تسديد' }, pas: { en: 'PAS', ar: 'تمرير' },
@@ -10098,9 +10134,30 @@
                     : (isAr ? 'جودة متقاربة بين الخطوط' : 'Even quality across the lines');
             }
 
-            const vuln = latestTopSquadVulnerability
-                ? latestTopSquadVulnerability.short
+            const top = latestTopSquadVulnerability;
+            const vuln = top
+                ? top.short
                 : (isAr ? 'لا نقطة ضعف واضحة على مستوى الفريق في البيانات الحالية' : 'No clear squad-wide weakness in the current data');
+
+            // PRACTICAL TAKEAWAY — ties identity, strength and the main
+            // vulnerability into one conclusion, using only those three.
+            const lc = str => str ? str.charAt(0).toLowerCase() + str.slice(1) : str;
+            let practical;
+            if (identity.suitsShort && top) {
+                practical = isAr
+                    ? `تميل هذه التشكيلة طبيعياً إلى ${identity.suitsShort}، لكن أوضح نقطة ضعف فيها هي ${top.short}${top.cons ? `، لذا ${top.cons}` : ''}.`
+                    : `This XI naturally favours ${identity.suitsShort}, but its clearest weak point is ${lc(top.short)}${top.cons ? `, so ${top.cons}` : ''}.`;
+            } else if (identity.suitsShort) {
+                practical = isAr
+                    ? `تميل هذه التشكيلة طبيعياً إلى ${identity.suitsShort}، دون نقطة ضعف واضحة على مستوى الفريق في البيانات الحالية.`
+                    : `This XI naturally favours ${identity.suitsShort}, with no clear squad-wide weakness in the current data.`;
+            } else if (top) {
+                practical = isAr
+                    ? `لا تعتمد هذه التشكيلة على سمة واحدة؛ أوضح نقطة ضعف فيها هي ${top.short}${top.cons ? `، لذا ${top.cons}` : ''}.`
+                    : `This XI doesn't lean on one trait; its clearest weak point is ${lc(top.short)}${top.cons ? `, so ${top.cons}` : ''}.`;
+            } else {
+                practical = isAr ? 'تشكيلة بلا ميل واضح ودون نقطة ضعف بارزة في البيانات الحالية.' : 'An even XI with no standout lean and no clear weak point in the current data.';
+            }
 
             // trade-off: what the applied build prioritised + how the other
             // generated builds differ; otherwise just the chemistry fact.
@@ -10136,6 +10193,7 @@
                 ${row(isAr ? 'أبرز نقطة قوة' : 'Main strength', strength)}
                 ${row(isAr ? 'أبرز نقطة ضعف' : 'Main vulnerability', vuln)}
                 ${row(isAr ? 'المقايضة' : 'Trade-off', tradeoff)}
+                <p class="text-[11px] leading-snug text-gray-300 pt-1 ${isAr ? 'text-right' : ''}"><span class="font-bold text-fc-accent">${isAr ? 'الخلاصة العملية' : 'Practical takeaway'}:</span> ${practical}</p>
             `;
         }
 
@@ -10196,7 +10254,7 @@
                 // weak chemistry links > one player below his position's
                 // norm), `short` is the one-line form used by the Squad
                 // Takeaway. WHERE → WHY → possible consequence, hedged.
-                const add = (text, weight, short) => issues.push({ text, weight, short });
+                const add = (text, weight, short, cons) => issues.push({ text, weight, short, cons: cons || null });
 
                 // 1. Chemistry problems for this line.
                 if (squadState.chemistry && squadState.chemistry.perSlot) {
@@ -10208,10 +10266,11 @@
                         if (!info.inPosition) {
                             const slot = slots[idx];
                             add(isAr
-                                ? `${player.name} خارج مركزه الأساسي (${player.pos}) ويلعب في ${slot.pos} — كيمياء 0/3، فلا يحصل على تعزيزات الكيمياء ويؤدي دون إحصائياته الحقيقية.`
-                                : `${player.name} is out of position — a natural ${player.pos} playing ${slot.pos} — so he has 0/3 chemistry and plays below his real stats.`,
+                                ? `مركز ${slot.pos} يشغله لاعب خارج مركزه الأساسي (${player.pos}) — كيمياء 0/3، لذا يلعب هذا المركز دون تعزيزات الكيمياء ودون إحصائيات اللاعب الحقيقية. المساهم الرئيسي: ${player.name}.`
+                                : `The ${slot.pos} slot is filled out of position (a natural ${player.pos}) — 0/3 chemistry, so that slot plays without chemistry boosts and below the player's real stats. Main contributor: ${player.name}.`,
                                 100,
-                                isAr ? `${player.name} خارج مركزه (${slot.pos}، كيمياء 0/3)` : `${player.name} out of position at ${slot.pos} (0/3 chemistry)`);
+                                isAr ? `مركز ${slot.pos} خارج المركز الأساسي` : `${slot.pos} slot filled out of position`,
+                                isAr ? 'هذا المركز يلعب دون كيمياء ودون الإحصائيات الحقيقية للاعب' : "that slot plays without chemistry and below the player's real stats");
                         } else if (info.points < 2 && info.breakdown) {
                             const b = info.breakdown;
                             const factors = [
@@ -10222,10 +10281,11 @@
                             const weakest = factors[0];
                             const wLabel = weakest.name ? `${FACTOR_LABEL[weakest.key]}: ${weakest.name}` : FACTOR_LABEL[weakest.key];
                             add(isAr
-                                ? `${player.name} بكيمياء ${info.points}/3 — أضعف رابط هو ${wLabel} (${weakest.count} فقط من زملائه في التشكيلة يشاركونه هذا الرابط).`
-                                : `${player.name} sits at ${info.points}/3 chemistry — the weakest link is ${wLabel} (only ${weakest.count} teammate${weakest.count === 1 ? '' : 's'} in this XI share it).`,
+                                ? `روابط الكيمياء ضعيفة في مركز ${slots[idx].pos} (${info.points}/3) — أضعف رابط هو ${wLabel}، ولا يشاركه إلا ${weakest.count} من التشكيلة، لذا يلعب هذا المركز دون كامل تعزيزات الكيمياء. المساهم الرئيسي: ${player.name}.`
+                                : `Chemistry links are thin at ${slots[idx].pos} (${info.points}/3) — the weakest link is ${wLabel}, shared by only ${weakest.count} teammate${weakest.count === 1 ? '' : 's'}, so that slot plays without full chemistry boosts. Main contributor: ${player.name}.`,
                                 40,
-                                isAr ? `روابط كيمياء ضعيفة في ${def.label} (${player.name} ${info.points}/3)` : `Weak chemistry links in ${def.label} (${player.name} ${info.points}/3)`);
+                                isAr ? `روابط كيمياء ضعيفة في مركز ${slots[idx].pos}` : `Thin chemistry links at ${slots[idx].pos}`,
+                                isAr ? 'هذا المركز يلعب دون كامل تعزيزات الكيمياء' : 'that slot plays without full chemistry boosts');
                         }
                     });
                 }
@@ -10240,10 +10300,11 @@
                         const gap = restAvg - lineStatAvg;
                         if (gap >= 5) {
                             add(isAr
-                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} مقابل ${Math.round(restAvg)} لبقية التشكيلة — فجوة ${Math.round(gap)} نقطة قد يستغلها الخصم.`
-                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)}, vs. ${Math.round(restAvg)} for the rest of the XI — a ${Math.round(gap)}-point gap opponents could target.`,
+                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} مقابل ${Math.round(restAvg)} لبقية التشكيلة — فجوة ${Math.round(gap)} نقطة، لذا ${LINE_STAT_CONCERN[def.id].cons.ar}.`
+                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)}, vs. ${Math.round(restAvg)} for the rest of the XI — a ${Math.round(gap)}-point gap, so ${LINE_STAT_CONCERN[def.id].cons.en}.`,
                                 60,
-                                isAr ? `${def.label}: ${def.statLabel} أقل بـ${Math.round(gap)} من بقية التشكيلة` : `${def.label}: ${def.statLabel} ${Math.round(gap)} below the rest of the XI`);
+                                isAr ? `${LINE_STAT_CONCERN[def.id].zone.ar} أقل من بقية التشكيلة` : `${LINE_STAT_CONCERN[def.id].zone.en} trails the rest of the XI`,
+                                isAr ? LINE_STAT_CONCERN[def.id].cons.ar : LINE_STAT_CONCERN[def.id].cons.en);
                         }
                     }
                 }
@@ -10254,10 +10315,11 @@
                     const gap = squadAvgRating - lineAvgRating;
                     if (gap >= 3) {
                         add(isAr
-                            ? `متوسط تقييم هذا الخط ${Math.round(lineAvgRating)} مقابل معدل التشكيلة ${Math.round(squadAvgRating)} (فرق ${Math.round(gap)} نقطة) — الخط الأضعف رقمياً في التشكيلة.`
-                            : `This line's average rating is ${Math.round(lineAvgRating)}, vs. a ${Math.round(squadAvgRating)} squad average (a ${Math.round(gap)}-point gap) — the numerically weakest line.`,
+                            ? `متوسط تقييم هذا الخط ${Math.round(lineAvgRating)} مقابل معدل التشكيلة ${Math.round(squadAvgRating)} (فرق ${Math.round(gap)} نقطة) — الخط الأكثر عرضة للتفوق عليه.`
+                            : `This line's average rating is ${Math.round(lineAvgRating)}, vs. a ${Math.round(squadAvgRating)} squad average (a ${Math.round(gap)}-point gap) — the line most likely to be outplayed.`,
                             50,
-                            isAr ? `${def.label} هو الخط الأقل تقييماً (${Math.round(lineAvgRating)} مقابل ${Math.round(squadAvgRating)})` : `${def.label} is the lowest-rated line (${Math.round(lineAvgRating)} vs ${Math.round(squadAvgRating)} squad average)`);
+                            isAr ? `${def.label} هو الخط الأقل تقييماً` : `${def.label} is the lowest-rated line`,
+                            isAr ? 'إنه الخط الأكثر عرضة للتفوق عليه' : "it's the line most likely to be outplayed");
                     }
                 }
 
@@ -10271,10 +10333,11 @@
                         const gap = dbAvg - lineStatAvg;
                         if (gap >= 5) {
                             add(isAr
-                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} — أقل بـ${Math.round(gap)} نقطة من المعتاد لهذه المراكز في قاعدة البيانات (${Math.round(dbAvg)}، للاعبين بتقييم 74+).`
-                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)} — ${Math.round(gap)} below what's typical for these positions in the database (${Math.round(dbAvg)}, players rated 74+).`,
+                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} — أقل بـ${Math.round(gap)} نقطة من المعتاد لهذه المراكز في قاعدة البيانات (${Math.round(dbAvg)}، للاعبين بتقييم 74+)، لذا ${LINE_STAT_CONCERN[def.id].cons.ar}.`
+                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)} — ${Math.round(gap)} below what's typical for these positions in the database (${Math.round(dbAvg)}, players rated 74+), so ${LINE_STAT_CONCERN[def.id].cons.en}.`,
                                 80,
-                                isAr ? `${def.label}: ${def.statLabel} أقل من المعتاد لهذه المراكز` : `${def.label}: ${def.statLabel} below the typical level for these positions`);
+                                isAr ? `${LINE_STAT_CONCERN[def.id].zone.ar} أقل من المعتاد لهذه المراكز` : `${LINE_STAT_CONCERN[def.id].zone.en} is below the typical level for these positions`,
+                                isAr ? LINE_STAT_CONCERN[def.id].cons.ar : LINE_STAT_CONCERN[def.id].cons.en);
                         }
                     }
                 }
@@ -10297,31 +10360,32 @@
                     });
                     return worst;
                 };
+                // Squad-level: WHERE (zone) → WHY (the position falls short of
+                // its typical profile) → team CONSEQUENCE → main contributor.
+                const zoneItem = (key, w) => {
+                    const c = SQUAD_ZONE_CONCERN[key];
+                    const lbl = STAT_SHORT[key.split('.')[1]];
+                    const pos = posOf(w.p);
+                    const zone = squadZoneOf(pos);
+                    const zoneName = isAr ? `${c.ar} ${zone.ar}` : `${c.en.charAt(0).toUpperCase() + c.en.slice(1)} ${zone.en}`;
+                    add(isAr
+                        ? `${c.ar} أضعف ${zone.ar}: ${lbl.ar} ${w.v} في مركز ${pos}، أقل بـ${Math.round(w.short)} من لاعب ${pos} النموذجي (${Math.round(w.avg)})، لذا ${c.cons.ar}. المساهم الرئيسي: ${w.p.name}.`
+                        : `Weaker ${c.en} ${zone.en}: ${lbl.en} ${w.v} at ${pos}, ${Math.round(w.short)} under the typical ${pos} (${Math.round(w.avg)}), so ${c.cons.en}. Main contributor: ${w.p.name}.`,
+                        30,
+                        zoneName,
+                        isAr ? c.cons.ar : c.cons.en);
+                };
                 (LINE_STAT_AXES[def.id] || []).forEach(axis => {
                     const w = worstVsNorm(axis.statKey);
                     if (!w || w.short < axis.gap) return;
-                    const cons = PLAYER_RISK_CONSEQUENCE[def.id + '.' + axis.statKey];
-                    const lbl = STAT_SHORT[axis.statKey];
-                    const pos = posOf(w.p);
-                    let text = isAr
-                        ? `${w.p.name} (${pos}): ${lbl.ar} ${w.v}، أقل بـ${Math.round(w.short)} من المعتاد لمركز ${pos} (${Math.round(w.avg)})${cons ? ` — ${cons.ar}` : ''}`
-                        : `${w.p.name} (${pos}): ${lbl.en} ${w.v}, ${Math.round(w.short)} below the typical ${pos} (${Math.round(w.avg)})${cons ? ` — ${cons.en}` : ''}`;
-                    if (axis.statKey === 'dri' && typeof w.p.skillMoves === 'number') text += isAr ? `، ${w.p.skillMoves}★ مهارات` : `, ${w.p.skillMoves}★ skill moves`;
-                    add(text + '.', 30, isAr ? `${w.p.name}: ${lbl.ar} أقل من المعتاد لمركز ${pos}` : `${w.p.name}: ${lbl.en} below the typical ${pos}`);
+                    zoneItem(def.id + '.' + axis.statKey, w);
                 });
 
                 // Defence only: pace vs. the norm for the defender's own
                 // position — exposure to balls in behind.
                 if (def.id === 'defence') {
                     const w = worstVsNorm('pac');
-                    if (w && w.short >= 6) {
-                        const pos = posOf(w.p);
-                        add(isAr
-                            ? `${w.p.name} (${pos}): سرعة ${w.v}، أقل بـ${Math.round(w.short)} من المعتاد لمركز ${pos} (${Math.round(w.avg)}) — قد يتعرض للكرات خلف الدفاع، خاصة إذا تقدم الخط.`
-                            : `${w.p.name} (${pos}): PAC ${w.v}, ${Math.round(w.short)} below the typical ${pos} (${Math.round(w.avg)}) — may be exposed to balls played in behind, especially if the line pushes up.`,
-                            30,
-                            isAr ? `${w.p.name}: سرعة أقل من المعتاد لمركز ${pos}` : `${w.p.name}: pace below the typical ${pos}`);
-                    }
+                    if (w && w.short >= 6) zoneItem('defence.pac', w);
                 }
 
                 return { def, issues };
@@ -11426,6 +11490,90 @@
         // the per-player detail fetch (granular sub-stats, real height,
         // body type) — called twice: once with detail=null so something
         // useful shows immediately, then again once the fetch resolves.
+        // ===================================================================
+        // EXPLANATION TABLES — wording only, no scoring. Used by the player
+        // modal's "Why This Pick" and Vulnerabilities.
+        // ===================================================================
+        // Attributes each role's own score formula weights most (read
+        // straight from getRoleCandidatesBase — the same numbers that pick
+        // the role), so "why this role" quotes the real drivers.
+        const ROLE_DRIVER_ATTRS = {
+            'Sweeper Keeper': ['kic', 'spe'], 'Ball-Playing Keeper': ['kic'],
+            'Stopper': ['phy', 'def'], 'Ball-Playing Defender': ['pac', 'pas'], 'Wide Back': ['pac', 'pas'],
+            'Defender': ['def', 'phy'], 'Attacking Wingback': ['pac', 'dri'], 'Inverted Wingback': ['pas', 'dri'],
+            'Wingback': ['pac', 'dri'], 'Falseback': ['def', 'pas'], 'Fullback': ['def', 'phy'],
+            'Deep-Lying Playmaker': ['pas', 'dri'], 'Centre Half': ['def', 'phy'], 'Box Crasher': ['sho', 'phy'],
+            'Wide Half': ['def', 'pas'], 'Holding': ['def', 'phy'], 'Box-to-Box': ['sho', 'pac'],
+            'Half Winger': ['pac', 'dri'], 'Playmaker': ['pas', 'dri'], 'Shadow Striker': ['sho'],
+            'Classic 10': ['pas', 'dri'], 'Wide Playmaker': ['pas', 'dri'], 'Wide Midfielder': ['def', 'pas'],
+            'Winger': ['pac', 'dri'], 'Inside Forward': ['sho', 'dri'], 'False 9': ['pas', 'dri'],
+            'Target Forward': ['phy', 'sho'], 'Advanced Forward': ['pac', 'sho'], 'Poacher': ['sho']
+        };
+        // What an ABOVE-average key attribute tends to mean in play.
+        const ATTR_IN_PLAY = {
+            pac: { en: 'get in behind and recover ground faster than most at this position', ar: 'ينطلق خلف الدفاع ويعود للتغطية أسرع من معظم لاعبي هذا المركز' },
+            sho: { en: 'convert a higher share of the chances that come their way', ar: 'يحوّل نسبة أعلى من الفرص التي تصله' },
+            pas: { en: 'keep possession moving and find more forward passes', ar: 'يحافظ على تدوير الكرة ويجد تمريرات أمامية أكثر' },
+            dri: { en: 'keep the ball under pressure and beat opponents more often', ar: 'يحتفظ بالكرة تحت الضغط ويتجاوز الخصوم أكثر' },
+            def: { en: 'win more duels and cut out more passes', ar: 'يكسب مواجهات أكثر ويقطع تمريرات أكثر' },
+            phy: { en: 'hold off opponents and win more physical duels', ar: 'يصدّ الخصوم ويكسب مواجهات بدنية أكثر' }
+        };
+        const posGroupOf = pos => ['CB', 'LB', 'RB', 'LWB', 'RWB'].includes(pos) ? 'DEF' : ['LW', 'RW', 'ST', 'CF'].includes(pos) ? 'ATT' : 'MID';
+        // When a BELOW-average key attribute tends to matter (predicate
+        // completing "so this player …"), by position group where it differs.
+        const KEY_ATTR_WEAK_SITUATION = {
+            pac: { DEF: { en: 'is more vulnerable when chasing runners in behind or recovering after the line is beaten', ar: 'أكثر عرضة عند ملاحقة المنطلقين خلف الدفاع أو العودة بعد كسر الخط' },
+                   MID: { en: 'can be caught out when the game gets stretched and ground must be covered at speed', ar: 'قد يُفاجأ عندما تتسع المساحات ويحتاج لتغطيتها بسرعة' },
+                   ATT: { en: 'is less able to run in behind or pull away from defenders', ar: 'أقل قدرة على الانطلاق خلف الدفاع أو الابتعاد عن المدافعين' } },
+            sho: { en: 'may convert fewer chances, especially from distance or tight angles', ar: 'قد يحوّل فرصاً أقل، خاصة من بعيد أو من زوايا ضيقة' },
+            pas: { en: 'is more likely to give the ball away when forced into quick or longer passes under pressure', ar: 'أكثر عرضة لفقدان الكرة عند التمرير السريع أو الطويل تحت الضغط' },
+            dri: { en: 'is more likely to lose the ball when pressed or when trying to beat an opponent', ar: 'أكثر عرضة لفقدان الكرة تحت الضغط أو عند محاولة تجاوز خصم' },
+            def: { DEF: { en: 'is less reliable in 1v1 defending and at intercepting passes, which opponents can target', ar: 'أقل موثوقية في الدفاع الفردي واعتراض التمريرات، وقد يستهدف الخصم ذلك' },
+                   MID: { en: 'offers less protection when the team loses the ball', ar: 'يوفر حماية أقل عندما يفقد الفريق الكرة' },
+                   ATT: { en: 'offers less protection when the team loses the ball', ar: 'يوفر حماية أقل عندما يفقد الفريق الكرة' } },
+            phy: { en: 'is more vulnerable in shoulder-to-shoulder duels and when holding off opponents', ar: 'أكثر عرضة في الالتحامات الكتفية وعند محاولة صدّ الخصوم' }
+        };
+        const keyWeakSituation = (key, pos) => {
+            const e = KEY_ATTR_WEAK_SITUATION[key];
+            if (!e) return null;
+            return e.en ? e : (e[posGroupOf(pos)] || null);
+        };
+        // When a LOW granular in-game attribute tends to matter.
+        const GRANULAR_WEAK_SITUATION = {
+            acceleration:       { en: 'can be slow off the mark in short races for the ball', ar: 'قد يكون بطيئاً في الانطلاق في السباقات القصيرة على الكرة' },
+            sprintSpeed:        { en: 'can lose longer foot races, in behind or on the recovery', ar: 'قد يخسر سباقات السرعة الطويلة، خلف الدفاع أو عند العودة' },
+            agility:            { en: 'can be slower to turn and change direction in tight spaces', ar: 'قد يكون أبطأ في الالتفاف وتغيير الاتجاه في المساحات الضيقة' },
+            balance:            { en: 'can be less reliable when receiving under physical pressure or changing direction while challenged', ar: 'قد يكون أقل ثباتاً عند الاستلام تحت ضغط بدني أو تغيير الاتجاه أثناء الالتحام' },
+            reactions:          { en: 'can be slower to react to loose balls and deflections', ar: 'قد يكون أبطأ في التفاعل مع الكرات الطائشة والارتدادات' },
+            composure:          { en: 'can make more errors when pressed or in front of goal', ar: 'قد يرتكب أخطاء أكثر تحت الضغط أو أمام المرمى' },
+            stamina:            { en: 'may fade late in matches, especially in a demanding role', ar: 'قد يتراجع أداؤه في أواخر المباريات، خاصة في دور مُجهد' },
+            strength:           { en: 'can be pushed off the ball in shoulder-to-shoulder duels', ar: 'قد يُبعد عن الكرة في الالتحامات الكتفية' },
+            jumping:            { en: 'is less effective in aerial contests', ar: 'أقل فاعلية في الصراعات الهوائية' },
+            headingAccuracy:    { en: 'is less accurate with headers from crosses and set pieces', ar: 'أقل دقة في الضربات الرأسية من العرضيات والكرات الثابتة' },
+            aggression:         { en: 'may win fewer contested balls and tackles', ar: 'قد يكسب كرات مشتركة وتدخلات أقل' },
+            interceptions:      { en: 'cuts out fewer passes before they reach an opponent', ar: 'يقطع تمريرات أقل قبل وصولها للخصم' },
+            defensiveAwareness: { en: 'can be caught out of position against runs and through balls', ar: 'قد يُفاجأ خارج مركزه أمام الجريات والتمريرات البينية' },
+            standingTackles:    { en: 'wins fewer standing tackles in 1v1 duels', ar: 'يكسب تدخلات واقفة أقل في المواجهات الفردية' },
+            slidingTackles:     { en: 'is less reliable when a sliding tackle is the last option', ar: 'أقل موثوقية عندما يكون التدخل الانزلاقي الحل الأخير' },
+            finishing:          { en: 'may convert fewer clear chances inside the box', ar: 'قد يحوّل فرصاً واضحة أقل داخل المنطقة' },
+            positioning:        { en: 'can be slower to find space in the box for the final ball', ar: 'قد يكون أبطأ في إيجاد المساحة داخل المنطقة للكرة الأخيرة' },
+            shotPower:          { en: 'has less power on shots from range', ar: 'تسديداته من بعيد أقل قوة' },
+            longShots:          { en: 'is less of a threat from outside the box', ar: 'أقل خطورة من خارج المنطقة' },
+            volleys:            { en: 'is less reliable finishing first-time from the air', ar: 'أقل موثوقية في التسديد المباشر من الهواء' },
+            ballControl:        { en: 'can take heavier touches under pressure', ar: 'قد تكون لمساته أثقل تحت الضغط' },
+            dribbling:          { en: 'is less reliable keeping the ball while running with it', ar: 'أقل موثوقية في الاحتفاظ بالكرة أثناء الجري بها' },
+            shortPassing:       { en: 'is more likely to misplace short passes under pressure', ar: 'أكثر عرضة لخطأ التمريرات القصيرة تحت الضغط' },
+            longPassing:        { en: 'is less reliable switching play or passing long', ar: 'أقل موثوقية في تحويل اللعب أو التمرير الطويل' },
+            vision:             { en: 'may miss more of the creative passes available', ar: 'قد تفوته تمريرات إبداعية متاحة أكثر' },
+            crossing:           { en: 'delivers less dangerous crosses from wide areas', ar: 'عرضياته من الأطراف أقل خطورة' },
+            curve:              { en: 'gets less bend on crosses, passes and finesse shots', ar: 'انحناء أقل في العرضيات والتمريرات والتسديدات المقوّسة' },
+            gkDiving:           { en: 'may reach fewer shots aimed toward the corners', ar: 'قد يصل إلى تسديدات أقل نحو الزوايا' },
+            gkHandling:         { en: 'may spill more shots, giving away rebounds', ar: 'قد تفلت منه تسديدات أكثر فتمنح ارتدادات' },
+            gkKicking:          { en: 'has a shorter, less accurate kick for starting attacks', ar: 'ركلته أقصر وأقل دقة في بدء الهجمات' },
+            gkPositioning:      { en: 'can be caught out of position on shots and crosses', ar: 'قد يُفاجأ خارج مركزه أمام التسديدات والعرضيات' },
+            gkReflexes:         { en: 'may react slower to close-range shots', ar: 'قد يتفاعل أبطأ مع التسديدات القريبة' }
+        };
+
         function buildVulnerabilityPoints(player, pos, detail) {
             const isAr = currentLanguage === 'ar';
             const points = [];
@@ -11450,9 +11598,10 @@
                     const worst = vals.reduce((a, b) => ((b.v - b.avg) < (a.v - a.avg) ? b : a));
                     const d = Math.round(worst.avg - worst.v);
                     if (d >= 3) {
+                        const sit = keyWeakSituation(worst.k, pos);
                         points.push(isAr
-                            ? `${labelOf(worst.k)} (${worst.v}) أقل بـ${d} من متوسط ${pos} — أضعف الخصائص التي يعتمد عليها هذا الدور.`
-                            : `${labelOf(worst.k)} (${worst.v}) is ${d} below the ${pos} average — the weakest of the attributes this role relies on.`);
+                            ? `${labelOf(worst.k)} (${worst.v}) أقل بـ${d} من متوسط ${pos} — أضعف الخصائص التي يعتمد عليها هذا الدور${sit ? `، لذا هذا اللاعب ${sit.ar}` : ''}.`
+                            : `${labelOf(worst.k)} (${worst.v}) is ${d} below the ${pos} average — the weakest of the attributes this role relies on${sit ? `, so this player ${sit.en}` : ''}.`);
                     }
                 } else if (vals.length >= 2) {
                     const worst = vals.reduce((a, b) => (b.v < a.v ? b : a));
@@ -11474,24 +11623,24 @@
                 const gap = baseline - fitScore;
                 if (gap >= 4) {
                     points.push(isAr
-                        ? `ملاءمته لمركز ${pos} (${fitScore.toFixed(1)}) أقل من متوسط قاعدة البيانات لهذا المركز (${baseline.toFixed(1)}) — أضعف إحصائياً من الخيار النموذجي.`
-                        : `Their fit for ${pos} (${fitScore.toFixed(1)}) sits below the database-wide average for the role (${baseline.toFixed(1)}) — a statistically weaker fit than the typical option.`);
+                        ? `ملاءمته لمركز ${pos} (${fitScore.toFixed(1)}) أقل من متوسط قاعدة البيانات لهذا المركز (${baseline.toFixed(1)})، لذا يغطي لاعب ${pos} النموذجي متطلبات المركز بشكل أكمل.`
+                        : `Their fit for ${pos} (${fitScore.toFixed(1)}) sits below the database-wide average for the role (${baseline.toFixed(1)}), so a typical ${pos} covers more of what the position asks for.`);
                 }
             }
 
             // 3. Weak foot.
             if (typeof player.weakFoot === 'number' && player.weakFoot <= 2) {
                 points.push(isAr
-                    ? `القدم الضعيفة ${player.weakFoot}★ فقط — يعتمد بشدة على قدمه المفضلة، ويمكن دفعه بسهولة نحو جانبه الأضعف.`
-                    : `Weak foot is only ${player.weakFoot}★ — heavily reliant on their strong foot, and easy to show onto their weaker side.`);
+                    ? `القدم الضعيفة ${player.weakFoot}★ فقط — يميل للمسة إضافية للتحول إلى قدمه الأقوى، ما قد يبطئ التسديد والتمرير عند إجباره على الجانب الأضعف.`
+                    : `Weak foot is only ${player.weakFoot}★ — this player tends to take an extra touch to switch onto the stronger foot, which can slow shots and passes when forced onto the weaker side.`);
             }
 
             // 4. Skill moves — only where dribbling is a key attribute of
             // the position; a 2★ centre-back or full-back isn't a weakness.
             if (typeof player.skillMoves === 'number' && player.skillMoves <= 2 && getKeyAttributesForPosition(pos).includes('dri')) {
                 points.push(isAr
-                    ? `مهارات المراوغة ${player.skillMoves}★ فقط — خيارات محدودة في المساحات الضيقة، وأسهل لانتزاع الكرة منه.`
-                    : `Only ${player.skillMoves}★ skill moves — a limited close-control repertoire, making them easier to dispossess in tight 1v1s.`);
+                    ? `مهارات المراوغة ${player.skillMoves}★ فقط — أدوات أقل للخروج من المواجهات الضيقة، فيعتمد أكثر على السرعة والتمرير لتجاوز الضغط.`
+                    : `Only ${player.skillMoves}★ skill moves — fewer tools to escape tight 1v1s, so this player relies more on pace and passing to beat pressure.`);
             }
 
             // (An empty PlayStyles list is NOT reported: the bulk feed often
@@ -11515,18 +11664,25 @@
                     if (val === null || val >= 60) return;
                     const label = isAr ? def.ar : def.en;
                     const severity = val < 45 ? (isAr ? 'ضعيفة جداً' : 'very low') : (isAr ? 'ضعيفة' : 'low');
+                    const sit = GRANULAR_WEAK_SITUATION[key];
                     points.push(isAr
-                        ? `${label} ${severity} (${val}) لهذا الدور.`
-                        : `${label} is ${severity} (${val}) for this role.`);
+                        ? `${label} ${severity} (${val}) لهذا الدور${sit ? ` — ${sit.ar}` : ''}.`
+                        : `${label} is ${severity} (${val}) for this role${sit ? ` — this player ${sit.en}` : ''}.`);
                 });
 
                 // 7. Height, only for positions where it plausibly costs
                 // them something specific (aerial/physical duels) — not
                 // applied blindly to every position.
                 if (typeof detail.height === 'number' && ['CB', 'ST', 'CF', 'GK'].includes(pos) && detail.height < 178) {
+                    const HEIGHT_SIT = {
+                        ST: { en: 'less suited to aerial contests against taller defenders, so this profile works better attacking space and playing on the ground than relying on crosses', ar: 'أقل ملاءمة للصراعات الهوائية أمام مدافعين أطول، فهذا الملف أنسب لمهاجمة المساحات واللعب الأرضي من الاعتماد على العرضيات' },
+                        CB: { en: 'more vulnerable to high balls and crosses against tall strikers', ar: 'أكثر عرضة للكرات العالية والعرضيات أمام مهاجمين طوال' },
+                        GK: { en: 'may have less reach on high crosses and shots into the top corners', ar: 'قد يكون مداه أقل في العرضيات العالية والتسديدات نحو الزوايا العليا' }
+                    };
+                    const hs = HEIGHT_SIT[pos === 'CF' ? 'ST' : pos];
                     points.push(isAr
-                        ? `الطول ${detail.height} سم قصير نسبياً لمركز ${pos} — قد يخسر مواجهات هوائية أكثر أمام لاعبين أطول.`
-                        : `At ${detail.height}cm, they're on the short side for a ${pos} — may lose more aerial duels against taller opponents.`);
+                        ? `الطول ${detail.height} سم قصير نسبياً لمركز ${pos} — ${hs.ar}.`
+                        : `At ${detail.height}cm, this player is on the short side for a ${pos} — ${hs.en}.`);
                 }
 
                 // 8. Body Type's REAL verdict for this specific player in
@@ -12984,41 +13140,112 @@
             // total budget — so two different players read completely
             // differently instead of the same boilerplate sentence with
             // just the name swapped.
+            // Order: A) why this player (strongest attribute vs the typical
+            // player at the position) → B) why this role (the attributes the
+            // role's own score weights, and where this player stands on them)
+            // → C) what that means in play (+ PlayStyle clause) → D) what is
+            // given up → E) how the alternatives compare, then budget and
+            // chemistry context. Every clause is built from existing data.
             function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries) {
                 const isAr = currentLanguage === 'ar';
                 const sentences = [];
+                const posStats = GENERAL_PLAYER_STATS[effectivePos] && GENERAL_PLAYER_STATS[effectivePos].stats;
+                const avgOf = key => (posStats && posStats[key] ? posStats[key].avg : null);
+                const labelOf = key => ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
+                const signed = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d);
 
-                // Comparing against "alternatives for this slot" is
-                // meaningless with no slot (standalone Players-tab lookup)
-                // — skip the clause entirely rather than show the
-                // fallback "only realistic option" line, which reads as
-                // wrong (there was no budget/slot constraint at all here).
-                const alts = (!standalone && typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
-                // getMetaValue falls back to OVR when a card has no Meta, so
-                // name the unit that was actually compared.
+                // A. Why this player
+                const entries = (evalAttrEntries || [])
+                    .map(([key, val]) => ({ key, val, avg: avgOf(key) }))
+                    .filter(e => typeof e.val === 'number');
+                const haveAvgs = entries.length && entries.every(e => e.avg != null);
+                let bestAbove = null;
+                if (haveAvgs) {
+                    const best = entries.reduce((x, y) => ((y.val - y.avg) > (x.val - x.avg) ? y : x));
+                    const d = Math.round(best.val - best.avg);
+                    if (d >= 2) {
+                        bestAbove = best;
+                        sentences.push(isAr
+                            ? `أقوى خاصية رئيسية له في هذا المركز: ${labelOf(best.key)} ${best.val}، أعلى بـ${d} من متوسط ${effectivePos}.`
+                            : `Strongest key attribute for this position: ${labelOf(best.key)} ${best.val}, ${d} above the ${effectivePos} average.`);
+                    } else if (d > -2) {
+                        sentences.push(isAr
+                            ? `أقوى خاصية رئيسية له في هذا المركز: ${labelOf(best.key)} ${best.val}، في مستوى متوسط ${effectivePos}.`
+                            : `Strongest key attribute for this position: ${labelOf(best.key)} ${best.val}, in line with the ${effectivePos} average.`);
+                    } else {
+                        sentences.push(isAr
+                            ? `كل خصائصه الرئيسية لهذا المركز أقل من متوسط ${effectivePos} (أفضلها ${labelOf(best.key)} ${best.val}، −${Math.abs(d)}).`
+                            : `All key attributes for this position are below the ${effectivePos} average (best: ${labelOf(best.key)} ${best.val}, −${Math.abs(d)}).`);
+                    }
+                } else if (entries.length) {
+                    const best = entries.reduce((x, y) => (y.val > x.val ? y : x));
+                    sentences.push(isAr
+                        ? `أقوى خاصية رئيسية له في هذا المركز: ${labelOf(best.key)} ${best.val}.`
+                        : `Strongest key attribute for this position: ${labelOf(best.key)} ${best.val}.`);
+                }
+
+                // B. Why this role — the role's own score drivers
+                const roleNow = (!standalone && typeof evalSlotIdx === 'number' && squadState.teamRoles && squadState.teamRoles[evalSlotIdx]) || getRoleSuggestion(evalPlayer, effectivePos);
+                const drivers = roleNow && ROLE_DRIVER_ATTRS[roleNow.role];
+                if (drivers && evalPlayer.att && drivers.every(k => typeof evalPlayer.att[k] === 'number')) {
+                    const parts = drivers.map(k => {
+                        const avg = avgOf(k);
+                        return avg != null
+                            ? `${labelOf(k)} ${evalPlayer.att[k]} (${signed(Math.round(evalPlayer.att[k] - avg))})`
+                            : `${labelOf(k)} ${evalPlayer.att[k]}`;
+                    });
+                    const how = roleNow.manual ? (isAr ? ' الذي اخترته' : ' you chose') : roleNow.adjusted ? (isAr ? ' (المعيّن لشكل الفريق)' : ' (assigned for team shape)') : '';
+                    sentences.push(isAr
+                        ? `دور ${roleNow.role}${how} يعتمد أساساً على ${parts.join(' و')}، مقارنة بمتوسط ${effectivePos}.`
+                        : `The ${roleNow.role} role${how} relies mainly on ${parts.join(' and ')}, relative to the ${effectivePos} average.`);
+                }
+
+                // C. What it means in play
+                if (bestAbove && ATTR_IN_PLAY[bestAbove.key]) {
+                    sentences.push(isAr
+                        ? `عملياً، يميل إلى أن ${ATTR_IN_PLAY[bestAbove.key].ar}.`
+                        : `In play, this player tends to ${ATTR_IN_PLAY[bestAbove.key].en}.`);
+                }
+                if (styleClauseEn) sentences.push(styleClauseEn.trim());
+
+                // D. What is given up
+                if (haveAvgs && entries.length >= 2) {
+                    const worst = entries.reduce((x, y) => ((y.val - y.avg) < (x.val - x.avg) ? y : x));
+                    const d = Math.round(worst.avg - worst.val);
+                    if (d >= 3 && (!bestAbove || worst.key !== bestAbove.key)) {
+                        sentences.push(isAr
+                            ? `ما يتنازل عنه: ${labelOf(worst.key)} ${worst.val}، أقل بـ${d} من متوسط ${effectivePos} (انظر نقاط الضعف).`
+                            : `What this player gives up: ${labelOf(worst.key)} ${worst.val}, ${d} below the ${effectivePos} average (see Vulnerabilities).`);
+                    }
+                }
+
+                // E. How the alternatives compare (never the headline)
                 const unitEn = typeof evalPlayer.meta === 'number' ? 'Meta' : 'OVR';
                 const unitAr = typeof evalPlayer.meta === 'number' ? 'ميتا' : 'تقييم';
+                const alts = (!standalone && typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
                 if (!standalone) {
                     if (alts.length > 0) {
                         const nextBest = alts[0];
                         const gap = getMetaValue(evalPlayer) - getMetaValue(nextBest);
+                        const nb = `<span class="text-white font-semibold">${nextBest.name}</span>`;
+                        const priceDiff = effectivePrice(evalPlayer) - effectivePrice(nextBest);
+                        let clause;
                         if (gap >= 3) {
-                            sentences.push(isAr
-                                ? `يتفوّق بوضوح على أقرب بديل ضمن الميزانية (<span class="text-white font-semibold">${nextBest.name}</span>) بفارق ${gap.toFixed(1)} ${unitAr}.`
-                                : `Clearly ahead of the closest affordable alternative (<span class="text-white font-semibold">${nextBest.name}</span>) by ${gap.toFixed(1)} ${unitEn}.`);
+                            clause = isAr ? `يتفوّق بوضوح على أقرب بديل ضمن الميزانية (${nb}) بفارق ${gap.toFixed(1)} ${unitAr}` : `Clearly ahead of the closest affordable alternative (${nb}) by ${gap.toFixed(1)} ${unitEn}`;
                         } else if (gap > 0.3) {
-                            sentences.push(isAr
-                                ? `يتقدّم بفارق ضئيل عن أقرب بديل (<span class="text-white font-semibold">${nextBest.name}</span>، +${gap.toFixed(1)} ${unitAr}).`
-                                : `Only a thin margin ahead of the closest alternative (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)} ${unitEn}).`);
+                            clause = isAr ? `يتقدّم بفارق ضئيل عن أقرب بديل (${nb}، +${gap.toFixed(1)} ${unitAr})` : `Only a thin margin ahead of the closest alternative (${nb}, +${gap.toFixed(1)} ${unitEn})`;
                         } else {
-                            sentences.push(isAr
-                                ? `الفارق مع البدائل المتاحة محدود جداً — <span class="text-white font-semibold">${nextBest.name}</span> كان سيؤدي بأداء مشابه تقريباً.`
-                                : `Barely separated from the alternatives on the table — <span class="text-white font-semibold">${nextBest.name}</span> would've performed almost as well here.`);
+                            clause = isAr ? `الفارق مع البدائل المتاحة محدود جداً — ${nb} كان سيؤدي بشكل مشابه تقريباً` : `Barely separated from the alternatives — ${nb} would perform almost as well here`;
                         }
+                        // Price context only where it changes the reading: a
+                        // small quality edge bought with a much bigger spend.
+                        if (gap < 3 && priceDiff > 0 && priceDiff >= 0.2 * effectivePrice(evalPlayer)) {
+                            clause += isAr ? `، ويكلّف ${priceDiff.toLocaleString()} عملة أكثر منه — أي أن الإنفاق الإضافي يشتري فارقاً صغيراً.` : `, and costs ${priceDiff.toLocaleString()} more coins — so the extra spend buys a small margin.`;
+                        } else if (priceDiff < 0 && gap >= 0) {
+                            clause += isAr ? `، ويكلّف ${Math.abs(priceDiff).toLocaleString()} عملة أقل منه.` : `, while costing ${Math.abs(priceDiff).toLocaleString()} fewer coins.`;
+                        } else clause += '.';
+                        sentences.push(clause);
                     } else {
-                        // "Alternatives" = players at this position priced
-                        // within what's LEFT after the other ten (see
-                        // computeSlotAlternatives) — say exactly that.
                         const leftForSlot = Math.max(0, squadState.budget - (squadState.totalCost - effectivePrice(evalPlayer)));
                         const slotPos = (formationSlots[squadState.formation][evalSlotIdx] || {}).pos || effectivePos;
                         sentences.push(isAr
@@ -13027,61 +13254,7 @@
                     }
                 }
 
-                // Strongest key attribute measured against the TYPICAL player
-                // at this position (same database baseline as the ± numbers
-                // in Key Attributes), not against his own other stats — a
-                // 78 can be his best stat and still be below the norm.
-                if (evalAttrEntries && evalAttrEntries.length > 0) {
-                    const posStats = GENERAL_PLAYER_STATS[effectivePos] && GENERAL_PLAYER_STATS[effectivePos].stats;
-                    const labelOf = key => ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
-                    const withAvg = evalAttrEntries
-                        .map(([key, val]) => ({ key, val, avg: posStats && posStats[key] ? posStats[key].avg : null }))
-                        .filter(e => typeof e.val === 'number');
-                    if (withAvg.length && withAvg.every(e => e.avg != null)) {
-                        const best = withAvg.reduce((a, b) => ((b.val - b.avg) > (a.val - a.avg) ? b : a));
-                        const d = Math.round(best.val - best.avg);
-                        if (d >= 2) {
-                            sentences.push(isAr
-                                ? `أقوى خاصية رئيسية له في هذا الدور: ${labelOf(best.key)} ${best.val}، أعلى بـ${d} من متوسط ${effectivePos}.`
-                                : `Strongest key attribute for this role: ${labelOf(best.key)} ${best.val}, ${d} above the ${effectivePos} average.`);
-                        } else if (d > -2) {
-                            sentences.push(isAr
-                                ? `أقوى خاصية رئيسية له في هذا الدور: ${labelOf(best.key)} ${best.val}، في مستوى متوسط ${effectivePos}.`
-                                : `Strongest key attribute for this role: ${labelOf(best.key)} ${best.val}, in line with the ${effectivePos} average.`);
-                        } else {
-                            sentences.push(isAr
-                                ? `كل خصائصه الرئيسية لهذا الدور أقل من متوسط ${effectivePos} (أفضلها ${labelOf(best.key)} ${best.val}، −${Math.abs(d)}).`
-                                : `All key attributes for this role are below the ${effectivePos} average (best: ${labelOf(best.key)} ${best.val}, −${Math.abs(d)}).`);
-                        }
-                    } else if (withAvg.length) {
-                        const best = withAvg.reduce((a, b) => (b.val > a.val ? b : a));
-                        sentences.push(isAr
-                            ? `أقوى خاصية رئيسية له في هذا الدور: ${labelOf(best.key)} ${best.val}.`
-                            : `Strongest key attribute for this role: ${labelOf(best.key)} ${best.val}.`);
-                    }
-                }
-
-                // Chemistry contribution in THIS slot — only when it's low
-                // enough to be worth knowing (a normal 2-3/3 isn't news).
-                if (!standalone && typeof evalSlotIdx === 'number' && squadState.chemistry && squadState.chemistry.perSlot) {
-                    const chemInfo = squadState.chemistry.perSlot[evalSlotIdx];
-                    if (chemInfo && squadState.selectedXI[evalSlotIdx] && squadState.selectedXI[evalSlotIdx].id === evalPlayer.id) {
-                        if (!chemInfo.inPosition) {
-                            sentences.push(isAr
-                                ? `يلعب خارج مركزه الأساسي هنا، لذا كيميائه 0/3.`
-                                : `He's out of his natural position here, so he has 0/3 chemistry.`);
-                        } else if (chemInfo.points <= 1) {
-                            sentences.push(isAr
-                                ? `كيميائه ${chemInfo.points}/3 فقط في هذا المركز — روابط قليلة مع زملائه في النادي أو الدوري أو الدولة.`
-                                : `Only ${chemInfo.points}/3 chemistry in this slot — few club, league or nation links with teammates.`);
-                        }
-                    }
-                }
-
-                // Budget-share commentary ("under 1% of the total
-                // budget") only makes sense relative to an actual squad
-                // budget — skip it in standalone mode, same reasoning as
-                // the alternatives clause above.
+                // Budget share + chemistry in this slot (context)
                 if (!standalone) {
                     const budgetShare = squadState.budget > 0 ? (effectivePrice(evalPlayer) / squadState.budget) * 100 : 0;
                     const priciest = Math.max(...Object.values(squadState.selectedXI || {}).filter(Boolean).map(p => effectivePrice(p)));
@@ -13091,12 +13264,21 @@
                             ? `يستهلك نحو ${budgetShare.toFixed(0)}% من الميزانية${isPriciest ? ' — أكبر إنفاق فردي في التشكيلة' : ''}.`
                             : `Takes about ${budgetShare.toFixed(0)}% of the budget${isPriciest ? ' — the biggest single spend in the XI' : ''}.`);
                     } else if (budgetShare <= 1) {
-                        sentences.push(isAr
-                            ? `يكلّف أقل من 1% من الميزانية.`
-                            : `Costs under 1% of the budget.`);
+                        sentences.push(isAr ? `يكلّف أقل من 1% من الميزانية.` : `Costs under 1% of the budget.`);
+                    }
+                    if (typeof evalSlotIdx === 'number' && squadState.chemistry && squadState.chemistry.perSlot) {
+                        const chemInfo = squadState.chemistry.perSlot[evalSlotIdx];
+                        if (chemInfo && squadState.selectedXI[evalSlotIdx] && squadState.selectedXI[evalSlotIdx].id === evalPlayer.id) {
+                            if (!chemInfo.inPosition) {
+                                sentences.push(isAr ? `يلعب خارج مركزه الأساسي هنا، لذا كيميائه 0/3.` : `This player is out of their natural position here, so chemistry is 0/3.`);
+                            } else if (chemInfo.points <= 1) {
+                                sentences.push(isAr
+                                    ? `كيميائه ${chemInfo.points}/3 فقط في هذا المركز — روابط قليلة مع زملائه في النادي أو الدوري أو الدولة.`
+                                    : `Only ${chemInfo.points}/3 chemistry in this slot — few club, league or nation links with teammates.`);
+                            }
+                        }
                     }
                 }
-
                 return sentences.join(' ');
             }
 
@@ -13105,7 +13287,7 @@
                     ? ' لا تتوفر بيانات ميتا لهذه البطاقة، فاعتمد هذا التقييم على الإحصائيات والتقييم العام بدلاً منها.'
                     : ' No meta rating data for this card, so this read is based on raw attributes/OVR instead.')
                 : '';
-            const whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries) + noMetaNote + (currentLanguage === 'ar' ? styleClauseAr : styleClauseEn);
+            const whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries) + noMetaNote;
             const metaLine = hasMeta
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
