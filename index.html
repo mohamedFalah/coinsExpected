@@ -765,6 +765,13 @@
                     <div id="squad-vulnerabilities" class="border-t border-fc-border pt-4 space-y-1.5">
                         <!-- Populated by renderSquadSummary() -->
                     </div>
+
+                    <!-- Squad Takeaway — identity / main strength / main
+                         vulnerability / trade-off, synthesised from the
+                         sections above (renderSquadTakeaway). -->
+                    <div id="squad-takeaway" class="border-t border-fc-border pt-4 space-y-1">
+                        <!-- Populated by renderSquadSummary() -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -1355,13 +1362,13 @@
                 rolePickerReset: "Reset to Suggested",
                 roleFitTitle: "Role Fit",
                 roleFitAllGood: "All 11 players are well-suited to their assigned roles.",
-                roleFitIssue: "player(s) sitting in a role that's a real step down from their best fit:",
+                roleFitIssue: "in a role that scores well below their best fit (tap to change):",
                 roleFitManualTag: "manually chosen",
                 roleFitAdjustedTag: "adjusted for team shape",
-                tradeoffOptionsTitle: "Other Options",
+                tradeoffOptionsTitle: "Squad Options",
                 tradeoffBalanced: "Balanced",
-                tradeoffQuality: "Best Meta",
-                tradeoffChemistry: "Best Chemistry",
+                tradeoffQuality: "Quality-focused",
+                tradeoffChemistry: "Chemistry-focused",
                 tradeoffActive: "Active",
                 buildFromPoolBtn: "BUILD FROM POOL",
                 poolModalTitle: "Build From Player Pool",
@@ -1531,10 +1538,10 @@
                 roleFitIssue: "لاعب(ين) في دور أضعف بوضوح من أفضل دور يناسبهم:",
                 roleFitManualTag: "اختيار يدوي",
                 roleFitAdjustedTag: "تم تعديله لموازنة التشكيلة",
-                tradeoffOptionsTitle: "خيارات أخرى",
+                tradeoffOptionsTitle: "خيارات التشكيلة",
                 tradeoffBalanced: "متوازنة",
-                tradeoffQuality: "أفضل ميتا",
-                tradeoffChemistry: "أفضل كيمياء",
+                tradeoffQuality: "تركيز على الجودة",
+                tradeoffChemistry: "تركيز على الكيمياء",
                 tradeoffActive: "الحالية",
                 buildFromPoolBtn: "بناء من مجموعة لاعبين",
                 poolModalTitle: "بناء التشكيلة من مجموعة لاعبين",
@@ -9274,47 +9281,71 @@
 
             const isAr = currentLanguage === 'ar';
 
+            // The four axes are compared with the squad's OWN average, so
+            // every claim below is relative ("leans on", "relative weak
+            // point") — never an absolute rating the data can't support.
             const TRAITS = {
                 pace:    { icon: 'fa-bolt',          en: 'Built for Speed & Transitions', ar: 'مبنية على السرعة والانتقال السريع' },
-                power:   { icon: 'fa-dumbbell',      en: 'Physical Powerhouse',           ar: 'قوة بدنية مهيمنة' },
+                power:   { icon: 'fa-dumbbell',      en: 'Physical, Duel-Winning Side',   ar: 'تشكيلة بدنية تكسب المواجهات' },
                 buildup: { icon: 'fa-chess',         en: 'Patient Possession Build-Up',   ar: 'استحواذ هادئ وبناء هجمات' },
-                defense: { icon: 'fa-shield-halved', en: 'Defensively Rock-Solid',        ar: 'صلبة دفاعياً' }
+                defense: { icon: 'fa-shield-halved', en: 'Defence-Led Side',              ar: 'تشكيلة يقودها الدفاع' }
+            };
+            const NOUN = {
+                pace:    { en: 'pace',                ar: 'السرعة' },
+                power:   { en: 'physicality',         ar: 'البدنية' },
+                buildup: { en: 'passing',             ar: 'التمرير' },
+                defense: { en: 'back-line defending', ar: 'دفاع الخط الخلفي' }
+            };
+            const SUITS = {
+                pace:    { en: 'naturally suited to attacking space quickly on transitions', ar: 'تناسبها طبيعياً مهاجمة المساحات بسرعة في التحولات' },
+                power:   { en: 'naturally suited to winning duels and second balls',          ar: 'تناسبها طبيعياً المواجهات والكرات الثانية' },
+                buildup: { en: 'naturally suited to keeping the ball and building through midfield', ar: 'يناسبها طبيعياً الاحتفاظ بالكرة والبناء عبر الوسط' },
+                defense: { en: 'naturally suited to protecting the box and holding a lead',   ar: 'يناسبها طبيعياً حماية المنطقة والحفاظ على التقدم' }
             };
             const WEAKNESS = {
-                pace:    { en: 'lacks the pace to burst forward',                    ar: 'تفتقر للسرعة في الاندفاع للأمام' },
-                power:   { en: 'can be muscled off the ball',                        ar: 'يمكن دفعها بدنياً بسهولة' },
-                buildup: { en: 'relies on long, direct passes over patient buildup', ar: 'تعتمد على تمريرات طويلة ومباشرة بدلاً من البناء الهادئ' },
-                defense: { en: 'leaves real gaps at the back',                       ar: 'تترك ثغرات حقيقية في الخلف' }
+                pace:    { en: 'may struggle to break quickly, or to recover when caught upfield', ar: 'قد تجد صعوبة في الانطلاق السريع أو في العودة عند فقدان الكرة في الأمام' },
+                power:   { en: 'may lose more physical duels',                                   ar: 'قد تخسر مواجهات بدنية أكثر' },
+                buildup: { en: 'may find patient build-up harder and lean on more direct passing', ar: 'قد تجد البناء الهادئ أصعب وتعتمد على تمرير أكثر مباشرة' },
+                defense: { en: 'may concede more chances when the back line is tested directly', ar: 'قد تستقبل فرصاً أكثر عند اختبار الخط الخلفي مباشرة' }
             };
+            const L = (o) => isAr ? o.ar : o.en;
+            const val = axis => Math.round(axes[axis]);
+            const weakNotable = weakest.axis !== dominant.axis && weakest.dev <= -NOTABLE;
+            const weakClause = weakNotable
+                ? (isAr
+                    ? ` نقطة ضعفها النسبية ${L(NOUN[weakest.axis])} (${val(weakest.axis)}): ${L(WEAKNESS[weakest.axis])}.`
+                    : ` Its relative weak point is ${L(NOUN[weakest.axis])} (${val(weakest.axis)}): it ${L(WEAKNESS[weakest.axis])}.`)
+                : '';
 
             let icon, headline, description;
 
             if (dominant.dev < NOTABLE) {
-                // Nothing meaningfully stands out either way — a genuinely
-                // even squad, not a fallback label.
                 icon = 'fa-scale-balanced';
-                headline = isAr ? 'متوازنة في كل الجوانب' : 'Balanced Across the Board';
-                description = isAr
-                    ? 'لا توجد سمة واحدة تطغى — جودة متقاربة وثابتة في كل الخطوط.'
-                    : 'No single trait dominates — even, solid quality across every line.';
+                if (!weakNotable) {
+                    headline = isAr ? 'متوازنة في كل الجوانب' : 'Balanced Across the Board';
+                    description = isAr
+                        ? 'لا سمة تبرز — السرعة والبدنية والتمرير والدفاع الخلفي كلها ضمن 3 نقاط من متوسط التشكيلة نفسها، فلا ميل طبيعي لأسلوب معيّن.'
+                        : "No trait stands out — pace, physicality, passing and back-line defending are all within 3 points of the squad's own average, so there's no built-in lean.";
+                } else {
+                    headline = isAr ? 'بلا سمة مهيمنة' : 'No Dominant Trait';
+                    description = (isAr ? 'لا سمة ترتفع بوضوح فوق البقية.' : 'No trait rises clearly above the rest.') + weakClause;
+                }
             } else {
                 icon = TRAITS[dominant.axis].icon;
-                headline = isAr ? TRAITS[dominant.axis].ar : TRAITS[dominant.axis].en;
-                if (weakest.axis !== dominant.axis && weakest.dev <= -NOTABLE) {
-                    description = isAr
-                        ? `الأقوى في ${TRAITS[dominant.axis].ar}، لكنها ${WEAKNESS[weakest.axis].ar}.`
-                        : `Strongest in ${TRAITS[dominant.axis].en.toLowerCase()}, but it ${WEAKNESS[weakest.axis].en}.`;
-                } else {
-                    description = isAr
-                        ? `متفوقة في ${TRAITS[dominant.axis].ar} بلا نقطة ضعف واضحة في الجوانب الأخرى.`
-                        : `Elite in ${TRAITS[dominant.axis].en.toLowerCase()}, with no real weakness elsewhere to exploit.`;
-                }
+                headline = L(TRAITS[dominant.axis]);
+                description = isAr
+                    ? `تعتمد على ${L(NOUN[dominant.axis])} (${val(dominant.axis)}، الأعلى بين سماتها الأربع) — ${L(SUITS[dominant.axis])}.${weakClause || ' لا سمة أخرى أقل بوضوح من البقية.'}`
+                    : `Leans on ${L(NOUN[dominant.axis])} (${val(dominant.axis)}, the highest of its four traits) — ${L(SUITS[dominant.axis])}.${weakClause || ' No other trait sits notably below the rest.'}`;
             }
 
             return {
                 icon,
                 headline,
                 description,
+                strengthLine: dominant.dev >= NOTABLE
+                    ? (isAr ? `${L(NOUN[dominant.axis])} (${val(dominant.axis)}) — ${L(SUITS[dominant.axis])}`
+                            : `${L(NOUN[dominant.axis]).charAt(0).toUpperCase() + L(NOUN[dominant.axis]).slice(1)} (${val(dominant.axis)}) — ${L(SUITS[dominant.axis])}`)
+                    : null,
                 dominantAxis: dominant.axis,
                 dominantNotable: dominant.dev >= NOTABLE,
                 weakestAxis: weakest.axis,
@@ -9566,26 +9597,26 @@
                 attacking: {
                     icon: 'fa-bolt', color: 'text-red-400',
                     en: 'Attack-Minded XI', ar: 'تشكيلة بميول هجومية',
-                    meaningEn: "Expect plenty of attacking threat and forward runs, but the shape leans thin at the back in transition — you're built to win games through goals, not clean sheets.",
-                    meaningAr: 'توقع تهديداً هجومياً كبيراً وجريات متقدمة، لكن البنية أقل تغطية خلفياً أثناء الهجمات المرتدة — أنت مبني للفوز بالأهداف لا بنظافة الشباك.'
+                    meaningEn: (a, d, n) => `${a} of ${n} outfield roles have an Attack focus, against ${d} with Defend — expect plenty of forward runs, but fewer players holding position when the ball is lost, so transitions could leave gaps.`,
+                    meaningAr: (a, d, n) => `${a} من ${n} أدوار ميدانية بتركيز هجومي مقابل ${d} بتركيز دفاعي — توقع جريات متقدمة كثيرة، لكن عدداً أقل يحافظ على مركزه عند فقدان الكرة، فقد تترك التحولات فراغات.`
                 },
                 defensive: {
                     icon: 'fa-shield-halved', color: 'text-blue-400',
                     en: 'Defensive-Minded XI', ar: 'تشكيلة بميول دفاعية',
-                    meaningEn: "This shape prioritizes defensive solidity and control over attacking directness — hard to break down, but you may lean on individual quality up front to unlock tight defenses.",
-                    meaningAr: 'تُعطي هذه البنية الأولوية للصلابة الدفاعية والسيطرة على المباشرة الهجومية — سيكون كسر تشكيلتك صعباً، لكنك قد تعتمد على جودة فردية في الهجوم لفتح الدفاعات المغلقة.'
+                    meaningEn: (a, d, n) => `${d} of ${n} outfield roles have a Defend focus, against ${a} with Attack — harder to play through, but chance creation may rely more on the attackers' individual quality.`,
+                    meaningAr: (a, d, n) => `${d} من ${n} أدوار ميدانية بتركيز دفاعي مقابل ${a} بتركيز هجومي — يصعب اختراقها، لكن صناعة الفرص قد تعتمد أكثر على الجودة الفردية للمهاجمين.`
                 },
                 balanced: {
                     icon: 'fa-scale-balanced', color: 'text-fc-accent',
                     en: 'Balanced XI', ar: 'تشكيلة متوازنة',
-                    meaningEn: "No glaring lean either way — flexible enough to adapt mid-match without overcommitting players forward or back.",
-                    meaningAr: 'لا يوجد ميل واضح لأي جانب — مرنة بما يكفي للتكيف أثناء المباراة دون المبالغة بدفع اللاعبين للأمام أو للخلف.'
+                    meaningEn: (a, d, n) => `Attack- and Defend-focused roles are close to even (${a} vs ${d} of ${n} outfield roles; the rest balanced/support) — the shape doesn't commit heavily forward or back.`,
+                    meaningAr: (a, d, n) => `الأدوار الهجومية والدفاعية متقاربة (${a} مقابل ${d} من ${n} أدوار ميدانية، والبقية متوازنة/داعمة) — البنية لا تندفع كثيراً للأمام أو للخلف.`
                 }
             }[shape.verdictKey];
 
             const countsLine = isAr
                 ? `${shape.attackCount} بأدوار هجومية، ${shape.neutralCount} متوازنة/داعمة، و${shape.defendCount} دفاعية.`
-                : `${shape.attackCount} in attack-focused roles, ${shape.neutralCount} balanced/support, and ${shape.defendCount} purely defensive.`;
+                : `${shape.attackCount} Attack-focused, ${shape.neutralCount} balanced/support, ${shape.defendCount} Defend-focused.`;
 
             const lineIntro = {
                 DEF: isAr ? 'في الدفاع' : 'In defense',
@@ -9609,7 +9640,7 @@
                     </div>
                     <i class="fa-solid fa-chevron-${tacticalShapeExpanded ? 'up' : 'down'} text-gray-500 text-xs"></i>
                 </button>
-                <p class="text-[11px] text-gray-500 mt-1.5 leading-relaxed ${isAr ? 'text-right' : ''}">${isAr ? verdictMeta.meaningAr : verdictMeta.meaningEn}</p>
+                <p class="text-[11px] text-gray-500 mt-1.5 leading-relaxed ${isAr ? 'text-right' : ''}">${(isAr ? verdictMeta.meaningAr : verdictMeta.meaningEn)(shape.attackCount, shape.defendCount, shape.attackCount + shape.defendCount + shape.neutralCount)}</p>
                 ${tacticalShapeExpanded ? `
                     <div class="mt-3 space-y-2 ${isAr ? 'text-right' : ''}">
                         <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wide">${isAr ? 'التوزيع' : 'Breakdown'}: ${countsLine}</p>
@@ -9638,7 +9669,7 @@
             // Plain, unboxed — same text-first language as the budget rows
             // around it, instead of a separate bordered widget.
             container.innerHTML = `
-                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'أسلوب اللعب' : 'Playstyle'}</span>
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'هوية التشكيلة' : 'Squad Identity'}</span>
                 <div class="flex items-center gap-2 mt-1.5 ${isAr ? 'flex-row-reverse justify-end' : ''}">
                     <i class="fa-solid ${identity.icon} text-fc-accent text-xs shrink-0"></i>
                     <span class="text-gray-200 font-semibold text-sm leading-snug">${identity.headline}</span>
@@ -9739,6 +9770,7 @@
 
             renderPlaystylesByLine(groups);
             renderSquadVulnerabilities(groups);
+            renderSquadTakeaway(groups);
         }
 
         // Shows the alternate full squads Optimize found spanning the
@@ -9755,6 +9787,33 @@
             const labelFor = key => key === 'quality' ? t.tradeoffQuality : key === 'chemistry' ? t.tradeoffChemistry : t.tradeoffBalanced;
             const activeSig = computeSquadSignature(squadState.selectedXI);
 
+            // What each build optimises, in plain language, plus how every
+            // other option differs from the one currently applied — so the
+            // user sees the trade, not just three unlabeled numbers. No
+            // recommendation: choosing is the user's call.
+            const active = options.find(o => computeSquadSignature(o.selectedXI) === activeSig) || null;
+            const WHAT = {
+                quality:   { en: 'picked for each player\'s fit to his position, ignoring chemistry', ar: 'مختارة لملاءمة كل لاعب لمركزه مع تجاهل الكيمياء' },
+                chemistry: { en: 'searches deeper for club, league and nation links, accepting lower individual quality', ar: 'تبحث بعمق عن روابط النادي والدوري والدولة مع قبول جودة فردية أقل' },
+                balanced:  { en: 'the default blend of position fit and chemistry', ar: 'المزيج الافتراضي بين ملاءمة المراكز والكيمياء' }
+            };
+            const fmtDelta = (v, digits) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(digits);
+            const deltaOf = opt => {
+                if (!active || opt === active) return null;
+                const dm = (opt.avgMeta != null && active.avgMeta != null) ? opt.avgMeta - active.avgMeta : opt.avgRating - active.avgRating;
+                return { dm, dc: opt.chemSum - active.chemSum };
+            };
+            const explainLines = options.filter(o => o !== active).map(o => {
+                const d = deltaOf(o);
+                const vs = d ? (isAr ? ` مقارنة بالحالية: ميتا ${fmtDelta(d.dm, 1)}، كيمياء ${fmtDelta(d.dc, 0)}.` : ` vs current: Meta ${fmtDelta(d.dm, 1)}, chemistry ${fmtDelta(d.dc, 0)}.`) : '';
+                return `<p class="text-[10px] text-gray-500 leading-snug"><span class="font-bold text-gray-400">${labelFor(o.label)}:</span> ${isAr ? WHAT[o.label].ar : WHAT[o.label].en}.${vs}</p>`;
+            }).join('');
+            // Position fit (what the quality build maximises) and average
+            // card Meta can disagree — say so only when it visibly happens.
+            const qualityOpt = options.find(o => o.label === 'quality');
+            const metaNote = (qualityOpt && options.some(o => o !== qualityOpt && o.avgMeta != null && qualityOpt.avgMeta != null && o.avgMeta > qualityOpt.avgMeta))
+                ? `<p class="text-[10px] text-gray-600 italic leading-snug">${isAr ? 'الرقم المعروض هو متوسط ميتا البطاقات؛ بناء الجودة يرتّب حسب ملاءمة المركز، وقد يختلف الترتيبان.' : "The number shown is the XI's average card Meta; the quality build ranks by position fit, which can order players differently."}</p>`
+                : '';
             panel.classList.remove('hidden');
             panel.innerHTML = `
                 <div class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="tradeoffOptionsTitle">${t.tradeoffOptionsTitle}</div>
@@ -9770,6 +9829,7 @@
                         `;
                     }).join('')}
                 </div>
+                <div class="space-y-1">${explainLines}${metaNote}</div>
             `;
         }
 
@@ -9815,7 +9875,7 @@
                 <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5" data-i18n="roleFitTitle">${t.roleFitTitle}</div>
                 <div class="flex items-start gap-2 text-xs text-orange-400 font-semibold mb-2">
                     <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
-                    <span>${weakSlots.length} ${t.roleFitIssue}</span>
+                    <span>${currentLanguage === 'ar' ? `${weakSlots.length} ${t.roleFitIssue}` : `${weakSlots.length} ${weakSlots.length === 1 ? 'player is' : 'players are'} ${t.roleFitIssue}`}</span>
                 </div>
                 <div class="space-y-1.5">
                     ${weakSlots.map(idx => {
@@ -9900,62 +9960,62 @@
             defence: [
                 {
                     statKey: 'def', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) is the shakiest tackler in this back line — likely to lose more duels and come away with fewer blocks or interceptions than the rest`,
+                    risk: (n, v, a) => `${n} (${v} DEF vs. line average ${Math.round(a)}) is the shakiest tackler in this back line — likely to lose more duels and come away with fewer blocks or interceptions than the rest`,
                     riskAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) هو الأضعف في التدخلات ضمن خط الدفاع — يُتوقع خسارته مواجهات أكثر وحصوله على اعتراضات وتغطيات أقل من زملائه`,
-                    strength: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) is this back line's most reliable defender — the one most likely to win the duel or step in front of a pass to intercept it`,
+                    strength: (n, v, a) => `${n} (${v} DEF vs. line average ${Math.round(a)}) is this back line's most reliable defender — the one most likely to win the duel or step in front of a pass to intercept it`,
                     strengthAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) هو الأكثر اعتماداً في خط الدفاع — الأقرب للفوز بالمواجهة أو اعتراض التمريرة`
                 },
                 {
                     statKey: 'phy', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} PHY vs. a ${Math.round(a)} line average) is the easiest of this back line to shove off the ball in a physical duel`,
+                    risk: (n, v, a) => `${n} (${v} PHY vs. line average ${Math.round(a)}) is the easiest of this back line to shove off the ball in a physical duel`,
                     riskAr: (n, v, a) => `${n} (${v} بدني مقابل معدل الخط ${Math.round(a)}) هو الأسهل دفعه بدنياً عن الكرة ضمن هذا الخط`,
-                    strength: (n, v, a) => `${n} (${v} PHY vs. a ${Math.round(a)} line average) wins the physical battles here — the hardest of this line to knock off the ball`,
+                    strength: (n, v, a) => `${n} (${v} PHY vs. line average ${Math.round(a)}) wins the physical battles here — the hardest of this line to knock off the ball`,
                     strengthAr: (n, v, a) => `${n} (${v} بدني مقابل معدل الخط ${Math.round(a)}) يفوز بالمواجهات البدنية — الأصعب دفعاً عن الكرة ضمن هذا الخط`
                 }
             ],
             midfield: [
                 {
                     statKey: 'pas', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} PAS vs. a ${Math.round(a)} line average) is the most turnover-prone passer here — expect more misplaced passes under pressure than their partners`,
+                    risk: (n, v, a) => `${n} (${v} PAS vs. line average ${Math.round(a)}) is the most turnover-prone passer here — expect more misplaced passes under pressure than their partners`,
                     riskAr: (n, v, a) => `${n} (${v} تمرير مقابل معدل الخط ${Math.round(a)}) هو الأكثر عرضة لإضاعة الكرة بالتمرير هنا — تمريرات مفقودة أكثر تحت الضغط مقارنة بشركائه`,
-                    strength: (n, v, a) => `${n} (${v} PAS vs. a ${Math.round(a)} line average) is the safest pair of hands on the ball here — the one most likely to keep possession moving under pressure`,
+                    strength: (n, v, a) => `${n} (${v} PAS vs. line average ${Math.round(a)}) is the safest pair of hands on the ball here — the one most likely to keep possession moving under pressure`,
                     strengthAr: (n, v, a) => `${n} (${v} تمرير مقابل معدل الخط ${Math.round(a)}) هو الأكثر أماناً في تمرير الكرة هنا — الأقدر على الحفاظ على الاستحواذ تحت الضغط`
                 },
                 {
                     statKey: 'dri', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the easiest to dispossess in tight areas among this midfield`,
+                    risk: (n, v, a) => `${n} (${v} DRI vs. line average ${Math.round(a)}) is the easiest to dispossess in tight areas among this midfield`,
                     riskAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأسهل لانتزاع الكرة منه في المساحات الضيقة ضمن هذا الوسط`,
-                    strength: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the hardest to dispossess in tight areas among this midfield — carries the ball through pressure the others can't`,
+                    strength: (n, v, a) => `${n} (${v} DRI vs. line average ${Math.round(a)}) is the hardest to dispossess in tight areas among this midfield — carries the ball through pressure the others can't`,
                     strengthAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأصعب لانتزاع الكرة منه في المساحات الضيقة — يحمل الكرة عبر الضغط أفضل من زملائه`
                 },
                 {
                     statKey: 'def', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) offers the least defensively here — unlikely to make the blocks or interceptions that break up an attack`,
+                    risk: (n, v, a) => `${n} (${v} DEF vs. line average ${Math.round(a)}) offers the least defensively here — unlikely to make the blocks or interceptions that break up an attack`,
                     riskAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) يقدّم أقل إسهام دفاعي هنا — من غير المرجح أن يصنع اعتراضات أو تغطيات تكسر الهجمة`,
-                    strength: (n, v, a) => `${n} (${v} DEF vs. a ${Math.round(a)} line average) does the most defensive work in this midfield — the one most likely to break up an attack with a block or interception`,
+                    strength: (n, v, a) => `${n} (${v} DEF vs. line average ${Math.round(a)}) does the most defensive work in this midfield — the one most likely to break up an attack with a block or interception`,
                     strengthAr: (n, v, a) => `${n} (${v} دفاع مقابل معدل الخط ${Math.round(a)}) يقدّم أكبر إسهام دفاعي في هذا الوسط — الأقرب لكسر هجمة بتغطية أو اعتراض`
                 }
             ],
             attack: [
                 {
                     statKey: 'sho', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} SHO vs. a ${Math.round(a)} line average) is the least clinical finisher up front — likely to convert fewer of the half-chances that fall to them than their attacking partners`,
+                    risk: (n, v, a) => `${n} (${v} SHO vs. line average ${Math.round(a)}) is the least clinical finisher up front — likely to convert fewer of the half-chances that fall to them than their attacking partners`,
                     riskAr: (n, v, a) => `${n} (${v} تسديد مقابل معدل الخط ${Math.round(a)}) هو الأقل حسماً في الهجوم — يُتوقع تحويله فرصاً أقل من نصف الفرص مقارنة بشركائه`,
-                    strength: (n, v, a) => `${n} (${v} SHO vs. a ${Math.round(a)} line average) is the most clinical finisher up front — the one most likely to convert a half-chance the others might waste`,
+                    strength: (n, v, a) => `${n} (${v} SHO vs. line average ${Math.round(a)}) is the most clinical finisher up front — the one most likely to convert a half-chance the others might waste`,
                     strengthAr: (n, v, a) => `${n} (${v} تسديد مقابل معدل الخط ${Math.round(a)}) هو الأكثر حسماً في الهجوم — الأقدر على تحويل نصف فرصة قد يهدرها الآخرون`
                 },
                 {
                     statKey: 'dri', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the easiest forward here to dispossess when running at a defender`,
+                    risk: (n, v, a) => `${n} (${v} DRI vs. line average ${Math.round(a)}) is the easiest forward here to dispossess when running at a defender`,
                     riskAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأسهل لانتزاع الكرة منه عند مواجهة مدافع`,
-                    strength: (n, v, a) => `${n} (${v} DRI vs. a ${Math.round(a)} line average) is the hardest forward here to dispossess — the one most likely to beat a defender one-on-one`,
+                    strength: (n, v, a) => `${n} (${v} DRI vs. line average ${Math.round(a)}) is the hardest forward here to dispossess — the one most likely to beat a defender one-on-one`,
                     strengthAr: (n, v, a) => `${n} (${v} مراوغة مقابل معدل الخط ${Math.round(a)}) هو الأصعب لانتزاع الكرة منه — الأقدر على تجاوز مدافع في مواجهة فردية`
                 },
                 {
                     statKey: 'pac', gap: 4,
-                    risk: (n, v, a) => `${n} (${v} PAC vs. a ${Math.round(a)} line average) is clearly the slowest of this front line — lacks the pace to consistently beat the last defender in behind`,
+                    risk: (n, v, a) => `${n} (${v} PAC vs. line average ${Math.round(a)}) is clearly the slowest of this front line — lacks the pace to consistently beat the last defender in behind`,
                     riskAr: (n, v, a) => `${n} (${v} سرعة مقابل معدل الخط ${Math.round(a)}) هو الأبطأ بوضوح في هذا الخط الهجومي — يفتقر للسرعة لتجاوز آخر مدافع بشكل متكرر`,
-                    strength: (n, v, a) => `${n} (${v} PAC vs. a ${Math.round(a)} line average) is clearly the fastest of this front line — the one most likely to win the race in behind a high defensive line`,
+                    strength: (n, v, a) => `${n} (${v} PAC vs. line average ${Math.round(a)}) is clearly the fastest of this front line — the one most likely to win the race in behind a high defensive line`,
                     strengthAr: (n, v, a) => `${n} (${v} سرعة مقابل معدل الخط ${Math.round(a)}) هو الأسرع بوضوح في هذا الخط الهجومي — الأقدر على الفوز بسباق السرعة خلف خط دفاعي مرتفع`
                 }
             ]
@@ -9994,6 +10054,91 @@
         //      squad's own attacking pace is the most defensible stand-in
         //      for it, and that reasoning is stated in the text itself
         //      rather than presented as a hard fact.
+        // Hedged "possible consequence" per line + stat, for a player who
+        // is clearly below the norm for his own position.
+        const PLAYER_RISK_CONSEQUENCE = {
+            'defence.def':  { en: 'may lose more duels and make fewer blocks or interceptions', ar: 'قد يخسر مواجهات أكثر ويقوم باعتراضات وتغطيات أقل' },
+            'defence.phy':  { en: 'may be easier to knock off the ball in physical duels',       ar: 'قد يكون أسهل في إبعاده عن الكرة في المواجهات البدنية' },
+            'midfield.pas': { en: 'may give the ball away more often under pressure',          ar: 'قد يفقد الكرة أكثر تحت الضغط' },
+            'midfield.dri': { en: 'may be easier to dispossess in tight areas',                ar: 'قد يكون أسهل في انتزاع الكرة منه في المساحات الضيقة' },
+            'midfield.def': { en: 'offers less cover when possession is lost',                 ar: 'يوفر تغطية أقل عند فقدان الكرة' },
+            'attack.sho':   { en: 'may convert fewer of the chances that fall to him',         ar: 'قد يحوّل عدداً أقل من الفرص التي تصله' },
+            'attack.dri':   { en: 'may be easier to dispossess when running at defenders',     ar: 'قد يكون أسهل في انتزاع الكرة منه عند مواجهة المدافعين' },
+            'attack.pac':   { en: 'may struggle to get in behind the defensive line',          ar: 'قد يجد صعوبة في الانطلاق خلف خط الدفاع' }
+        };
+        const STAT_SHORT = {
+            pac: { en: 'PAC', ar: 'سرعة' }, sho: { en: 'SHO', ar: 'تسديد' }, pas: { en: 'PAS', ar: 'تمرير' },
+            dri: { en: 'DRI', ar: 'مراوغة' }, def: { en: 'DEF', ar: 'دفاع' }, phy: { en: 'PHY', ar: 'بدني' }
+        };
+        let latestTopSquadVulnerability = null;
+
+        // SQUAD TAKEAWAY — a four-line synthesis of what's already computed
+        // above (identity, line ratings, ranked vulnerabilities, trade-off
+        // options). Explains; never rates or recommends.
+        function renderSquadTakeaway(groups) {
+            const container = document.getElementById('squad-takeaway');
+            if (!container) return;
+            const isAr = currentLanguage === 'ar';
+            const identity = computeSquadIdentity();
+            if (!identity) { container.innerHTML = ''; return; }
+            const t = i18n[currentLanguage];
+
+            // main strength: the identity's dominant trait, else the
+            // clearly highest-rated line, else "even across lines"
+            const lineNames = isAr ? [['الهجوم', 'الهجوم'], ['الوسط', 'الوسط'], ['الدفاع', 'الدفاع']] : [['Attack', 'Attack'], ['Midfield', 'Midfield'], ['Defence', 'Defence']];
+            const lineAvgs = lineNames.map(([key, label]) => {
+                const list = groups[key] || [];
+                return list.length ? { label, avg: list.reduce((s, p) => s + p.rating, 0) / list.length } : null;
+            }).filter(Boolean).sort((a, b) => b.avg - a.avg);
+            let strength = identity.strengthLine;
+            if (!strength && lineAvgs.length >= 2) {
+                strength = (lineAvgs[0].avg - lineAvgs[1].avg >= 2)
+                    ? (isAr ? `${lineAvgs[0].label} هو الخط الأعلى تقييماً (${Math.round(lineAvgs[0].avg)} مقابل ${lineAvgs.slice(1).map(l => Math.round(l.avg)).join(' / ')})`
+                            : `${lineAvgs[0].label} is the highest-rated line (${Math.round(lineAvgs[0].avg)} vs ${lineAvgs.slice(1).map(l => Math.round(l.avg)).join(' / ')})`)
+                    : (isAr ? 'جودة متقاربة بين الخطوط' : 'Even quality across the lines');
+            }
+
+            const vuln = latestTopSquadVulnerability
+                ? latestTopSquadVulnerability.short
+                : (isAr ? 'لا نقطة ضعف واضحة على مستوى الفريق في البيانات الحالية' : 'No clear squad-wide weakness in the current data');
+
+            // trade-off: what the applied build prioritised + how the other
+            // generated builds differ; otherwise just the chemistry fact.
+            let tradeoff = null;
+            const options = squadState.tradeoffOptions || [];
+            const activeSig = computeSquadSignature(squadState.selectedXI);
+            const active = options.find(o => computeSquadSignature(o.selectedXI) === activeSig);
+            const labelFor = key => key === 'quality' ? t.tradeoffQuality : key === 'chemistry' ? t.tradeoffChemistry : t.tradeoffBalanced;
+            const PRIORITY = {
+                balanced:  { en: 'Balanced build — blends position fit and chemistry', ar: 'بناء متوازن — يمزج ملاءمة المراكز والكيمياء' },
+                quality:   { en: 'Position fit prioritised over chemistry', ar: 'ملاءمة المراكز مقدّمة على الكيمياء' },
+                chemistry: { en: 'Chemistry prioritised over some individual quality', ar: 'الكيمياء مقدّمة على جزء من الجودة الفردية' }
+            };
+            if (active && options.length >= 2) {
+                const others = options.filter(o => o !== active).map(o => {
+                    const dm = (o.avgMeta != null && active.avgMeta != null) ? o.avgMeta - active.avgMeta : o.avgRating - active.avgRating;
+                    const dc = o.chemSum - active.chemSum;
+                    const f = (v, d) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(d);
+                    return isAr ? `${labelFor(o.label)}: ميتا ${f(dm, 1)}، كيمياء ${f(dc, 0)}` : `${labelFor(o.label)}: Meta ${f(dm, 1)}, chemistry ${f(dc, 0)}`;
+                });
+                tradeoff = `${isAr ? PRIORITY[active.label].ar : PRIORITY[active.label].en} (${active.chemSum}/33 ${isAr ? 'كيمياء' : 'chem'}). ${isAr ? 'البدائل' : 'Alternatives'} — ${others.join(' · ')}.`;
+            } else if (squadState.chemistry) {
+                tradeoff = isAr ? `الكيمياء ${squadState.chemistry.total}/33 — لا توجد بدائل مولّدة لهذه التشكيلة.` : `Chemistry ${squadState.chemistry.total}/33 — no generated alternative builds for this XI.`;
+            }
+
+            const row = (label, value) => value ? `
+                <div class="text-[11px] leading-snug ${isAr ? 'text-right' : ''}">
+                    <span class="font-bold text-gray-300">${label}:</span> <span class="text-gray-400">${value}</span>
+                </div>` : '';
+            container.innerHTML = `
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'خلاصة التشكيلة' : 'Squad Takeaway'}</span>
+                ${row(isAr ? 'الهوية' : 'Identity', identity.headline)}
+                ${row(isAr ? 'أبرز نقطة قوة' : 'Main strength', strength)}
+                ${row(isAr ? 'أبرز نقطة ضعف' : 'Main vulnerability', vuln)}
+                ${row(isAr ? 'المقايضة' : 'Trade-off', tradeoff)}
+            `;
+        }
+
         function renderSquadVulnerabilities(groups) {
             const container = document.getElementById('squad-vulnerabilities');
             if (!container) return;
@@ -10036,13 +10181,24 @@
             const FACTOR_LABEL = isAr
                 ? { club: 'النادي', nation: 'الدولة', league: 'الدوري' }
                 : { club: 'club', nation: 'nation', league: 'league' };
+            // player id → the slot position he's actually playing
+            const playerSlotPos = {};
+            slots.forEach((slot, idx) => { const p = squadState.selectedXI[idx]; if (p) playerSlotPos[p.id] = slot.pos; });
 
             const lineBlocks = lineDefs.map(def => {
                 const list = groups[def.key] || [];
                 if (list.length === 0) return null;
                 const issues = [];
 
-                // 1. Named, specific chemistry problems for this line.
+                // Every item is { text, weight, short }: `weight` ranks how
+                // structural the issue is (out-of-position > line below the
+                // database norm > line gap vs rest of XI > low line rating >
+                // weak chemistry links > one player below his position's
+                // norm), `short` is the one-line form used by the Squad
+                // Takeaway. WHERE → WHY → possible consequence, hedged.
+                const add = (text, weight, short) => issues.push({ text, weight, short });
+
+                // 1. Chemistry problems for this line.
                 if (squadState.chemistry && squadState.chemistry.perSlot) {
                     Object.keys(squadState.chemistry.perSlot).forEach(idx => {
                         if (slotLine[idx] !== def.key) return;
@@ -10051,9 +10207,11 @@
                         if (!player) return;
                         if (!info.inPosition) {
                             const slot = slots[idx];
-                            issues.push(isAr
-                                ? `${player.name} خارج مركزه الأساسي (${player.pos}) ويُلعب في ${slot.pos} — كيمياء 0/3، وسيؤدي دون مستواه الحقيقي بغض النظر عن إحصائياته.`
-                                : `${player.name} is out of position — a natural ${player.pos} deployed at ${slot.pos} — so they sit at 0/3 chemistry and will underperform their real stats regardless of quality.`);
+                            add(isAr
+                                ? `${player.name} خارج مركزه الأساسي (${player.pos}) ويلعب في ${slot.pos} — كيمياء 0/3، فلا يحصل على تعزيزات الكيمياء ويؤدي دون إحصائياته الحقيقية.`
+                                : `${player.name} is out of position — a natural ${player.pos} playing ${slot.pos} — so he has 0/3 chemistry and plays below his real stats.`,
+                                100,
+                                isAr ? `${player.name} خارج مركزه (${slot.pos}، كيمياء 0/3)` : `${player.name} out of position at ${slot.pos} (0/3 chemistry)`);
                         } else if (info.points < 2 && info.breakdown) {
                             const b = info.breakdown;
                             const factors = [
@@ -10063,17 +10221,17 @@
                             ].sort((a, c) => a.pts - c.pts);
                             const weakest = factors[0];
                             const wLabel = weakest.name ? `${FACTOR_LABEL[weakest.key]}: ${weakest.name}` : FACTOR_LABEL[weakest.key];
-                            issues.push(isAr
+                            add(isAr
                                 ? `${player.name} بكيمياء ${info.points}/3 — أضعف رابط هو ${wLabel} (${weakest.count} فقط من زملائه في التشكيلة يشاركونه هذا الرابط).`
-                                : `${player.name} sits at ${info.points}/3 chemistry — the weakest link is ${wLabel} (only ${weakest.count} teammate${weakest.count === 1 ? '' : 's'} in this XI share it).`);
+                                : `${player.name} sits at ${info.points}/3 chemistry — the weakest link is ${wLabel} (only ${weakest.count} teammate${weakest.count === 1 ? '' : 's'} in this XI share it).`,
+                                40,
+                                isAr ? `روابط كيمياء ضعيفة في ${def.label} (${player.name} ${info.points}/3)` : `Weak chemistry links in ${def.label} (${player.name} ${info.points}/3)`);
                         }
                     });
                 }
 
-                // 2. This line's own key stat vs. the exact same stat for
-                // the rest of the outfield XI — precise numbers, tied to
-                // the stat that line's actual job depends on.
                 const withAtt = list.filter(p => p.att);
+                // 2. This line's key stat vs. the rest of the outfield XI.
                 if (withAtt.length > 0) {
                     const lineStatAvg = withAtt.reduce((s, p) => s + (p.att[def.statKey] || 0), 0) / withAtt.length;
                     const restOfSquad = allOutfield.filter(p => !list.includes(p) && p.att);
@@ -10081,34 +10239,30 @@
                         const restAvg = restOfSquad.reduce((s, p) => s + (p.att[def.statKey] || 0), 0) / restOfSquad.length;
                         const gap = restAvg - lineStatAvg;
                         if (gap >= 5) {
-                            issues.push(isAr
-                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} مقابل ${Math.round(restAvg)} لبقية التشكيلة — فجوة ${Math.round(gap)} نقطة يمكن لخصم مباشر استغلالها.`
-                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)}, vs. ${Math.round(restAvg)} for the rest of the XI — a ${Math.round(gap)}-point gap a direct opponent can target.`);
+                            add(isAr
+                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} مقابل ${Math.round(restAvg)} لبقية التشكيلة — فجوة ${Math.round(gap)} نقطة قد يستغلها الخصم.`
+                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)}, vs. ${Math.round(restAvg)} for the rest of the XI — a ${Math.round(gap)}-point gap opponents could target.`,
+                                60,
+                                isAr ? `${def.label}: ${def.statLabel} أقل بـ${Math.round(gap)} من بقية التشكيلة` : `${def.label}: ${def.statLabel} ${Math.round(gap)} below the rest of the XI`);
                         }
                     }
                 }
 
-                // 3. Exact rating gap vs. the squad average, when this line
-                // is the real numerical drag.
+                // 3. Rating gap vs. the squad average.
                 if (squadAvgRating != null) {
                     const lineAvgRating = list.reduce((s, p) => s + p.rating, 0) / list.length;
                     const gap = squadAvgRating - lineAvgRating;
                     if (gap >= 3) {
-                        issues.push(isAr
-                            ? `متوسط تقييم هذا الخط ${Math.round(lineAvgRating)} مقابل معدل التشكيلة ${Math.round(squadAvgRating)} (فرق ${Math.round(gap)} نقطة) — الحلقة الأضعف رقمياً في التشكيلة.`
-                            : `This line's average rating is ${Math.round(lineAvgRating)}, vs. a ${Math.round(squadAvgRating)} squad average (a ${Math.round(gap)}-point gap) — the numerically weakest line in the XI.`);
+                        add(isAr
+                            ? `متوسط تقييم هذا الخط ${Math.round(lineAvgRating)} مقابل معدل التشكيلة ${Math.round(squadAvgRating)} (فرق ${Math.round(gap)} نقطة) — الخط الأضعف رقمياً في التشكيلة.`
+                            : `This line's average rating is ${Math.round(lineAvgRating)}, vs. a ${Math.round(squadAvgRating)} squad average (a ${Math.round(gap)}-point gap) — the numerically weakest line.`,
+                            50,
+                            isAr ? `${def.label} هو الخط الأقل تقييماً (${Math.round(lineAvgRating)} مقابل ${Math.round(squadAvgRating)})` : `${def.label} is the lowest-rated line (${Math.round(lineAvgRating)} vs ${Math.round(squadAvgRating)} squad average)`);
                     }
                 }
 
-                // 3b. This line's key stat vs. the DATABASE-WIDE baseline
-                // for these exact positions (rated 74+ only — see
-                // GENERAL_PLAYER_STATS) — an EXTERNAL yardstick, unlike
-                // checks 2/3 above which only ever compare this squad
-                // against itself. A squad can pass every internal check
-                // (balanced relative to its own other lines) while still
-                // being genuinely weak by the standard of what's actually
-                // available in the database — this is the one check that
-                // would catch that.
+                // 3b. This line's key stat vs. the DATABASE baseline for
+                // these exact positions (rated 74+) — an external yardstick.
                 if (withAtt.length > 0) {
                     const posKeys = [...new Set(slots.filter((s, idx) => slotLine[idx] === def.key).map(s => s.pos))];
                     const dbAvg = combinedLineStatAvg(posKeys, def.statKey);
@@ -10116,47 +10270,65 @@
                         const lineStatAvg = withAtt.reduce((s, p) => s + (p.att[def.statKey] || 0), 0) / withAtt.length;
                         const gap = dbAvg - lineStatAvg;
                         if (gap >= 5) {
-                            issues.push(isAr
-                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} — أقل من متوسط قاعدة البيانات لهذه المراكز (${Math.round(dbAvg)}، للاعبين بتقييم 74+) بفارق ${Math.round(gap)} نقطة. هذا ضعف حقيقي بمعيار السوق، وليس فقط مقارنة داخلية بباقي التشكيلة.`
-                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)} — below the database-wide average for these positions (${Math.round(dbAvg)}, players rated 74+) by ${Math.round(gap)} points. That's a genuine weakness by the standard of what's actually out there, not just relative to the rest of this squad.`);
+                            add(isAr
+                                ? `متوسط ${def.statLabel} لهذا الخط ${Math.round(lineStatAvg)} — أقل بـ${Math.round(gap)} نقطة من المعتاد لهذه المراكز في قاعدة البيانات (${Math.round(dbAvg)}، للاعبين بتقييم 74+).`
+                                : `This line's average ${def.statLabel} is ${Math.round(lineStatAvg)} — ${Math.round(gap)} below what's typical for these positions in the database (${Math.round(dbAvg)}, players rated 74+).`,
+                                80,
+                                isAr ? `${def.label}: ${def.statLabel} أقل من المعتاد لهذه المراكز` : `${def.label}: ${def.statLabel} below the typical level for these positions`);
                         }
                     }
                 }
 
-                // 4. Named, per-axis match-outcome risks (duels, blocks/
-                // interceptions, passing, dribbling, finishing) — the
-                // specific player behind each one, not a line-wide label.
+                // 4. One player clearly below the norm for HIS OWN position —
+                // not merely the lowest of this line (a full-back's physical
+                // stat isn't judged against the centre-backs beside him).
+                const posOf = p => playerSlotPos[p.id] || p.pos;
+                const posAvg = (p, key) => {
+                    const e = GENERAL_PLAYER_STATS[posOf(p)];
+                    return e && e.stats && e.stats[key] ? e.stats[key].avg : null;
+                };
+                const worstVsNorm = (key) => {
+                    let worst = null;
+                    withAtt.forEach(p => {
+                        const avg = posAvg(p, key);
+                        if (avg == null || typeof p.att[key] !== 'number') return;
+                        const short = avg - p.att[key];
+                        if (!worst || short > worst.short) worst = { p, v: p.att[key], avg, short };
+                    });
+                    return worst;
+                };
                 (LINE_STAT_AXES[def.id] || []).forEach(axis => {
-                    const extremes = computeLineStatExtremes(list, axis.statKey);
-                    if (!extremes || extremes.worst.dev > -axis.gap) return;
-                    let msg = isAr
-                        ? axis.riskAr(extremes.worst.player.name, extremes.worst.value, extremes.avg)
-                        : axis.risk(extremes.worst.player.name, extremes.worst.value, extremes.avg);
-                    if (axis.statKey === 'dri' && typeof extremes.worst.player.skillMoves === 'number') {
-                        msg += isAr ? `، ${extremes.worst.player.skillMoves}★ مهارات` : `, ${extremes.worst.player.skillMoves}★ skill moves`;
-                    }
-                    issues.push(msg + '.');
+                    const w = worstVsNorm(axis.statKey);
+                    if (!w || w.short < axis.gap) return;
+                    const cons = PLAYER_RISK_CONSEQUENCE[def.id + '.' + axis.statKey];
+                    const lbl = STAT_SHORT[axis.statKey];
+                    const pos = posOf(w.p);
+                    let text = isAr
+                        ? `${w.p.name} (${pos}): ${lbl.ar} ${w.v}، أقل بـ${Math.round(w.short)} من المعتاد لمركز ${pos} (${Math.round(w.avg)})${cons ? ` — ${cons.ar}` : ''}`
+                        : `${w.p.name} (${pos}): ${lbl.en} ${w.v}, ${Math.round(w.short)} below the typical ${pos} (${Math.round(w.avg)})${cons ? ` — ${cons.en}` : ''}`;
+                    if (axis.statKey === 'dri' && typeof w.p.skillMoves === 'number') text += isAr ? `، ${w.p.skillMoves}★ مهارات` : `, ${w.p.skillMoves}★ skill moves`;
+                    add(text + '.', 30, isAr ? `${w.p.name}: ${lbl.ar} أقل من المعتاد لمركز ${pos}` : `${w.p.name}: ${lbl.en} below the typical ${pos}`);
                 });
 
-                // Defence-only: this line's slowest player against this
-                // SAME squad's own front-line pace — an honest proxy for
-                // "the kind of attacking pace he's realistically up
-                // against" since no real opponent data exists, stated as
-                // exactly that rather than as a fact about a real rival.
-                if (def.id === 'defence' && attackPacAvg != null && withAtt.length > 0) {
-                    let slowest = withAtt[0];
-                    withAtt.forEach(p => { if (p.att.pac < slowest.att.pac) slowest = p; });
-                    const gap = attackPacAvg - slowest.att.pac;
-                    if (gap >= 6) {
-                        issues.push(isAr
-                            ? `${slowest.name} (${slowest.att.pac} سرعة) أبطأ بوضوح من متوسط سرعة خط الهجوم في هذه التشكيلة نفسها (${Math.round(attackPacAvg)}) — مؤشر واقعي (وليس بيانات فعلية عن الخصم) على نوع السرعة الهجومية التي قد يواجهها، وموضع محتمل ليُلعب من خلاله أو يُتجاوز بالسرعة خلف الظهر.`
-                            : `${slowest.name} (${slowest.att.pac} PAC) is well short of this squad's own front-line average pace (${Math.round(attackPacAvg)}) — an honest proxy (not real opponent data) for the kind of attacking pace he's realistically up against, and a real risk of being played through or beaten for pace in behind.`);
+                // Defence only: pace vs. the norm for the defender's own
+                // position — exposure to balls in behind.
+                if (def.id === 'defence') {
+                    const w = worstVsNorm('pac');
+                    if (w && w.short >= 6) {
+                        const pos = posOf(w.p);
+                        add(isAr
+                            ? `${w.p.name} (${pos}): سرعة ${w.v}، أقل بـ${Math.round(w.short)} من المعتاد لمركز ${pos} (${Math.round(w.avg)}) — قد يتعرض للكرات خلف الدفاع، خاصة إذا تقدم الخط.`
+                            : `${w.p.name} (${pos}): PAC ${w.v}, ${Math.round(w.short)} below the typical ${pos} (${Math.round(w.avg)}) — may be exposed to balls played in behind, especially if the line pushes up.`,
+                            30,
+                            isAr ? `${w.p.name}: سرعة أقل من المعتاد لمركز ${pos}` : `${w.p.name}: pace below the typical ${pos}`);
                     }
                 }
 
                 return { def, issues };
             }).filter(Boolean);
 
+            // Most structural issue across the XI — read by the Squad Takeaway.
+            latestTopSquadVulnerability = lineBlocks.flatMap(b => b.issues).sort((a, b) => b.weight - a.weight)[0] || null;
             const anyIssues = lineBlocks.some(b => b.issues.length > 0);
             if (!anyIssues) {
                 container.innerHTML = `<p class="text-xs text-gray-500 italic">${isAr ? 'لا توجد نقاط ضعف واضحة حالياً في هذه التشكيلة.' : 'No clear weaknesses stand out in this squad right now.'}</p>`;
@@ -10170,10 +10342,10 @@
                         <div class="flex items-center gap-1.5 text-[11px] font-bold text-gray-300 uppercase tracking-wide ${isAr ? 'flex-row-reverse justify-end' : ''}">
                             <i class="fa-solid ${def.icon} text-[10px]"></i>${def.label}
                         </div>
-                        ${issues.map(p => `
+                        ${issues.sort((a, b) => b.weight - a.weight).map(p => `
                             <p class="text-xs text-gray-400 leading-snug flex items-start gap-1.5 pl-1 ${isAr ? 'flex-row-reverse' : ''}">
                                 <i class="fa-solid fa-triangle-exclamation text-red-400/80 text-[10px] mt-0.5 shrink-0"></i>
-                                <span>${p}</span>
+                                <span>${p.text}</span>
                             </p>
                         `).join('')}
                     </div>
@@ -10232,7 +10404,7 @@
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-semibold text-gray-300">${groupName}</span>
                         </div>
-                        <p class="text-[11px] text-gray-600 italic mt-0.5">${isAr ? 'لا سمات بارزة — أداء هذا الخط يعتمد على الإحصائيات فقط.' : "No standout traits — this line's output is purely stat-driven."}</p>
+                        <p class="text-[11px] text-gray-600 italic mt-0.5">${isAr ? 'لا توجد أنماط لعب مسجّلة لهذا الخط في البيانات المحمّلة.' : 'No PlayStyles recorded for this line in the loaded data.'}</p>
                     `;
                 } else {
                     const profile = LINE_CATEGORY_PROFILE[topCategory];
@@ -11263,18 +11435,32 @@
             // not a guessed fixed threshold. Reuses the exact same
             // getKeyAttributesForPosition list already shown as ⭐ stars
             // in this same modal.
+            // A weakness is judged against the TYPICAL player at this
+            // position (database average, rated 74+ — the same baseline
+            // as the ± numbers under Key Attributes). Being his own lowest
+            // stat isn't a weakness if it's still above the norm (a
+            // striker's 88 pace behind 96 shooting). Falls back to the
+            // self-relative rule only when no baseline is loaded.
             const keys = getKeyAttributesForPosition(pos);
             if (keys.length && player.att) {
-                const vals = keys.map(k => ({ k, v: player.att[k] })).filter(o => typeof o.v === 'number');
-                if (vals.length >= 2) {
+                const posStats = GENERAL_PLAYER_STATS[pos] && GENERAL_PLAYER_STATS[pos].stats;
+                const vals = keys.map(k => ({ k, v: player.att[k], avg: posStats && posStats[k] ? posStats[k].avg : null })).filter(o => typeof o.v === 'number');
+                const labelOf = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+                if (vals.length && vals.every(o => o.avg != null)) {
+                    const worst = vals.reduce((a, b) => ((b.v - b.avg) < (a.v - a.avg) ? b : a));
+                    const d = Math.round(worst.avg - worst.v);
+                    if (d >= 3) {
+                        points.push(isAr
+                            ? `${labelOf(worst.k)} (${worst.v}) أقل بـ${d} من متوسط ${pos} — أضعف الخصائص التي يعتمد عليها هذا الدور.`
+                            : `${labelOf(worst.k)} (${worst.v}) is ${d} below the ${pos} average — the weakest of the attributes this role relies on.`);
+                    }
+                } else if (vals.length >= 2) {
                     const worst = vals.reduce((a, b) => (b.v < a.v ? b : a));
                     const best = vals.reduce((a, b) => (b.v > a.v ? b : a));
                     if (best.v - worst.v >= 8) {
-                        const wLabel = ATTRIBUTE_LABELS[worst.k] ? (isAr ? ATTRIBUTE_LABELS[worst.k].ar : ATTRIBUTE_LABELS[worst.k].en) : worst.k.toUpperCase();
-                        const bLabel = ATTRIBUTE_LABELS[best.k] ? (isAr ? ATTRIBUTE_LABELS[best.k].ar : ATTRIBUTE_LABELS[best.k].en) : best.k.toUpperCase();
                         points.push(isAr
-                            ? `${wLabel} (${worst.v}) هي أضعف خاصية رئيسية له في هذا المركز — بعيدة عن ${bLabel} (${best.v}) الخاصة به نفسه.`
-                            : `${wLabel} (${worst.v}) is their weakest key attribute for this role — well behind their own ${bLabel} (${best.v}).`);
+                            ? `${labelOf(worst.k)} (${worst.v}) هي أضعف خاصية رئيسية له في هذا المركز — بعيدة عن ${labelOf(best.k)} (${best.v}) الخاصة به.`
+                            : `${labelOf(worst.k)} (${worst.v}) is their weakest key attribute for this role — well behind their own ${labelOf(best.k)} (${best.v}).`);
                     }
                 }
             }
@@ -11300,21 +11486,17 @@
                     : `Weak foot is only ${player.weakFoot}★ — heavily reliant on their strong foot, and easy to show onto their weaker side.`);
             }
 
-            // 4. Skill moves.
-            if (typeof player.skillMoves === 'number' && player.skillMoves <= 2) {
+            // 4. Skill moves — only where dribbling is a key attribute of
+            // the position; a 2★ centre-back or full-back isn't a weakness.
+            if (typeof player.skillMoves === 'number' && player.skillMoves <= 2 && getKeyAttributesForPosition(pos).includes('dri')) {
                 points.push(isAr
                     ? `مهارات المراوغة ${player.skillMoves}★ فقط — خيارات محدودة في المساحات الضيقة، وأسهل لانتزاع الكرة منه.`
                     : `Only ${player.skillMoves}★ skill moves — a limited close-control repertoire, making them easier to dispossess in tight 1v1s.`);
             }
 
-            // 5. No PlayStyles at all.
-            const psPlus = Array.isArray(player.playstylesPlus) ? player.playstylesPlus : [];
-            const psBase = Array.isArray(player.playstyles) ? player.playstyles : [];
-            if (psPlus.length === 0 && psBase.length === 0) {
-                points.push(isAr
-                    ? 'لا توجد أي PlayStyles — لا يملك أي تعزيزات موقفية، وأداؤه يعتمد بالكامل على الإحصائيات الأساسية.'
-                    : 'No PlayStyles at all — no situational boosts to lean on, output is entirely down to the base stats.');
-            }
+            // (An empty PlayStyles list is NOT reported: the bulk feed often
+            // omits PlayStyles for base cards, so "none" can't be told apart
+            // from "not provided" — see PROJECT.md Known Limitations.)
 
             // From here on, needs the real per-player detail fetch.
             if (detail) {
@@ -11334,8 +11516,8 @@
                     const label = isAr ? def.ar : def.en;
                     const severity = val < 45 ? (isAr ? 'ضعيفة جداً' : 'very low') : (isAr ? 'ضعيفة' : 'low');
                     points.push(isAr
-                        ? `${label} ${severity} (${val}) — رقم حقيقي من داخل اللعبة، وليس تقديراً.`
-                        : `${label} is ${severity} (${val}) — a real in-game number, not an estimate.`);
+                        ? `${label} ${severity} (${val}) لهذا الدور.`
+                        : `${label} is ${severity} (${val}) for this role.`);
                 });
 
                 // 7. Height, only for positions where it plausibly costs
@@ -11343,8 +11525,8 @@
                 // applied blindly to every position.
                 if (typeof detail.height === 'number' && ['CB', 'ST', 'CF', 'GK'].includes(pos) && detail.height < 178) {
                     points.push(isAr
-                        ? `الطول ${detail.height} سم قصير نسبياً لمركز ${pos} — قد يواجه صعوبة في المواجهات الهوائية والبدنية أمام لاعبين أطول.`
-                        : `At ${detail.height}cm, they're on the short side for a ${pos} — likely to struggle in aerial and physical duels against taller opponents.`);
+                        ? `الطول ${detail.height} سم قصير نسبياً لمركز ${pos} — قد يخسر مواجهات هوائية أكثر أمام لاعبين أطول.`
+                        : `At ${detail.height}cm, they're on the short side for a ${pos} — may lose more aerial duels against taller opponents.`);
                 }
 
                 // 8. Body Type's REAL verdict for this specific player in
@@ -11897,11 +12079,11 @@
             // reachable for the profile they're meant to reward.
             if (pos === 'GK') return [
                 { role: 'Sweeper Keeper', focus: 'Build-Up', score: a.kic * 0.2 + a.spe * 0.15 + 8 + ((a.kic >= 78 && a.spe >= 62) ? 20 : 0),
-                    en: 'High kicking and mobility let them act as an auxiliary sweeper and launch attacks with distribution, not just shot-stop.',
-                    ar: 'دقة الإرسال والحركة العالية تتيحان له دور الحارس الكاسح وبدء الهجمات بالتمرير، وليس فقط التصدي.' },
+                    en: 'Kicking and speed lead this profile — suited to acting as an auxiliary sweeper and starting attacks with distribution, not just shot-stopping.',
+                    ar: 'ملفه يقوده الإرسال والسرعة — يناسب دور الحارس الكاسح المساعد وبدء الهجمات بالتوزيع، لا التصدي فقط.' },
                 { role: 'Ball-Playing Keeper', focus: 'Build-Up', score: a.kic * 0.25 + 8 + ((a.kic >= 76 && a.spe < 62) ? 18 : 0),
-                    en: "Passing/kicking is elite but mobility isn't there to sweep aggressively — better used starting attacks calmly from the box rather than roaming off the line.",
-                    ar: 'تمريره وإرساله ممتازان لكن حركته غير كافية للكشف بجرأة — أفضل استغلاله في بدء الهجمات بهدوء من منطقة الجزاء بدلاً من الخروج المستمر.' },
+                    en: 'Kicking is a bigger strength than speed — better used starting attacks calmly from the box than sweeping off the line.',
+                    ar: 'الإرسال أقوى لديه من السرعة — الأفضل بدء الهجمات بهدوء من داخل المنطقة بدلاً من الخروج بعيداً عن المرمى.' },
                 { role: 'Goalkeeper', focus: 'Defend', score: 40,
                     en: 'Reflex/handling-led profile is best kept on pure shot-stopping rather than sweeping high up the pitch.',
                     ar: 'ملفه يعتمد على ردود الفعل والإمساك بالكرة، فيُفضل إبقاؤه في التصدي التقليدي دون الكشف العالي.' }
@@ -11922,8 +12104,8 @@
             // Stopper ~11% — every role reachable, none dominant.
             if (pos === 'CB') return [
                 { role: 'Stopper', focus: 'Aggressive', score: a.phy * 0.25 + a.def * 0.25 - a.pac * 0.05 + 12 + ((a.phy >= 83 && a.def >= 80 && a.pac < 75) ? 12 : 0),
-                    en: "Strength and defending this dominant, without the pace to cover space in behind, are better spent stepping up aggressively to win the ball early.",
-                    ar: 'قوته وقدرته الدفاعية القويتان، دون سرعة كافية لتغطية المساحات الخلفية، أفضل استغلالاً في التقدم بجرأة لكسب الكرة مبكراً.' },
+                    en: 'Strength and defending outweigh pace — better spent stepping up to win the ball early than covering space in behind.',
+                    ar: 'القوة والدفاع يتفوقان لديه على السرعة — الأفضل التقدم لافتكاك الكرة مبكراً بدلاً من تغطية المساحات الخلفية.' },
                 { role: 'Ball-Playing Defender', focus: 'Build-Up', score: a.pac * 0.15 + a.pas * 0.15 + a.def * 0.1 + 6 + ((a.pac >= 78 && a.pas >= 68) ? 21 : 0),
                     en: 'Enough pace to safely step out of the back line and support build-up without being exposed in behind.',
                     ar: 'سرعته تتيح له الخروج من خط الدفاع بأمان والمساهمة في بناء اللعب دون التعرض للخطر خلفه.' },
@@ -11946,8 +12128,8 @@
             // ~12%, Attacking Wingback ~11%, Inverted Wingback ~5%.
             if (pos === 'LB' || pos === 'RB' || pos === 'LWB' || pos === 'RWB') return [
                 { role: 'Attacking Wingback', focus: 'Attack', score: a.pac * 0.17 + a.dri * 0.12 + 6 + ((a.pac >= 80 && a.dri >= 72) ? 22 : 0),
-                    en: 'Pace and dribbling let them overlap and create in the final third without wrecking defensive shape.',
-                    ar: 'سرعته ومهارته تتيحان له التداخل والمشاركة الهجومية دون الإخلال الكبير بالتوازن الدفاعي.' },
+                    en: 'Pace and dribbling lead this profile — suited to overlapping and creating in the final third.',
+                    ar: 'ملفه تقوده السرعة والمراوغة — يناسب التداخل والصناعة في الثلث الأخير.' },
                 { role: 'Inverted Wingback', focus: 'Build-Up', score: a.pas * 0.17 + a.dri * 0.12 + 6 + ((a.pas >= 72 && a.dri >= 70) ? 20 : 0),
                     en: 'Passing and close control let them tuck inside into midfield during possession, forming a temporary double-pivot instead of just holding the touchline.',
                     ar: 'تمريره وتحكمه بالكرة يتيحان له الدخول للوسط أثناء الاستحواذ ليشكّل محوراً مزدوجاً مؤقتاً بدلاً من الثبات على الخط الجانبي فقط.' },
@@ -11980,8 +12162,8 @@
                     en: 'Pure defending and physicality with little passing range — best used as an extra deep defensive layer, not asked to build play.',
                     ar: 'قدرة دفاعية وبدنية خالصة مع تمرير محدود — أفضل استغلاله كطبقة دفاعية إضافية في العمق، دون تكليفه ببناء اللعب.' },
                 { role: 'Box Crasher', focus: 'Balanced', score: a.sho * 0.17 + a.phy * 0.12 + a.pac * 0.12 + 7 + ((a.sho >= 68 && a.phy >= 74 && a.pac >= 70) ? 20 : 0),
-                    en: 'Shooting and physicality rare for the position let them arrive late into the box as a genuine goal threat from deep.',
-                    ar: 'تسديده وبدنيته النادرتان لهذا المركز تتيحان له الوصول متأخراً لمنطقة الجزاء كتهديد تسجيلي حقيقي من العمق.' },
+                    en: 'Shooting and physicality lead this profile — suited to arriving late in the box as a goal threat from midfield.',
+                    ar: 'ملفه يقوده التسديد والبدنية — يناسب الوصول متأخراً إلى منطقة الجزاء كتهديد تهديفي من الوسط.' },
                 { role: 'Wide Half', focus: 'Build-Up', score: a.def * 0.17 + a.pas * 0.17 + 7 + ((a.def >= 68 && a.pas >= 64 && !(a.pas >= 76 && a.dri >= 68)) ? 16 : 0),
                     en: 'Defensively sound and comfortable enough on the ball to shift across and cover wide areas from a double pivot.',
                     ar: 'صلابته الدفاعية وارتياحه بالكرة يتيحان له التحرك جانبياً لتغطية المناطق العريضة من محور مزدوج.' },
@@ -12001,11 +12183,11 @@
             // but no longer mathematically impossible.
             if (pos === 'CM') return [
                 { role: 'Holding', focus: 'Defend', score: a.def * 0.35 + a.phy * 0.3 + 5,
-                    en: 'Defending and physicality this strong at CM are better spent anchoring in front of the back four than roaming forward.',
-                    ar: 'قدرته الدفاعية وبدنيته القويتان في مركز الوسط أفضل استغلالاً في الارتكاز أمام خط الدفاع بدلاً من التقدم للأمام.' },
+                    en: 'Defending and physicality lead this profile — better spent anchoring in front of the back four than roaming forward.',
+                    ar: 'ملفه يقوده الدفاع والبدنية — الأفضل الارتكاز أمام خط الدفاع بدلاً من التقدم للأمام.' },
                 { role: 'Deep-Lying Playmaker', focus: 'Build-Up', score: a.pas * 0.2 - a.pac * 0.05 + 6 + ((a.pas >= 76 && a.pac <= 75) ? 32 : 0),
-                    en: 'Elite passing with modest pace is wasted box-to-box — drop them deeper to recycle and dictate tempo instead.',
-                    ar: 'التمرير النخبوي مع سرعة متواضعة يُهدر في الجري بين الخطين — أنزله للعمق ليعيد توزيع الكرة ويتحكم بالإيقاع.' },
+                    en: 'Passing outweighs pace — dropping deeper to recycle possession and set the tempo uses that better than box-to-box running.',
+                    ar: 'التمرير يتفوق لديه على السرعة — النزول للعمق لإعادة تدوير الكرة وضبط الإيقاع يستغل ذلك أفضل من الجري بين المنطقتين.' },
                 { role: 'Box-to-Box', focus: 'Balanced', score: a.sho * 0.3 + a.pac * 0.3 + 10,
                     en: 'Enough shooting and pace to join the front line late without abandoning defensive duty entirely.',
                     ar: 'تسديده وسرعته الكافيان يتيحان الانضمام للهجوم في اللحظة الأخيرة دون التخلي التام عن الدفاع.' },
@@ -12013,8 +12195,8 @@
                     en: 'Pace and dribbling out of the center allow drifting wide to combine, adding an extra attacking outlet the flanks don\'t already have.',
                     ar: 'سرعته ومراوغته من مركز الوسط تتيحان الانزلاق نحو الأطراف للمشاركة، ما يضيف منفذاً هجومياً إضافياً.' },
                 { role: 'Playmaker', focus: 'Roaming', score: a.pas * 0.35 + a.dri * 0.2 + 12,
-                    en: 'Passing-led profile is best used dictating play from a deeper, central position.',
-                    ar: 'ملفه القائم على التمرير يجعله الأفضل في التحكم باللعب من مركز أعمق وأكثر مركزية.' }
+                    en: 'Passing-led profile — suited to dictating play centrally, with licence to drift into space.',
+                    ar: 'ملف يقوده التمرير — يناسب التحكم باللعب من العمق المركزي مع حرية التحرك نحو المساحات.' }
             ];
             // Threshold-gated (see CB's comment above for the full
             // reasoning) — my first CAM rebalance used plain linear
@@ -12026,14 +12208,14 @@
             // genuinely reachable.
             if (pos === 'CAM') return [
                 { role: 'Shadow Striker', focus: 'Attack', score: a.sho * 0.15 + a.dri * 0.05 + 6 + (a.sho >= 75 ? 22 : 0),
-                    en: "Shooting rivals a real striker's, so pushing them almost level with the front line maximizes shot volume.",
-                    ar: 'قدرته التسديدية تضاهي المهاجمين، لذا دفعه ليكون شبه محاذٍ لخط الهجوم يعظّم عدد تسديداته.' },
+                    en: 'Shooting is the standout attribute, so pushing up almost level with the front line maximises shot volume.',
+                    ar: 'التسديد هو أبرز خصائصه، لذا دفعه ليكون شبه محاذٍ لخط الهجوم يزيد عدد تسديداته.' },
                 { role: 'Playmaker', focus: 'Roaming', score: a.pas * 0.15 + a.dri * 0.1 + 6 + ((a.pas >= 74 && a.dri >= 68) ? 23 : 0),
-                    en: 'Elite passing and close control, without the shooting to justify sitting in the pocket waiting for chances — better freed to roam and dictate.',
-                    ar: 'تمريره وتحكمه بالكرة نخبويان، دون تسديد يبرر انتظاره في الجيب — أفضل استغلاله بحرية التجول والتحكم باللعب.' },
+                    en: 'Passing and close control outweigh shooting — better freed to roam and create than waiting in the pocket for chances.',
+                    ar: 'التمرير والتحكم بالكرة يتفوقان لديه على التسديد — الأفضل منحه حرية التحرك والصناعة بدلاً من انتظار الفرص بين الخطوط.' },
                 { role: 'Half Winger', focus: 'Attack', score: a.pac * 0.15 + a.dri * 0.1 + 6 + ((a.pac >= 74 && a.dri >= 68) ? 20 : 0),
-                    en: 'Pace and dribbling this mobile are wasted standing still behind the striker — drifting wide to combine gets more out of them.',
-                    ar: 'سرعته ومراوغته العاليتان تُهدران إن بقي ثابتاً خلف المهاجم — الانزلاق نحو الأطراف للمشاركة يستغله أفضل.' },
+                    en: 'Pace and dribbling lead this profile — drifting wide to combine gets more out of them than standing behind the striker.',
+                    ar: 'ملفه تقوده السرعة والمراوغة — الانزلاق نحو الأطراف للتبادل يستغلها أفضل من البقاء خلف المهاجم.' },
                 { role: 'Classic 10', focus: 'Attack', score: a.pas * 0.22 + a.dri * 0.13 + 14,
                     en: 'Passing/dribbling-led profile is best used creating chances just behind the striker.',
                     ar: 'ملفه القائم على التمرير والمراوغة يجعله الأفضل في صناعة الفرص خلف المهاجم مباشرة.' }
@@ -12054,28 +12236,28 @@
             ];
             if (pos === 'LW' || pos === 'RW') return [
                 { role: 'Inside Forward', focus: 'Attack', score: a.sho * 0.38 + a.dri * 0.15 + 12,
-                    en: 'Striker-level shooting means cutting inside onto their stronger foot to shoot is the highest-value use of their attributes.',
-                    ar: 'قدرته التسديدية بمستوى المهاجمين، فالدخول للداخل نحو قدمه الأقوى للتسديد هو الاستغلال الأمثل.' },
+                    en: 'Shooting is the standout attribute, so cutting inside onto the stronger foot to shoot is the highest-value use of this profile.',
+                    ar: 'التسديد هو أبرز خصائصه، فالدخول للعمق نحو قدمه الأقوى للتسديد هو الاستغلال الأمثل لهذا الملف.' },
                 { role: 'Wide Playmaker', focus: 'Build-Up', score: a.pas * 0.35 + a.dri * 0.22 + 12,
-                    en: "Passing and dribbling rival a creator's, with shooting to match — better used drifting infield to build play than waiting for a shot that isn't their main threat.",
-                    ar: 'تمريره ومراوغته بمستوى صانع الألعاب، مع تسديد محدود نسبياً — أفضل استغلاله بالانزلاق للداخل لبناء اللعب بدلاً من انتظار تسديدة ليست تهديده الأساسي.' },
+                    en: 'Passing and dribbling outweigh shooting — better used drifting infield to build play than waiting for shots.',
+                    ar: 'التمرير والمراوغة يتفوقان لديه على التسديد — الأفضل الانزلاق للداخل لبناء اللعب بدلاً من انتظار التسديد.' },
                 { role: 'Winger', focus: 'Attack', score: a.dri * 0.28 + a.pac * 0.22 + 12,
                     en: 'Dribbling/pace-led profile is best used holding width and beating the fullback outside.',
                     ar: 'ملفه القائم على المراوغة والسرعة يجعله الأفضل في الثبات على الجناح وتخطي الظهير من الخارج.' }
             ];
             if (pos === 'ST' || pos === 'CF') return [
                 { role: 'False 9', focus: 'Attack', score: a.pas * 0.35 + a.dri * 0.3 + 8,
-                    en: 'Passing/dribbling on par with a creator lets them drop deep to link play before attacking the space they just opened.',
-                    ar: 'تمريره ومراوغته بمستوى صانع الألعاب يتيحان النزول للعمق لربط اللعب قبل مهاجمة المساحة التي فتحها.' },
+                    en: 'Passing and dribbling lead this profile, so dropping deep to link play before attacking the space it opens suits it.',
+                    ar: 'ملفه يقوده التمرير والمراوغة، لذا يناسبه النزول للعمق لربط اللعب ثم مهاجمة المساحة التي يفتحها.' },
                 { role: 'Target Forward', focus: 'Attack', score: a.phy * 0.4 + a.sho * 0.15 - a.pac * 0.05 + 10,
                     en: 'A physical focal point — backs into center-backs to shield and win the ball rather than running in behind.',
                     ar: 'محور هجومي بدني — يسند نفسه على قلوب الدفاع لحماية الكرة وكسبها بدلاً من الجري خلف الدفاع.' },
                 { role: 'Advanced Forward', focus: 'Attack', score: a.pac * 0.4 + a.sho * 0.15 + 10,
-                    en: 'Elite pace is best spent constantly breaking the defensive line with runs in behind, not dropping deep.',
-                    ar: 'سرعته النخبوية تُستغل أفضل في كسر خط الدفاع باستمرار بالجري خلفه، لا بالنزول للعمق.' },
+                    en: 'Pace-led profile — best spent breaking the defensive line with runs in behind rather than dropping deep.',
+                    ar: 'ملف تقوده السرعة — الأفضل كسر خط الدفاع بالجري خلفه بدلاً من النزول للعمق.' },
                 { role: 'Poacher', focus: 'Attack', score: a.sho * 0.45 + 12,
-                    en: 'No single standout trait to build a specialist role around — stays central inside the box for rebounds, crosses, and cutbacks.',
-                    ar: 'لا توجد سمة واحدة بارزة كفاية لبناء دور متخصص — يبقى مركزياً داخل منطقة الجزاء لاستغلال الارتدادات والعرضيات.' }
+                    en: 'Shooting-led profile — best used staying central in the box for rebounds, crosses and cutbacks rather than dropping deep to link play.',
+                    ar: 'ملف يقوده التسديد — الأفضل البقاء مركزياً داخل منطقة الجزاء للارتدادات والعرضيات بدلاً من النزول لربط اللعب.' }
             ];
             return [{ role: pos, focus: 'Balanced', score: 50,
                 en: 'General-purpose role based on standard positioning for this slot.',
@@ -12812,40 +12994,88 @@
                 // fallback "only realistic option" line, which reads as
                 // wrong (there was no budget/slot constraint at all here).
                 const alts = (!standalone && typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
+                // getMetaValue falls back to OVR when a card has no Meta, so
+                // name the unit that was actually compared.
+                const unitEn = typeof evalPlayer.meta === 'number' ? 'Meta' : 'OVR';
+                const unitAr = typeof evalPlayer.meta === 'number' ? 'ميتا' : 'تقييم';
                 if (!standalone) {
                     if (alts.length > 0) {
                         const nextBest = alts[0];
                         const gap = getMetaValue(evalPlayer) - getMetaValue(nextBest);
                         if (gap >= 3) {
                             sentences.push(isAr
-                                ? `يتفوّق بوضوح على أقرب بديل متاح لهذا المركز (<span class="text-white font-semibold">${nextBest.name}</span>) بفارق ${gap.toFixed(1)} نقطة تقييم.`
-                                : `Clearly ahead of the closest available alternative for this slot (<span class="text-white font-semibold">${nextBest.name}</span>) by ${gap.toFixed(1)} rating points.`);
+                                ? `يتفوّق بوضوح على أقرب بديل ضمن الميزانية (<span class="text-white font-semibold">${nextBest.name}</span>) بفارق ${gap.toFixed(1)} ${unitAr}.`
+                                : `Clearly ahead of the closest affordable alternative (<span class="text-white font-semibold">${nextBest.name}</span>) by ${gap.toFixed(1)} ${unitEn}.`);
                         } else if (gap > 0.3) {
                             sentences.push(isAr
-                                ? `يتقدّم بفارق ضئيل عن أقرب بديل (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`
-                                : `Only a thin margin ahead of the closest alternative (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)}).`);
+                                ? `يتقدّم بفارق ضئيل عن أقرب بديل (<span class="text-white font-semibold">${nextBest.name}</span>، +${gap.toFixed(1)} ${unitAr}).`
+                                : `Only a thin margin ahead of the closest alternative (<span class="text-white font-semibold">${nextBest.name}</span>, +${gap.toFixed(1)} ${unitEn}).`);
                         } else {
                             sentences.push(isAr
                                 ? `الفارق مع البدائل المتاحة محدود جداً — <span class="text-white font-semibold">${nextBest.name}</span> كان سيؤدي بأداء مشابه تقريباً.`
                                 : `Barely separated from the alternatives on the table — <span class="text-white font-semibold">${nextBest.name}</span> would've performed almost as well here.`);
                         }
                     } else {
+                        // "Alternatives" = players at this position priced
+                        // within what's LEFT after the other ten (see
+                        // computeSlotAlternatives) — say exactly that.
+                        const leftForSlot = Math.max(0, squadState.budget - (squadState.totalCost - effectivePrice(evalPlayer)));
+                        const slotPos = (formationSlots[squadState.formation][evalSlotIdx] || {}).pos || effectivePos;
                         sentences.push(isAr
-                            ? `لا يوجد بديل آخر متاح لهذا المركز ضمن الميزانية الحالية — كان الخيار الواقعي الوحيد.`
-                            : `No other candidate for this position fits the current budget — this was the only realistic option.`);
+                            ? `لا يوجد لاعب ${slotPos} آخر ضمن ${leftForSlot.toLocaleString()} عملة المتبقية بعد بقية التشكيلة — الميزانية، لا الجودة وحدها، حسمت هذا المركز.`
+                            : `No other ${slotPos} fits the ${leftForSlot.toLocaleString()} coins left after the rest of the XI — budget, not just quality, decided this slot.`);
                     }
                 }
 
+                // Strongest key attribute measured against the TYPICAL player
+                // at this position (same database baseline as the ± numbers
+                // in Key Attributes), not against his own other stats — a
+                // 78 can be his best stat and still be below the norm.
                 if (evalAttrEntries && evalAttrEntries.length > 0) {
-                    const [key, val] = evalAttrEntries.reduce((a, b) => (b[1] > a[1] ? b : a));
-                    const label = ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
-                    const tier = val >= 88 ? (isAr ? 'استثنائية' : 'elite')
-                        : val >= 80 ? (isAr ? 'ممتازة' : 'excellent')
-                        : val >= 72 ? (isAr ? 'جيدة' : 'solid')
-                        : (isAr ? 'متواضعة' : 'modest');
-                    sentences.push(isAr
-                        ? `أبرز صفاته في هذا الدور: ${label} ${tier} (${val}).`
-                        : `Their standout trait for this role: ${tier} ${label.toLowerCase()} (${val}).`);
+                    const posStats = GENERAL_PLAYER_STATS[effectivePos] && GENERAL_PLAYER_STATS[effectivePos].stats;
+                    const labelOf = key => ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
+                    const withAvg = evalAttrEntries
+                        .map(([key, val]) => ({ key, val, avg: posStats && posStats[key] ? posStats[key].avg : null }))
+                        .filter(e => typeof e.val === 'number');
+                    if (withAvg.length && withAvg.every(e => e.avg != null)) {
+                        const best = withAvg.reduce((a, b) => ((b.val - b.avg) > (a.val - a.avg) ? b : a));
+                        const d = Math.round(best.val - best.avg);
+                        if (d >= 2) {
+                            sentences.push(isAr
+                                ? `أقوى خاصية رئيسية له في هذا الدور: ${labelOf(best.key)} ${best.val}، أعلى بـ${d} من متوسط ${effectivePos}.`
+                                : `Strongest key attribute for this role: ${labelOf(best.key)} ${best.val}, ${d} above the ${effectivePos} average.`);
+                        } else if (d > -2) {
+                            sentences.push(isAr
+                                ? `أقوى خاصية رئيسية له في هذا الدور: ${labelOf(best.key)} ${best.val}، في مستوى متوسط ${effectivePos}.`
+                                : `Strongest key attribute for this role: ${labelOf(best.key)} ${best.val}, in line with the ${effectivePos} average.`);
+                        } else {
+                            sentences.push(isAr
+                                ? `كل خصائصه الرئيسية لهذا الدور أقل من متوسط ${effectivePos} (أفضلها ${labelOf(best.key)} ${best.val}، −${Math.abs(d)}).`
+                                : `All key attributes for this role are below the ${effectivePos} average (best: ${labelOf(best.key)} ${best.val}, −${Math.abs(d)}).`);
+                        }
+                    } else if (withAvg.length) {
+                        const best = withAvg.reduce((a, b) => (b.val > a.val ? b : a));
+                        sentences.push(isAr
+                            ? `أقوى خاصية رئيسية له في هذا الدور: ${labelOf(best.key)} ${best.val}.`
+                            : `Strongest key attribute for this role: ${labelOf(best.key)} ${best.val}.`);
+                    }
+                }
+
+                // Chemistry contribution in THIS slot — only when it's low
+                // enough to be worth knowing (a normal 2-3/3 isn't news).
+                if (!standalone && typeof evalSlotIdx === 'number' && squadState.chemistry && squadState.chemistry.perSlot) {
+                    const chemInfo = squadState.chemistry.perSlot[evalSlotIdx];
+                    if (chemInfo && squadState.selectedXI[evalSlotIdx] && squadState.selectedXI[evalSlotIdx].id === evalPlayer.id) {
+                        if (!chemInfo.inPosition) {
+                            sentences.push(isAr
+                                ? `يلعب خارج مركزه الأساسي هنا، لذا كيميائه 0/3.`
+                                : `He's out of his natural position here, so he has 0/3 chemistry.`);
+                        } else if (chemInfo.points <= 1) {
+                            sentences.push(isAr
+                                ? `كيميائه ${chemInfo.points}/3 فقط في هذا المركز — روابط قليلة مع زملائه في النادي أو الدوري أو الدولة.`
+                                : `Only ${chemInfo.points}/3 chemistry in this slot — few club, league or nation links with teammates.`);
+                        }
+                    }
                 }
 
                 // Budget-share commentary ("under 1% of the total
@@ -12854,14 +13084,16 @@
                 // the alternatives clause above.
                 if (!standalone) {
                     const budgetShare = squadState.budget > 0 ? (effectivePrice(evalPlayer) / squadState.budget) * 100 : 0;
+                    const priciest = Math.max(...Object.values(squadState.selectedXI || {}).filter(Boolean).map(p => effectivePrice(p)));
+                    const isPriciest = effectivePrice(evalPlayer) > 0 && effectivePrice(evalPlayer) === priciest;
                     if (budgetShare >= 15) {
                         sentences.push(isAr
-                            ? `استثمار كبير في هذا المركز — يستهلك نحو ${budgetShare.toFixed(0)}% من إجمالي الميزانية.`
-                            : `A marquee spend for this slot — around ${budgetShare.toFixed(0)}% of the total budget.`);
+                            ? `يستهلك نحو ${budgetShare.toFixed(0)}% من الميزانية${isPriciest ? ' — أكبر إنفاق فردي في التشكيلة' : ''}.`
+                            : `Takes about ${budgetShare.toFixed(0)}% of the budget${isPriciest ? ' — the biggest single spend in the XI' : ''}.`);
                     } else if (budgetShare <= 1) {
                         sentences.push(isAr
-                            ? `قيمة ممتازة — أقل من 1% فقط من الميزانية الإجمالية.`
-                            : `Excellent value — under 1% of the total budget for this slot.`);
+                            ? `يكلّف أقل من 1% من الميزانية.`
+                            : `Costs under 1% of the budget.`);
                     }
                 }
 
@@ -12892,7 +13124,13 @@
             const roleInfoWhy = (typeof slotIdx === 'number' && squadState.teamRoles && squadState.teamRoles[slotIdx])
                 || getRoleSuggestion(player, effectivePos);
             const movementLabel = currentLanguage === 'ar' ? 'الإحساس الحركي (AcceleRATE):' : 'Movement Feel (AcceleRATE):';
-            const roleLabel = currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:';
+            // "Optimal" only when the role really is this player's own best
+            // fit — a manual pick or a team-shape adjustment says so.
+            const roleLabel = roleInfoWhy.manual
+                ? (currentLanguage === 'ar' ? 'اختيارك للدور:' : 'Your Role Choice:')
+                : roleInfoWhy.adjusted
+                ? (currentLanguage === 'ar' ? 'الدور المعيّن (معدّل لشكل الفريق):' : 'Assigned Role (adjusted for team shape):')
+                : (currentLanguage === 'ar' ? 'الدور والتكتيك الأمثل:' : 'Optimal Role & Tactic:');
             const roleAdjustNote = roleInfoWhy.adjusted
                 ? `<p class="text-[11px] text-fc-gold mt-1 flex items-start gap-1"><i class="fa-solid fa-people-arrows mt-0.5 shrink-0"></i><span>${currentLanguage === 'ar' ? roleInfoWhy.adjustAr : roleInfoWhy.adjustEn}</span></p>`
                 : '';
@@ -13037,7 +13275,7 @@
             const alternativesSection = (typeof slotIdx === 'number') ? `
                 <div class="space-y-2">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${altsTitle}</span>
-                    ${alternatives.length === 0 ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد بدائل تناسب هذا المركز ضمن ميزانيتك الحالية.' : 'No other candidates for this position fit within your current budget.'}</p>` : `
+                    ${alternatives.length === 0 ? `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? `لا يوجد لاعب ${effectivePos} آخر ضمن الميزانية المتبقية بعد بقية التشكيلة.` : `No other ${effectivePos} fits the budget left after the rest of the XI.`}</p>` : `
                     <div class="space-y-2">
                         ${alternatives.map(alt => {
                             const altMetaTag = typeof alt.meta === 'number' ? ` · MR ${alt.meta.toFixed(1)}` : '';
