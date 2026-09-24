@@ -983,6 +983,14 @@
                         Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax.
                     </p>
                 </div>
+                <!-- Mode: original ranking vs. fast-selling cheap cards -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="inline-flex bg-fc-dark border border-fc-border rounded-xl p-1 gap-1">
+                        <button id="market-mode-margin" onclick="window.setMarketMode('margin')" class="px-3 py-1.5 rounded-lg text-xs font-black transition-all bg-fc-accent text-fc-dark"><i class="fa-solid fa-chart-line me-1"></i><span data-i18n="marketModeMargin">Best margin</span></button>
+                        <button id="market-mode-fast" onclick="window.setMarketMode('fast')" class="px-3 py-1.5 rounded-lg text-xs font-black transition-all text-gray-400 hover:text-white"><i class="fa-solid fa-bolt me-1"></i><span data-i18n="marketModeFast">Fast sell</span></button>
+                    </div>
+                    <span class="text-[11px] text-gray-500" data-i18n="marketModeHint">Best margin = biggest profit, often slower to sell. Fast sell = cheaper cards listed a little under the EA average, so they're more likely to sell quickly.</span>
+                </div>
                 <div class="flex flex-wrap items-end gap-3">
                     <div>
                         <label data-i18n="marketBudgetLbl" class="block text-xs font-bold text-gray-300 mb-1">Trading budget</label>
@@ -1008,6 +1016,26 @@
                             <option value="discount" data-i18n="marketSortDiscount">Discount</option>
                         </select>
                     </div>
+                    <div id="market-fast-options" class="hidden flex flex-wrap items-end gap-3 ps-3 border-s border-fc-accent/40">
+                        <div>
+                            <label data-i18n="marketMaxBuyLbl" class="block text-xs font-bold text-fc-accent mb-1">Max buy price</label>
+                            <input type="number" id="market-max-buy-input" value="5000" min="0" step="500" oninput="window.rerunMarketFilters()" class="w-24 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                        </div>
+                        <div>
+                            <label data-i18n="marketUndercutLbl" class="block text-xs font-bold text-fc-accent mb-1">List below EA avg %</label>
+                            <input type="number" id="market-undercut-input" value="5" min="0" max="30" step="1" oninput="window.rerunMarketFilters()" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                        </div>
+                        <div>
+                            <label data-i18n="marketTierLbl" class="block text-xs font-bold text-fc-accent mb-1">Card tier</label>
+                            <select id="market-tier-select" onchange="window.rerunMarketFilters()" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent disabled:opacity-40">
+                                <option value="all" data-i18n="marketTierAll">All</option>
+                                <option value="bronze" data-i18n="marketTierBronze">Bronze (≤64)</option>
+                                <option value="silver" data-i18n="marketTierSilver">Silver (65–74)</option>
+                                <option value="gold" data-i18n="marketTierGold">Gold (75+)</option>
+                            </select>
+                        </div>
+                        <p id="market-tier-note" class="hidden basis-full text-[10px] text-gray-500" data-i18n="marketTierNote">Card tier needs ratings, and this scan didn't include them — to target bronze/silver, filter FUTBIN's market list by card type first, then scan.</p>
+                    </div>
                     <div>
                         <label data-i18n="marketPagesLbl" class="block text-xs font-bold text-gray-300 mb-1">Pages to scan</label>
                         <input type="number" id="market-pages-input" value="30" min="1" max="200" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
@@ -1024,6 +1052,7 @@
                     </button>
                     <span class="text-[11px] text-gray-500" data-i18n="marketInstallOnceNote">The scanner bookmark only needs to be installed once.</span>
                 </div>
+                <p class="text-[11px] text-gray-500" data-i18n="marketFilterTip">Tip: to scan only bronze or silver cards, apply those filters on FUTBIN's market page (if it offers them) before clicking the bookmark — the scanner keeps the page's filters.</p>
                 <p class="text-[11px] text-gray-500 italic" data-i18n="marketDisclaimer">
                     Market values move quickly. EA Average is a reference value, not a guaranteed sale price. Verify the current market price before buying.
                 </p>
@@ -1057,6 +1086,7 @@
                             <i class="fa-solid fa-grip-vertical"></i> FC Market Scanner
                         </a>
                     </div>
+                    <p class="text-[10px] text-fc-gold" data-i18n="marketUpdateNote">Installed an earlier version? Copy it again and replace the old bookmark's URL — the new version keeps FUTBIN filters and reads card tiers.</p>
                     <p class="text-[10px] text-gray-500" data-i18n="marketDragHint">Shortcut: drag the "FC Market Scanner" button onto your bookmarks bar instead of steps 1–5.</p>
                     <textarea id="market-bookmarklet-code" readonly rows="2" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-500 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
                 </div>
@@ -1576,6 +1606,19 @@
                 marketTradeStep4: "Return to this tab.",
                 marketTradeStep5: "Review the potential trading opportunities.",
                 marketManualTitle: "Manual fallback — console script & paste",
+                marketModeMargin: "Best margin",
+                marketModeFast: "Fast sell",
+                marketModeHint: "Best margin = biggest profit, often slower to sell. Fast sell = cheaper cards listed a little under the EA average, so they're more likely to sell quickly.",
+                marketMaxBuyLbl: "Max buy price",
+                marketUndercutLbl: "List below EA avg %",
+                marketTierLbl: "Card tier",
+                marketTierAll: "All",
+                marketTierBronze: "Bronze (≤64)",
+                marketTierSilver: "Silver (65–74)",
+                marketTierGold: "Gold (75+)",
+                marketTierNote: "Card tier needs ratings, and this scan didn't include them — to target bronze/silver, filter FUTBIN's market list by card type first, then scan.",
+                marketFilterTip: "Tip: to scan only bronze or silver cards, apply those filters on FUTBIN's market page (if it offers them) before clicking the bookmark — the scanner keeps the page's filters.",
+                marketUpdateNote: "Installed an earlier version? Copy it again and replace the old bookmark's URL — the new version keeps FUTBIN filters and reads card tiers.",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
                 shapeDefendBtn: "DEFENDING",
@@ -1775,6 +1818,19 @@
                 marketTradeStep4: "عُد إلى هذه الصفحة.",
                 marketTradeStep5: "راجع فرص التداول المحتملة.",
                 marketManualTitle: "الطريقة اليدوية الاحتياطية — كود وحدة التحكم واللصق",
+                marketModeMargin: "أعلى هامش",
+                marketModeFast: "بيع سريع",
+                marketModeHint: "أعلى هامش = أكبر ربح، وغالباً بيع أبطأ. بيع سريع = بطاقات أرخص تُعرض بأقل قليلاً من متوسط EA، فتزيد فرصة بيعها بسرعة.",
+                marketMaxBuyLbl: "أعلى سعر شراء",
+                marketUndercutLbl: "اعرض أقل من متوسط EA %",
+                marketTierLbl: "فئة البطاقة",
+                marketTierAll: "الكل",
+                marketTierBronze: "برونزي (≤64)",
+                marketTierSilver: "فضي (65–74)",
+                marketTierGold: "ذهبي (75+)",
+                marketTierNote: "فئة البطاقة تحتاج التقييمات، وهذا الفحص لم يتضمنها — لاستهداف البرونزي/الفضي، فلتر قائمة سوق FUTBIN حسب نوع البطاقة أولاً ثم افحص.",
+                marketFilterTip: "نصيحة: لفحص البطاقات البرونزية أو الفضية فقط، طبّق هذه الفلاتر في صفحة سوق FUTBIN (إن كانت متاحة) قبل الضغط على الإشارة المرجعية — الماسح يحتفظ بفلاتر الصفحة.",
+                marketUpdateNote: "ثبّتَّ نسخة سابقة؟ انسخه مجدداً واستبدل رابط الإشارة القديمة — النسخة الجديدة تحتفظ بفلاتر FUTBIN وتقرأ فئات البطاقات.",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
                 shapeDefendBtn: "الدفاع",
@@ -15007,13 +15063,20 @@
     return [...body.rows].map(function(row) {
       const cells = [...row.cells];
       function text(i) { return (i != null && cells[i]) ? cells[i].textContent.trim() : null; }
-      const name = (text(colMap.player) || '').split('\\n')[0].trim();
+      const lines = (text(colMap.player) || '').split('\\n').map(function(l) { return l.trim(); }).filter(Boolean);
+      const name = lines[0] || '';
+      let rating = null;
+      for (let k = 1; k < lines.length && rating == null; k++) {
+        if (/^\\d{2}$/.test(lines[k]) && +lines[k] >= 40 && +lines[k] <= 99) rating = +lines[k];
+      }
       return {
         name: name,
         price: parseCoins(text(colMap.price)),
         eaAverage: parseCoins(text(colMap.eaAverage)),
         diffText: text(colMap.difference),
-        afterTax: parseCoins(text(colMap.afterTax))
+        afterTax: parseCoins(text(colMap.afterTax)),
+        trend: text(colMap.trend),
+        rating: rating
       };
     }).filter(function(r) { return r.name && r.price != null; });
   }
@@ -15030,9 +15093,18 @@
     cur.searchParams.set('page', curPage + 1);
     return cur.href;
   }
+  function marketBaseUrl() {
+    try {
+      const here = new URL(location.href);
+      if (/futbin\\.com$/.test(here.hostname) && /market-player-list/.test(here.pathname)) return here;
+    } catch (e) {}
+    return new URL('https://www.futbin.com/27/market-player-list');
+  }
   async function scanPages(startPage, endPage, onPage) {
     const delayMs = 1200;
-    let url = 'https://www.futbin.com/27/market-player-list?page=' + startPage;
+    const start = marketBaseUrl();
+    start.searchParams.set('page', startPage);
+    let url = start.href;
     let all = [];
     let pages = 0;
     const seen = new Set();
@@ -15126,7 +15198,9 @@ ${FUTBIN_SCANNER_CORE}
       say('page ' + page + ' of ' + endPage + ' (' + total + ' listings so far)');
       if (app) send({ type: 'FC_MARKET_PROGRESS', page: page, pagesDone: done, pagesPlanned: endPage - startPage + 1, listings: total }, appOrigin);
     });
-    const payload = { type: 'FC_MARKET_DATA', rows: result.rows, scannedPages: result.pages, scannedAt: new Date().toISOString() };
+    const base = marketBaseUrl();
+    base.searchParams.delete('page');
+    const payload = { type: 'FC_MARKET_DATA', rows: result.rows, scannedPages: result.pages, scannedAt: new Date().toISOString(), scannerVersion: 2, filtered: base.search.length > 1 };
     if (app && !app.closed && send(payload, appOrigin)) {
       say('done - ' + result.rows.length + ' listings sent to the app. Switch back to it to see the results.');
     } else {
@@ -15217,13 +15291,17 @@ ${FUTBIN_SCANNER_CORE}
             return [...body.rows].map(row => {
                 const cells = [...row.cells];
                 const text = (i) => (i != null && cells[i]) ? cells[i].textContent.trim() : null;
-                const name = (text(colMap.player) || '').split('\n')[0].trim();
+                const lines = (text(colMap.player) || '').split('\n').map(l => l.trim()).filter(Boolean);
+                const name = lines[0] || '';
+                const ratingLine = lines.slice(1).find(l => /^\d{2}$/.test(l) && +l >= 40 && +l <= 99);
                 return {
                     name,
                     price: parseFutbinCoins(text(colMap.price)),
                     eaAverage: parseFutbinCoins(text(colMap.eaAverage)),
                     diffText: text(colMap.difference),
                     afterTax: parseFutbinCoins(text(colMap.afterTax)),
+                    trend: text(colMap.trend),
+                    rating: ratingLine ? +ratingLine : null,
                 };
             }).filter(r => r.name && r.price != null);
         }
@@ -15242,17 +15320,38 @@ ${FUTBIN_SCANNER_CORE}
         // `opts` (all optional) adds the trading filters and sort order;
         // with no opts the behaviour is exactly the original one (any
         // positive profit, sorted by ROI).
+        //
+        // FAST SELL (optional opts): FUTBIN's list has no sales-volume data,
+        // so "sells faster" is approximated with the two levers traders use:
+        //   • undercutPct — list the card X% BELOW the EA average (rounded
+        //     down to a real EA price step) so it's the cheaper one buyers
+        //     see; profit is then computed at that lower, more realistic
+        //     price, not at the EA average
+        //   • maxBuy — cheaper cards have many more buyers
+        //   • tier   — bronze / silver / gold, when the scan read ratings
+        // With none of these set, results are identical to before.
+        function roundDownToEaPriceStep(v) {
+            const step = v < 1000 ? 50 : v < 10000 ? 100 : v < 50000 ? 250 : v < 100000 ? 500 : 1000;
+            return Math.max(200, Math.floor(v / step) * step);
+        }
+        function cardTierOf(rating) {
+            if (typeof rating !== 'number') return null;
+            return rating >= 75 ? 'gold' : rating >= 65 ? 'silver' : 'bronze';
+        }
         function computeFlipOpportunities(rows, budget, opts) {
-            const o = Object.assign({ minProfit: 0, minRoi: 0, minDiscount: 0, sortBy: 'roi' }, opts || {});
+            const o = Object.assign({ minProfit: 0, minRoi: 0, minDiscount: 0, sortBy: 'roi', undercutPct: 0, maxBuy: Infinity, tier: 'all' }, opts || {});
             const sortKey = { profit: 'profit', roi: 'marginPct', discount: 'discountPct' }[o.sortBy] || 'marginPct';
+            const cap = Math.min(budget, o.maxBuy > 0 ? o.maxBuy : Infinity);
             return rows
-                .filter(r => r.price > 0 && r.price <= budget && typeof r.eaAverage === 'number' && r.eaAverage > 0)
+                .filter(r => r.price > 0 && r.price <= cap && typeof r.eaAverage === 'number' && r.eaAverage > 0)
+                .filter(r => o.tier === 'all' || cardTierOf(r.rating) === o.tier)
                 .map(r => {
-                    const projectedSale = Math.round(r.eaAverage * (1 - FUTBIN_EA_TAX));
+                    const sellTarget = o.undercutPct > 0 ? roundDownToEaPriceStep(r.eaAverage * (1 - o.undercutPct / 100)) : r.eaAverage;
+                    const projectedSale = Math.round(sellTarget * (1 - FUTBIN_EA_TAX));
                     const profit = projectedSale - r.price;
                     const marginPct = (profit / r.price) * 100;
                     const discountPct = ((r.eaAverage - r.price) / r.eaAverage) * 100;
-                    return { ...r, projectedSale, profit, marginPct, roiPct: marginPct, discountPct };
+                    return { ...r, sellTarget, projectedSale, profit, marginPct, roiPct: marginPct, discountPct, tier: cardTierOf(r.rating) };
                 })
                 .filter(r => r.profit > 0 && r.profit >= o.minProfit && r.marginPct >= o.minRoi && r.discountPct >= o.minDiscount)
                 .sort((a, b) => b[sortKey] - a[sortKey]);
@@ -15273,11 +15372,14 @@ ${FUTBIN_SCANNER_CORE}
                 price: num(r.price),
                 eaAverage: num(r.eaAverage),
                 afterTax: num(r.afterTax),
-                diffText: typeof r.diffText === 'string' ? r.diffText.slice(0, 40) : null
+                diffText: typeof r.diffText === 'string' ? r.diffText.slice(0, 40) : null,
+                trend: typeof r.trend === 'string' ? r.trend.slice(0, 20) : null,
+                rating: (Number.isInteger(r.rating) && r.rating >= 40 && r.rating <= 99) ? r.rating : null
             } : null).filter(r => r && r.name && r.price != null);
         }
 
-        function renderMarketResults(opportunities, scannedCount, isAr, budget) {
+        function renderMarketResults(opportunities, scannedCount, isAr, budget, f) {
+            const fast = !!(f && f.fast);
             const container = document.getElementById('market-results');
             if (!container) return;
 
@@ -15300,7 +15402,10 @@ ${FUTBIN_SCANNER_CORE}
                     ${stat(isAr ? 'فرص محتملة' : 'Potential opportunities', opportunities.length.toLocaleString(), 'text-fc-accent')}
                     ${stat(isAr ? 'أعلى ربح محتمل' : 'Best potential profit', '+' + best.profit.toLocaleString(), 'text-green-400')}
                     ${stat(isAr ? 'أعلى عائد' : 'Best ROI', best.roi.toFixed(1) + '%', 'text-green-400')}
-                </div>`;
+                </div>
+                ${fast ? `<p class="text-[11px] text-gray-400 mb-3 leading-snug">${isAr
+                    ? `وضع البيع السريع: يعرض بطاقات ${f.maxBuy !== Infinity ? `حتى ${f.maxBuy.toLocaleString()} كوينز ` : ''}مع سعر عرض أقل بـ${f.undercutPct}% من متوسط EA (مقرّب لخطوات أسعار EA) حتى تكون الأرخص أمام المشترين؛ الربح محسوب على هذا السعر. قائمة FUTBIN لا تتضمن حجم المبيعات، لذا «سريع» تقدير وليس ضماناً.`
+                    : `Fast sell: cards ${f.maxBuy !== Infinity ? `up to ${f.maxBuy.toLocaleString()} coins ` : ''}listed ${f.undercutPct}% under the EA average (rounded down to EA price steps) so yours is the cheaper one buyers see — profit is calculated at that lower price. FUTBIN's list has no sales-volume data, so "fast" is an estimate, not a guarantee.`}</p>` : ''}`;
 
             // Numbers-first table — a name plus five aligned columns, no
             // prose per row. Margin color-scaled (green = strong, gray =
@@ -15313,9 +15418,10 @@ ${FUTBIN_SCANNER_CORE}
                 return `
                 <tr class="border-b border-fc-border/60 hover:bg-fc-cardHover/40">
                     <td class="py-2 pr-2 text-[11px] font-black text-gray-500 text-center">${i + 1}</td>
-                    <td class="py-2 px-2 font-bold text-white text-xs truncate max-w-[160px]" title="${escapeMarketHtml(opp.name)}">${escapeMarketHtml(opp.name)}</td>
+                    <td class="py-2 px-2 font-bold text-white text-xs truncate max-w-[160px]" title="${escapeMarketHtml(opp.name)}">${opp.tier ? `<span class="inline-block w-2 h-2 rounded-full me-1.5 align-middle ${opp.tier === 'gold' ? 'bg-yellow-400' : opp.tier === 'silver' ? 'bg-gray-300' : 'bg-amber-700'}" title="${opp.tier} · ${opp.rating}"></span>` : ''}${escapeMarketHtml(opp.name)}</td>
                     <td class="py-2 px-2 text-xs text-right font-bold text-white whitespace-nowrap">${opp.price.toLocaleString()}</td>
                     <td class="py-2 px-2 text-xs text-right font-bold text-fc-gold whitespace-nowrap">${opp.eaAverage.toLocaleString()}</td>
+                    ${fast ? `<td class="py-2 px-2 text-xs text-right font-bold text-fc-accent whitespace-nowrap">${opp.sellTarget.toLocaleString()}</td>` : ''}
                     <td class="py-2 px-2 text-xs text-right text-gray-400 whitespace-nowrap">${opp.projectedSale.toLocaleString()}</td>
                     <td class="py-2 px-2 text-xs text-right font-black text-green-400 whitespace-nowrap">+${opp.profit.toLocaleString()}</td>
                     <td class="py-2 px-2 text-xs text-right font-black ${marginColor} whitespace-nowrap">${opp.marginPct.toFixed(1)}%</td>
@@ -15336,7 +15442,9 @@ ${FUTBIN_SCANNER_CORE}
                 ${summaryHtml}
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${shown.length} من ${opportunities.length} فرصة محتملة` : `Top ${shown.length} of ${opportunities.length} potential opportunities`}</span>
-                    <span class="text-[10px] text-gray-500">${isAr ? 'بعد الضريبة = متوسط EA × 0.95 · الربح المحتمل = بعد الضريبة − الشراء' : 'After Tax = EA Avg × 0.95 · Potential Profit = After Tax − Buy'}</span>
+                    <span class="text-[10px] text-gray-500">${fast
+                        ? (isAr ? 'بعد الضريبة = سعر العرض × 0.95 · الربح المحتمل = بعد الضريبة − الشراء' : 'After Tax = List at × 0.95 · Potential Profit = After Tax − Buy')
+                        : (isAr ? 'بعد الضريبة = متوسط EA × 0.95 · الربح المحتمل = بعد الضريبة − الشراء' : 'After Tax = EA Avg × 0.95 · Potential Profit = After Tax − Buy')}</span>
                 </div>
                 <div class="bg-fc-dark/80 border border-fc-border rounded-2xl overflow-hidden">
                     <div class="overflow-x-auto hide-scrollbar">
@@ -15347,6 +15455,7 @@ ${FUTBIN_SCANNER_CORE}
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-left rtl:text-right">${headName}</th>
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headBuy}</th>
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headEaAvg}</th>
+                                    ${fast ? `<th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${isAr ? 'اعرض بـ' : 'List at'}</th>` : ''}
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headNet}</th>
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headProfit}</th>
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headMargin}</th>
@@ -15424,19 +15533,61 @@ ${FUTBIN_SCANNER_CORE}
         // renderMarketResults. The last scan is kept in memory so changing a
         // filter or the sort re-ranks instantly without rescanning.
         let lastMarketScan = null; // { rows, scannedAt, scannedPages, source }
+        // 'margin' = the original ranking (sell at the EA average)
+        // 'fast'   = cheaper cards, listed a little under the EA average
+        let marketMode = 'margin';
+        const MARKET_MODE_DEFAULTS = {
+            margin: { minProfit: 500, minRoi: 10, minDiscount: 10, sortBy: 'roi' },
+            fast:   { minProfit: 100, minRoi: 5,  minDiscount: 5,  sortBy: 'profit' }
+        };
+        window.setMarketMode = function(mode) {
+            if (mode !== 'margin' && mode !== 'fast') return;
+            marketMode = mode;
+            const d = MARKET_MODE_DEFAULTS[mode];
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+            set('market-min-profit-input', d.minProfit); set('market-min-roi-input', d.minRoi);
+            set('market-min-discount-input', d.minDiscount); set('market-sort-select', d.sortBy);
+            ['margin', 'fast'].forEach(m => {
+                const b = document.getElementById('market-mode-' + m);
+                if (b) b.className = `px-3 py-1.5 rounded-lg text-xs font-black transition-all ${m === mode ? 'bg-fc-accent text-fc-dark' : 'text-gray-400 hover:text-white'}`;
+            });
+            const fastBox = document.getElementById('market-fast-options');
+            if (fastBox) fastBox.classList.toggle('hidden', mode !== 'fast');
+            renderLastMarketScan();
+        };
+        // Ratings only exist if FUTBIN's player cell shows them; the tier
+        // filter is offered only when most scanned rows actually have one.
+        function updateMarketTierAvailability() {
+            const el = document.getElementById('market-tier-select');
+            const note = document.getElementById('market-tier-note');
+            if (!el) return;
+            const rows = lastMarketScan ? lastMarketScan.rows : [];
+            const withRating = rows.filter(r => typeof r.rating === 'number').length;
+            const ok = rows.length > 0 && withRating / rows.length >= 0.5;
+            el.disabled = !ok;
+            if (!ok) el.value = 'all';
+            if (note) note.classList.toggle('hidden', ok || rows.length === 0);
+        }
         function readMarketFilters() {
             const n = (id, d) => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isFinite(v) && v >= 0 ? v : d; };
             const sortEl = document.getElementById('market-sort-select');
+            const tierEl = document.getElementById('market-tier-select');
+            const fast = marketMode === 'fast';
             return {
                 budget: Math.round(n('market-budget-input', 20000)),
                 minProfit: n('market-min-profit-input', 0),
                 minRoi: n('market-min-roi-input', 0),
                 minDiscount: n('market-min-discount-input', 0),
-                sortBy: sortEl ? sortEl.value : 'roi'
+                sortBy: sortEl ? sortEl.value : 'roi',
+                undercutPct: fast ? Math.min(30, n('market-undercut-input', 5)) : 0,
+                maxBuy: fast ? n('market-max-buy-input', 0) || Infinity : Infinity,
+                tier: fast && tierEl && !tierEl.disabled ? tierEl.value : 'all',
+                fast
             };
         }
         function runMarketAnalysis(rows, meta) {
             lastMarketScan = { rows, ...(meta || {}) };
+            updateMarketTierAvailability();
             renderLastMarketScan();
         }
         function renderLastMarketScan() {
@@ -15444,7 +15595,7 @@ ${FUTBIN_SCANNER_CORE}
             const isAr = currentLanguage === 'ar';
             const f = readMarketFilters();
             const opportunities = computeFlipOpportunities(lastMarketScan.rows, f.budget, f);
-            renderMarketResults(opportunities, lastMarketScan.rows.length, isAr, f.budget);
+            renderMarketResults(opportunities, lastMarketScan.rows.length, isAr, f.budget, f);
             renderMarketLastScanLine();
         }
         window.rerunMarketFilters = function() { renderLastMarketScan(); };
@@ -15563,9 +15714,13 @@ ${FUTBIN_SCANNER_CORE}
                     return;
                 }
                 runMarketAnalysis(rows, { source: 'scanner', scannedAt, scannedPages: parseInt(data.scannedPages, 10) || null });
-                setMarketScanState('complete', isAr
+                const oldBookmark = !(data.scannerVersion >= 2);
+                setMarketScanState('complete', (isAr
                     ? `تم فحص ${rows.length.toLocaleString()} عرضاً في السوق${data.scannedPages ? ` عبر ${parseInt(data.scannedPages, 10)} صفحة` : ''}.`
-                    : `${rows.length.toLocaleString()} market listings scanned${data.scannedPages ? ` across ${parseInt(data.scannedPages, 10)} pages` : ''}.`);
+                    : `${rows.length.toLocaleString()} market listings scanned${data.scannedPages ? ` across ${parseInt(data.scannedPages, 10)} pages` : ''}.`
+                    ) + (oldBookmark
+                        ? (isAr ? ' ⚠ إشارتك المرجعية نسخة قديمة — أعد نسخ الماسح وحدّث الإشارة لتفعيل فلاتر FUTBIN وفئة البطاقة.' : ' ⚠ Your bookmark is an older version — copy the Market Scanner again and update the bookmark to keep FUTBIN filters and card tiers.')
+                        : (data.filtered ? (isAr ? ' (مع الإبقاء على فلاتر صفحة FUTBIN)' : ' (FUTBIN page filters kept)') : '')));
             } else if (data.type === 'FC_MARKET_ERROR') {
                 clearInterval(marketWatchTimer);
                 const msg = typeof data.message === 'string' ? data.message.slice(0, 200) : '';
