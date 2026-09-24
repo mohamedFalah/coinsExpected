@@ -974,56 +974,135 @@
         </div>
 
         <div id="view-market" class="hidden space-y-6">
+            <!-- MARKET TRADING — a standalone coin-trading tool. Not connected
+                 to the squad builder in any way. -->
             <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-4">
                 <div>
-                    <h2 data-i18n="marketTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Market Flips</h2>
+                    <h2 data-i18n="marketTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Market Trading</h2>
                     <p data-i18n="marketDesc" class="text-gray-400 text-sm md:text-base">
-                        Finds players on Futbin's market currently priced well under their real value — buy low, wait for the price to settle back up, sell for a profit. Uses a quick browser-console script instead of an in-app fetch, since Futbin blocks automated requests from other sites.
+                        Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax.
                     </p>
                 </div>
                 <div class="flex flex-wrap items-end gap-3">
                     <div>
-                        <label data-i18n="marketBudgetLbl" class="block text-xs font-bold text-gray-300 mb-1">Coins available to spend</label>
-                        <input type="number" id="market-budget-input" value="3000" min="0" class="w-40 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                        <label data-i18n="marketBudgetLbl" class="block text-xs font-bold text-gray-300 mb-1">Trading budget</label>
+                        <input type="number" id="market-budget-input" value="20000" min="0" step="1000" oninput="window.rerunMarketFilters()" class="w-32 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div>
+                        <label data-i18n="marketMinProfitLbl" class="block text-xs font-bold text-gray-300 mb-1">Min. profit</label>
+                        <input type="number" id="market-min-profit-input" value="500" min="0" step="100" oninput="window.rerunMarketFilters()" class="w-24 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div>
+                        <label data-i18n="marketMinRoiLbl" class="block text-xs font-bold text-gray-300 mb-1">Min. ROI %</label>
+                        <input type="number" id="market-min-roi-input" value="10" min="0" step="1" oninput="window.rerunMarketFilters()" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div>
+                        <label data-i18n="marketMinDiscountLbl" class="block text-xs font-bold text-gray-300 mb-1">Min. discount %</label>
+                        <input type="number" id="market-min-discount-input" value="10" min="0" max="100" step="1" oninput="window.rerunMarketFilters()" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                    </div>
+                    <div>
+                        <label data-i18n="marketSortLbl" class="block text-xs font-bold text-gray-300 mb-1">Sort by</label>
+                        <select id="market-sort-select" onchange="window.rerunMarketFilters()" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
+                            <option value="roi" data-i18n="marketSortRoi">ROI</option>
+                            <option value="profit" data-i18n="marketSortProfit">Potential profit</option>
+                            <option value="discount" data-i18n="marketSortDiscount">Discount</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label data-i18n="marketPagesLbl" class="block text-xs font-bold text-gray-300 mb-1">Pages to scan</label>
+                        <input type="number" id="market-pages-input" value="30" min="1" max="200" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
                     </div>
                 </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="window.openFutbinScan()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-sm font-black hover:bg-fc-accentHover flex items-center gap-2">
+                        <i class="fa-solid fa-magnifying-glass-dollar"></i>
+                        <span data-i18n="marketOpenScanBtn">Open FUTBIN &amp; Scan</span>
+                    </button>
+                    <button onclick="window.toggleMarketInstall()" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-sm font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50 flex items-center gap-2">
+                        <i class="fa-solid fa-bookmark"></i>
+                        <span data-i18n="marketInstallBtn">Install Market Scanner</span>
+                    </button>
+                    <span class="text-[11px] text-gray-500" data-i18n="marketInstallOnceNote">The scanner bookmark only needs to be installed once.</span>
+                </div>
                 <p class="text-[11px] text-gray-500 italic" data-i18n="marketDisclaimer">
-                    Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.
+                    Market values move quickly. EA Average is a reference value, not a guaranteed sale price. Verify the current market price before buying.
                 </p>
             </div>
 
+            <!-- Scan status — driven only by real events (see setMarketScanState). -->
+            <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-1">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span id="market-state-badge" class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-wide bg-gray-500/15 text-gray-300 border-gray-500/30">Ready</span>
+                    <span id="market-state-text" class="text-xs text-gray-300">Waiting for a FUTBIN scan.</span>
+                </div>
+                <p id="market-last-scan" class="hidden text-[11px] text-gray-500"></p>
+            </div>
+
+            <!-- One-time install + how to trade -->
+            <div id="market-install-panel" class="hidden bg-fc-dark/80 border border-fc-border rounded-2xl p-4 grid gap-4 md:grid-cols-2">
+                <div class="space-y-2">
+                    <p class="text-xs font-black text-white uppercase tracking-wide" data-i18n="marketInstallTitle">How to install — once</p>
+                    <ol class="text-[11px] text-gray-400 space-y-1 list-decimal ps-4">
+                        <li data-i18n="marketInstallStep1">Click "Copy Market Scanner".</li>
+                        <li data-i18n="marketInstallStep2">Create a new browser bookmark.</li>
+                        <li data-i18n="marketInstallStep3">Name it "FC Market Scanner".</li>
+                        <li data-i18n="marketInstallStep4">Paste the copied code into the bookmark's URL field.</li>
+                        <li data-i18n="marketInstallStep5">Save it.</li>
+                    </ol>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="window.copyMarketBookmarklet()" class="px-3 py-1.5 rounded-lg bg-fc-accent text-fc-dark text-xs font-black hover:bg-fc-accentHover flex items-center gap-1.5">
+                            <i class="fa-solid fa-copy"></i> <span id="market-copy-bookmarklet-label" data-i18n="marketCopyBookmarkletBtn">Copy Market Scanner</span>
+                        </button>
+                        <a id="market-bookmarklet-link" href="#" onclick="return false;" draggable="true" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-dashed border-fc-accent/60 text-xs font-bold text-fc-accent cursor-grab" title="Drag me to your bookmarks bar">
+                            <i class="fa-solid fa-grip-vertical"></i> FC Market Scanner
+                        </a>
+                    </div>
+                    <p class="text-[10px] text-gray-500" data-i18n="marketDragHint">Shortcut: drag the "FC Market Scanner" button onto your bookmarks bar instead of steps 1–5.</p>
+                    <textarea id="market-bookmarklet-code" readonly rows="2" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-500 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
+                </div>
+                <div class="space-y-2">
+                    <p class="text-xs font-black text-white uppercase tracking-wide" data-i18n="marketTradeTitle">How to trade</p>
+                    <ol class="text-[11px] text-gray-400 space-y-1 list-decimal ps-4">
+                        <li data-i18n="marketTradeStep1">Enter your trading budget.</li>
+                        <li data-i18n="marketTradeStep2">Click "Open FUTBIN &amp; Scan".</li>
+                        <li data-i18n="marketTradeStep3">On FUTBIN, click your "FC Market Scanner" bookmark.</li>
+                        <li data-i18n="marketTradeStep4">Return to this tab.</li>
+                        <li data-i18n="marketTradeStep5">Review the potential trading opportunities.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- Detailed log (manual parse messages) -->
             <div id="market-status" class="hidden bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-1.5 text-xs text-gray-400 font-mono max-h-40 overflow-y-auto hide-scrollbar"></div>
 
-            <!-- Running a script directly on Futbin's own site is the whole
-                 method here — same-origin, the user's real browser session,
-                 no proxy involved, so it isn't subject to the Cloudflare
-                 blocking that makes a cross-site fetch from this app
-                 unreliable. The script covers every page in one run and
-                 ends by copying its full result to the clipboard, so the
-                 whole flow is one script run + one paste. -->
-            <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-3">
-                <div class="space-y-1.5">
-                    <p class="text-[11px] font-bold text-gray-300" data-i18n="marketPasteStep1">1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:</p>
-                    <p class="text-[10px] text-gray-500" data-i18n="marketPasteStep1Note">Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.</p>
-                    <div class="relative">
-                        <textarea id="market-console-script" readonly rows="3" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-400 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
-                        <button onclick="window.copyMarketConsoleScript()" class="absolute top-2 right-2 rtl:right-auto rtl:left-2 px-2.5 py-1 rounded-lg bg-fc-dark border border-fc-border text-[10px] font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50">
-                            <i class="fa-solid fa-copy"></i> <span id="market-copy-script-label" data-i18n="marketCopyScriptBtn">Copy Script</span>
-                        </button>
+            <!-- MANUAL FALLBACK — the original console-script + paste workflow,
+                 unchanged. Use it when the automatic return isn't possible. -->
+            <details class="bg-fc-dark/80 border border-fc-border rounded-2xl">
+                <summary class="p-4 cursor-pointer text-xs font-bold text-gray-300 select-none" data-i18n="marketManualTitle">Manual fallback — console script &amp; paste</summary>
+                    <div class="p-4 pt-0 space-y-3">
+                    <div class="space-y-1.5">
+                        <p class="text-[11px] font-bold text-gray-300" data-i18n="marketPasteStep1">1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:</p>
+                        <p class="text-[10px] text-gray-500" data-i18n="marketPasteStep1Note">Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.</p>
+                        <div class="relative">
+                            <textarea id="market-console-script" readonly rows="3" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-400 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
+                            <button onclick="window.copyMarketConsoleScript()" class="absolute top-2 right-2 rtl:right-auto rtl:left-2 px-2.5 py-1 rounded-lg bg-fc-dark border border-fc-border text-[10px] font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50">
+                                <i class="fa-solid fa-copy"></i> <span id="market-copy-script-label" data-i18n="marketCopyScriptBtn">Copy Script</span>
+                            </button>
+                        </div>
+                        <a href="https://www.futbin.com/27/market-player-list" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-fc-accent hover:underline">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            <span data-i18n="marketOpenFutbinLink">Open the Futbin market page</span>
+                        </a>
                     </div>
-                    <a href="https://www.futbin.com/27/market-player-list" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-fc-accent hover:underline">
-                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                        <span data-i18n="marketOpenFutbinLink">Open the Futbin market page</span>
-                    </a>
+                    <p class="text-[11px] text-gray-500" data-i18n="marketPasteStep2">2. It scrapes every page automatically and copies the result to your clipboard when it's done. Then just paste it here:</p>
+                    <textarea id="market-paste-input" rows="3" placeholder="Paste the copied result here…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-fc-accent"></textarea>
+                    <button onclick="window.parseMarketPaste()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-sm font-black hover:bg-fc-accentHover flex items-center gap-2">
+                        <i class="fa-solid fa-code"></i>
+                        <span data-i18n="marketParsePasteBtn">Parse This</span>
+                    </button>
+                    <p class="text-[10px] text-gray-600 italic" data-i18n="marketPasteHtmlNote">(Also works if you paste a single page's raw HTML instead — right-click → "View Page Source" — but the script above covers every page in one go, which is almost always less work.)</p>
                 </div>
-                <p class="text-[11px] text-gray-500" data-i18n="marketPasteStep2">2. It scrapes every page automatically and copies the result to your clipboard when it's done. Then just paste it here:</p>
-                <textarea id="market-paste-input" rows="3" placeholder="Paste the copied result here…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-fc-accent"></textarea>
-                <button onclick="window.parseMarketPaste()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-sm font-black hover:bg-fc-accentHover flex items-center gap-2">
-                    <i class="fa-solid fa-code"></i>
-                    <span data-i18n="marketParsePasteBtn">Parse This</span>
-                </button>
-                <p class="text-[10px] text-gray-600 italic" data-i18n="marketPasteHtmlNote">(Also works if you paste a single page's raw HTML instead — right-click → "View Page Source" — but the script above covers every page in one go, which is almost always less work.)</p>
-            </div>
+            </details>
 
             <div id="market-results"></div>
         </div>
@@ -1460,10 +1539,10 @@
                 dbStatsNoData: "Not enough rated-74+ players loaded yet for this position.",
                 noPlayersFoundStandalone: "No matching players found.",
                 navMarket: "Market",
-                marketTitle: "Market Flips",
-                marketDesc: "Finds players on Futbin's market currently priced well under their real value — buy low, wait for the price to settle back up, sell for a profit. Uses a quick browser-console script instead of an in-app fetch, since Futbin blocks automated requests from other sites.",
-                marketBudgetLbl: "Coins available to spend",
-                marketDisclaimer: "Pulled from a public, unauthenticated page — no Futbin login involved. Prices move fast and a real sale is never guaranteed at the average shown, so treat every number here as a snapshot to verify on Futbin before actually buying, not a promise.",
+                marketTitle: "Market Trading",
+                marketDesc: "Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax. A pure coin-trading tool — separate from your squad.",
+                marketBudgetLbl: "Trading budget",
+                marketDisclaimer: "Market values move quickly. EA Average is a reference value, not a guaranteed sale price. Verify the current market price before buying.",
                 marketPasteStep1: "1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:",
                 marketPasteStep1Note: "Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.",
                 marketCopyScriptBtn: "Copy Script",
@@ -1471,6 +1550,32 @@
                 marketPasteStep2: "2. It scrapes every page automatically and copies the result to your clipboard when it's done. Then just paste it here:",
                 marketParsePasteBtn: "Parse This",
                 marketPasteHtmlNote: "(Also works if you paste a single page's raw HTML instead — right-click → \"View Page Source\" — but the script above covers every page in one go, which is almost always less work.)",
+                marketMinProfitLbl: "Min. profit",
+                marketMinRoiLbl: "Min. ROI %",
+                marketMinDiscountLbl: "Min. discount %",
+                marketSortLbl: "Sort by",
+                marketSortRoi: "ROI",
+                marketSortProfit: "Potential profit",
+                marketSortDiscount: "Discount",
+                marketPagesLbl: "Pages to scan",
+                marketOpenScanBtn: "Open FUTBIN & Scan",
+                marketInstallBtn: "Install Market Scanner",
+                marketInstallOnceNote: "The scanner bookmark only needs to be installed once.",
+                marketInstallTitle: "How to install — once",
+                marketInstallStep1: "Click \"Copy Market Scanner\".",
+                marketInstallStep2: "Create a new browser bookmark.",
+                marketInstallStep3: "Name it \"FC Market Scanner\".",
+                marketInstallStep4: "Paste the copied code into the bookmark's URL field.",
+                marketInstallStep5: "Save it.",
+                marketCopyBookmarkletBtn: "Copy Market Scanner",
+                marketDragHint: "Shortcut: drag the \"FC Market Scanner\" button onto your bookmarks bar instead of steps 1–5.",
+                marketTradeTitle: "How to trade",
+                marketTradeStep1: "Enter your trading budget.",
+                marketTradeStep2: "Click \"Open FUTBIN & Scan\".",
+                marketTradeStep3: "On FUTBIN, click your \"FC Market Scanner\" bookmark.",
+                marketTradeStep4: "Return to this tab.",
+                marketTradeStep5: "Review the potential trading opportunities.",
+                marketManualTitle: "Manual fallback — console script & paste",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
                 shapeDefendBtn: "DEFENDING",
@@ -1633,10 +1738,10 @@
                 dbStatsNoData: "لا يوجد عدد كافٍ من اللاعبين بتقييم 74+ لهذا المركز بعد.",
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
                 navMarket: "السوق",
-                marketTitle: "فرص السوق",
-                marketDesc: "يجد اللاعبين في سوق Futbin المُسعّرين حالياً أقل بكثير من قيمتهم الحقيقية — اشترِ بسعر منخفض، انتظر عودة السعر لمعدله، ثم بِعه بربح. يستخدم كوداً سريعاً في وحدة تحكم المتصفح بدلاً من الجلب داخل التطبيق، لأن Futbin يحظر الطلبات الآلية من مواقع أخرى.",
-                marketBudgetLbl: "الكوينز المتاحة للإنفاق",
-                marketDisclaimer: "يتم الجلب من صفحة عامة لا تتطلب تسجيل دخول في Futbin. الأسعار تتغير بسرعة والبيع الفعلي عند متوسط EA غير مضمون أبداً، لذا تعامل مع كل رقم هنا كلقطة يجب التحقق منها على Futbin قبل الشراء الفعلي، وليس وعداً.",
+                marketTitle: "تداول السوق",
+                marketDesc: "ابحث عن لاعبين معروضين بأقل من قيمتهم السوقية المتوقعة، ثم قدّر الربح المحتمل من بيعهم بسعر أعلى بعد ضريبة EA. أداة تداول كوينز بحتة — منفصلة عن تشكيلتك.",
+                marketBudgetLbl: "ميزانية التداول",
+                marketDisclaimer: "قيم السوق تتغير بسرعة. متوسط EA قيمة مرجعية وليس سعر بيع مضموناً. تحقّق من السعر الحالي في السوق قبل الشراء.",
                 marketPasteStep1: "1. افتح صفحة سوق Futbin، ثم افتح وحدة تحكم المتصفح (F12 أو Ctrl/Cmd+Shift+J) والصق هذا الكود فيها:",
                 marketPasteStep1Note: "تريد نطاق صفحات مختلف؟ عدّل رقمي START_PAGE و END_PAGE بالقرب من بداية الكود المنسوخ قبل لصقه — انسخه من جديد أدناه في أي وقت لإعادة ضبطهما.",
                 marketCopyScriptBtn: "نسخ الكود",
@@ -1644,6 +1749,32 @@
                 marketPasteStep2: "2. سيقوم بفحص كل الصفحات تلقائياً وينسخ النتيجة إلى الحافظة عند الانتهاء. ثم الصقها هنا:",
                 marketParsePasteBtn: "تحليل هذا",
                 marketPasteHtmlNote: "(يعمل أيضاً إذا لصقت كود HTML لصفحة واحدة فقط — بالنقر بزر الفأرة الأيمن ← «عرض مصدر الصفحة» — لكن الكود أعلاه يغطي كل الصفحات دفعة واحدة، وهو غالباً أقل جهداً.)",
+                marketMinProfitLbl: "أدنى ربح",
+                marketMinRoiLbl: "أدنى عائد %",
+                marketMinDiscountLbl: "أدنى خصم %",
+                marketSortLbl: "الترتيب حسب",
+                marketSortRoi: "العائد",
+                marketSortProfit: "الربح المحتمل",
+                marketSortDiscount: "الخصم",
+                marketPagesLbl: "عدد الصفحات",
+                marketOpenScanBtn: "افتح FUTBIN وافحص",
+                marketInstallBtn: "تثبيت ماسح السوق",
+                marketInstallOnceNote: "تحتاج لتثبيت إشارة الماسح المرجعية مرة واحدة فقط.",
+                marketInstallTitle: "طريقة التثبيت — مرة واحدة",
+                marketInstallStep1: "اضغط «نسخ الماسح».",
+                marketInstallStep2: "أنشئ إشارة مرجعية جديدة في المتصفح.",
+                marketInstallStep3: "سمّها «FC Market Scanner».",
+                marketInstallStep4: "الصق الكود المنسوخ في حقل الرابط للإشارة المرجعية.",
+                marketInstallStep5: "احفظها.",
+                marketCopyBookmarkletBtn: "نسخ الماسح",
+                marketDragHint: "اختصار: اسحب زر «FC Market Scanner» إلى شريط الإشارات المرجعية بدلاً من الخطوات 1–5.",
+                marketTradeTitle: "طريقة التداول",
+                marketTradeStep1: "أدخل ميزانية التداول.",
+                marketTradeStep2: "اضغط «افتح FUTBIN وافحص».",
+                marketTradeStep3: "في FUTBIN، اضغط على إشارة «FC Market Scanner» المرجعية.",
+                marketTradeStep4: "عُد إلى هذه الصفحة.",
+                marketTradeStep5: "راجع فرص التداول المحتملة.",
+                marketManualTitle: "الطريقة اليدوية الاحتياطية — كود وحدة التحكم واللصق",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
                 shapeDefendBtn: "الدفاع",
@@ -14828,16 +14959,18 @@
         // profit-scoring logic and the paste-result parser.
         const FUTBIN_EA_TAX = 0.05; // EA deducts 5% tax on every successful sale
 
-        // The console-run counterpart to the app's own scraper — same
-        // extraction logic, but running same-origin on Futbin's own site
-        // (paste into the browser console there), so it never hits the
-        // CORS/Cloudflare issues the app's cross-origin proxy fetch can.
-        // Deliberately written with no backticks/template literals inside
-        // it, since it's embedded as one here in the app's own source.
-        // Walks every page automatically and copies the full JSON result
-        // to the clipboard when done — one script run covers the whole
-        // market list, not one page at a time.
-        const FUTBIN_CONSOLE_SCRIPT = `(async () => {
+        // ONE scanning core, shared by both scripts that run on FUTBIN:
+        //   • FUTBIN_CONSOLE_SCRIPT  — the manual fallback (paste into the
+        //     console; ends by copying JSON to the clipboard, as before)
+        //   • FUTBIN_BOOKMARKLET_SOURCE — the "FC Market Scanner" bookmark
+        //     (sends the rows straight back to this app via postMessage)
+        // Both must be self-contained (they execute on futbin.com and can't
+        // call anything in this file), so the extraction lives here as a
+        // code string. It mirrors the app-side extractFutbinRows() used for
+        // pasted HTML, so every path produces identical rows. Deliberately
+        // free of backticks and "${" since it's embedded in template
+        // literals below.
+        const FUTBIN_SCANNER_CORE = `
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   function parseCoins(str) {
     if (!str) return null;
@@ -14897,32 +15030,43 @@
     cur.searchParams.set('page', curPage + 1);
     return cur.href;
   }
+  async function scanPages(startPage, endPage, onPage) {
+    const delayMs = 1200;
+    let url = 'https://www.futbin.com/27/market-player-list?page=' + startPage;
+    let all = [];
+    let pages = 0;
+    const seen = new Set();
+    for (let i = 0; i < (endPage - startPage + 1); i++) {
+      if (seen.has(url)) break;
+      seen.add(url);
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) { console.warn('Stopped at', url, res.status); break; }
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const rows = extractRows(doc);
+      if (rows.length === 0) { console.warn('No rows parsed on', url); break; }
+      all = all.concat(rows);
+      pages++;
+      console.log('Page ' + (startPage + i) + ': ' + rows.length + ' players (total: ' + all.length + ')');
+      if (onPage) onPage(startPage + i, pages, all.length);
+      const next = getNextPageUrl(doc, url);
+      if (!next || next === url) break;
+      url = next;
+      await wait(delayMs);
+    }
+    return { rows: all, pages: pages };
+  }
+`;
 
+        // Manual fallback — paste into the browser console on FUTBIN. Same
+        // behaviour as before: walks the pages, copies JSON to the clipboard.
+        const FUTBIN_CONSOLE_SCRIPT = `(async () => {
+${FUTBIN_SCANNER_CORE}
   // ====== EDIT THESE TWO NUMBERS TO CHANGE WHICH PAGES IT SCRAPES ======
   const START_PAGE = 1;
   const END_PAGE = 30;
   // =======================================================================
-  const delayMs = 1200;
-  let url = 'https://www.futbin.com/27/market-player-list?page=' + START_PAGE;
-  let all = [];
-  const seen = new Set();
-
-  for (let i = 0; i < (END_PAGE - START_PAGE + 1); i++) {
-    if (seen.has(url)) break;
-    seen.add(url);
-    const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) { console.warn('Stopped at', url, res.status); break; }
-    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-    const rows = extractRows(doc);
-    if (rows.length === 0) { console.warn('No rows parsed on', url); break; }
-    all = all.concat(rows);
-    console.log('Page ' + (START_PAGE + i) + ': ' + rows.length + ' players (total: ' + all.length + ')');
-    const next = getNextPageUrl(doc, url);
-    if (!next || next === url) break;
-    url = next;
-    await wait(delayMs);
-  }
-
+  const result = await scanPages(START_PAGE, END_PAGE);
+  const all = result.rows;
   const json = JSON.stringify(all);
   try {
     await navigator.clipboard.writeText(json);
@@ -14933,6 +15077,75 @@
   }
   window.__futbinScrapeResult = all;
 })();`;
+
+        // "FC Market Scanner" bookmarklet. Runs on FUTBIN (in the window this
+        // app opened), asks the app which pages to scan, scans them with the
+        // shared core, and posts the rows back to window.opener:
+        //   → FC_MARKET_HELLO            (no data; asks for settings)
+        //   ← FC_MARKET_CONFIG           (page range + the app's origin)
+        //   → FC_MARKET_PROGRESS × pages (real per-page progress)
+        //   → FC_MARKET_DATA | FC_MARKET_ERROR
+        // The data message is sent to the app's own origin when it has one;
+        // a file:// app has an opaque origin ("null"), which postMessage
+        // can't target, so there it has to be "*" — the app then relies on
+        // checking event.source/origin and the message shape on receipt.
+        // No opener (FUTBIN opened some other way, or the browser cut the
+        // link)? It falls back to the clipboard, like the console script.
+        const FUTBIN_BOOKMARKLET_SOURCE = `(async () => {
+  if (window.__fcMarketScanRunning) { alert('FC Market Scanner is already running on this page.'); return; }
+  if (!/(^|\\.)futbin\\.com$/.test(location.hostname)) { alert('FC Market Scanner only works on futbin.com - use "Open FUTBIN & Scan" in the app first.'); return; }
+  window.__fcMarketScanRunning = true;
+${FUTBIN_SCANNER_CORE}
+  const badge = document.createElement('div');
+  badge.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;padding:12px 14px;border-radius:12px;background:#0b1220;color:#e2e8f0;font:600 13px/1.45 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);border:1px solid #334155';
+  const say = function(t) { badge.textContent = 'FC Market Scanner - ' + t; };
+  document.body.appendChild(badge);
+  const app = (window.opener && !window.opener.closed) ? window.opener : null;
+  const send = function(msg, origin) { try { app.postMessage(msg, origin || '*'); return true; } catch (e) { return false; } };
+  let cfg = { startPage: 1, endPage: 30, appOrigin: '*' };
+  if (app) {
+    say('connecting to the app...');
+    cfg = await new Promise(function(resolve) {
+      let timer = null;
+      const onMsg = function(ev) {
+        if (ev.source !== app || !ev.data || ev.data.type !== 'FC_MARKET_CONFIG') return;
+        finish({ startPage: ev.data.startPage, endPage: ev.data.endPage, appOrigin: ev.data.appOrigin });
+      };
+      const finish = function(c) { window.removeEventListener('message', onMsg); clearTimeout(timer); resolve(c); };
+      window.addEventListener('message', onMsg);
+      timer = setTimeout(function() { finish(cfg); }, 1500);
+      send({ type: 'FC_MARKET_HELLO' });
+    });
+  }
+  const startPage = Math.max(1, parseInt(cfg.startPage, 10) || 1);
+  const endPage = Math.min(startPage + 199, Math.max(startPage, parseInt(cfg.endPage, 10) || 30));
+  const appOrigin = (typeof cfg.appOrigin === 'string' && /^https?:[/][/]/.test(cfg.appOrigin)) ? cfg.appOrigin : '*';
+  say('scanning pages ' + startPage + '-' + endPage + '...');
+  try {
+    const result = await scanPages(startPage, endPage, function(page, done, total) {
+      say('page ' + page + ' of ' + endPage + ' (' + total + ' listings so far)');
+      if (app) send({ type: 'FC_MARKET_PROGRESS', page: page, pagesDone: done, pagesPlanned: endPage - startPage + 1, listings: total }, appOrigin);
+    });
+    const payload = { type: 'FC_MARKET_DATA', rows: result.rows, scannedPages: result.pages, scannedAt: new Date().toISOString() };
+    if (app && !app.closed && send(payload, appOrigin)) {
+      say('done - ' + result.rows.length + ' listings sent to the app. Switch back to it to see the results.');
+    } else {
+      window.__futbinScrapeResult = result.rows;
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(result.rows));
+        say('done - could not reach the app automatically, so ' + result.rows.length + ' listings were COPIED to your clipboard. Paste them into the Market tab.');
+      } catch (e) {
+        say('done - could not reach the app or the clipboard. Open the console and run copy(window.__futbinScrapeResult), then paste into the Market tab.');
+      }
+    }
+  } catch (e) {
+    say('scan failed: ' + (e && e.message ? e.message : e));
+    if (app) send({ type: 'FC_MARKET_ERROR', message: String((e && e.message) || e).slice(0, 200) }, appOrigin);
+  } finally {
+    window.__fcMarketScanRunning = false;
+  }
+})();`;
+        const FUTBIN_BOOKMARKLET_URL = 'javascript:' + encodeURIComponent(FUTBIN_BOOKMARKLET_SOURCE);
 
         window.copyMarketConsoleScript = function() {
             const isAr = currentLanguage === 'ar';
@@ -15022,20 +15235,49 @@
         // this margin, not the scraped "Difference" column, since that
         // column's exact basis varies and margin-on-your-money is what
         // actually answers "is this worth doing".
-        function computeFlipOpportunities(rows, budget) {
+        //   After-tax sale value = EA Average × (1 − 5%)
+        //   Potential profit     = after-tax sale − buy price
+        //   ROI                  = potential profit ÷ buy price × 100  (= marginPct)
+        //   Discount             = (EA Average − buy price) ÷ EA Average × 100
+        // `opts` (all optional) adds the trading filters and sort order;
+        // with no opts the behaviour is exactly the original one (any
+        // positive profit, sorted by ROI).
+        function computeFlipOpportunities(rows, budget, opts) {
+            const o = Object.assign({ minProfit: 0, minRoi: 0, minDiscount: 0, sortBy: 'roi' }, opts || {});
+            const sortKey = { profit: 'profit', roi: 'marginPct', discount: 'discountPct' }[o.sortBy] || 'marginPct';
             return rows
                 .filter(r => r.price > 0 && r.price <= budget && typeof r.eaAverage === 'number' && r.eaAverage > 0)
                 .map(r => {
                     const projectedSale = Math.round(r.eaAverage * (1 - FUTBIN_EA_TAX));
                     const profit = projectedSale - r.price;
                     const marginPct = (profit / r.price) * 100;
-                    return { ...r, projectedSale, profit, marginPct };
+                    const discountPct = ((r.eaAverage - r.price) / r.eaAverage) * 100;
+                    return { ...r, projectedSale, profit, marginPct, roiPct: marginPct, discountPct };
                 })
-                .filter(r => r.profit > 0)
-                .sort((a, b) => b.marginPct - a.marginPct);
+                .filter(r => r.profit > 0 && r.profit >= o.minProfit && r.marginPct >= o.minRoi && r.discountPct >= o.minDiscount)
+                .sort((a, b) => b[sortKey] - a[sortKey]);
         }
 
-        function renderMarketResults(opportunities, scannedCount, isAr) {
+        // Scanned names come from another site (and, via the scanner, from
+        // another window) — never insert them into the page as HTML.
+        function escapeMarketHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        // Keeps only the expected fields, typed and bounded, from rows that
+        // arrive by paste or postMessage.
+        const MARKET_MAX_ROWS = 20000;
+        function sanitizeMarketRows(rows) {
+            const num = v => (typeof v === 'number' && isFinite(v) && v >= 0 && v < 1e10) ? Math.round(v) : null;
+            return rows.slice(0, MARKET_MAX_ROWS).map(r => (r && typeof r === 'object') ? {
+                name: typeof r.name === 'string' ? r.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '',
+                price: num(r.price),
+                eaAverage: num(r.eaAverage),
+                afterTax: num(r.afterTax),
+                diffText: typeof r.diffText === 'string' ? r.diffText.slice(0, 40) : null
+            } : null).filter(r => r && r.name && r.price != null);
+        }
+
+        function renderMarketResults(opportunities, scannedCount, isAr, budget) {
             const container = document.getElementById('market-results');
             if (!container) return;
 
@@ -15043,12 +15285,22 @@
                 container.innerHTML = `
                     <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-6 text-center text-sm text-gray-400">
                         ${isAr
-                            ? `تم فحص ${scannedCount} لاعب لكن لم يتم إيجاد فرصة ربح ضمن ميزانيتك الحالية. جرّب زيادة عدد الصفحات أو رفع الميزانية قليلاً.`
-                            : `Scanned ${scannedCount} listings but found no profitable flip within your current budget. Try scanning more pages or raising the budget a bit.`}
+                            ? `تم فحص ${scannedCount.toLocaleString()} عرضاً لكن لا توجد فرصة تطابق ميزانيتك والحد الأدنى للربح والعائد والخصم. جرّب خفض الحدود الدنيا أو رفع الميزانية أو فحص صفحات أكثر.`
+                            : `Scanned ${scannedCount.toLocaleString()} listings, but none match your budget and minimum profit / ROI / discount. Try lowering the minimums, raising the budget, or scanning more pages.`}
                     </div>
                 `;
                 return;
             }
+            const best = opportunities.reduce((b, o) => ({ profit: Math.max(b.profit, o.profit), roi: Math.max(b.roi, o.marginPct) }), { profit: 0, roi: 0 });
+            const stat = (label, value, cls) => `<div><div class="text-[9px] text-gray-500 uppercase tracking-wide">${label}</div><div class="text-sm font-black ${cls || 'text-white'}">${value}</div></div>`;
+            const summaryHtml = `
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-fc-dark/80 border border-fc-border rounded-2xl p-4 mb-3 text-center">
+                    ${stat(isAr ? 'العروض المفحوصة' : 'Listings scanned', scannedCount.toLocaleString())}
+                    ${stat(isAr ? 'ميزانية التداول' : 'Trading budget', (budget || 0).toLocaleString(), 'text-fc-gold')}
+                    ${stat(isAr ? 'فرص محتملة' : 'Potential opportunities', opportunities.length.toLocaleString(), 'text-fc-accent')}
+                    ${stat(isAr ? 'أعلى ربح محتمل' : 'Best potential profit', '+' + best.profit.toLocaleString(), 'text-green-400')}
+                    ${stat(isAr ? 'أعلى عائد' : 'Best ROI', best.roi.toFixed(1) + '%', 'text-green-400')}
+                </div>`;
 
             // Numbers-first table — a name plus five aligned columns, no
             // prose per row. Margin color-scaled (green = strong, gray =
@@ -15061,27 +15313,30 @@
                 return `
                 <tr class="border-b border-fc-border/60 hover:bg-fc-cardHover/40">
                     <td class="py-2 pr-2 text-[11px] font-black text-gray-500 text-center">${i + 1}</td>
-                    <td class="py-2 px-2 font-bold text-white text-xs truncate max-w-[160px]">${opp.name}</td>
+                    <td class="py-2 px-2 font-bold text-white text-xs truncate max-w-[160px]" title="${escapeMarketHtml(opp.name)}">${escapeMarketHtml(opp.name)}</td>
                     <td class="py-2 px-2 text-xs text-right font-bold text-white whitespace-nowrap">${opp.price.toLocaleString()}</td>
                     <td class="py-2 px-2 text-xs text-right font-bold text-fc-gold whitespace-nowrap">${opp.eaAverage.toLocaleString()}</td>
                     <td class="py-2 px-2 text-xs text-right text-gray-400 whitespace-nowrap">${opp.projectedSale.toLocaleString()}</td>
                     <td class="py-2 px-2 text-xs text-right font-black text-green-400 whitespace-nowrap">+${opp.profit.toLocaleString()}</td>
-                    <td class="py-2 pl-2 text-xs text-right font-black ${marginColor} whitespace-nowrap">${opp.marginPct.toFixed(0)}%</td>
+                    <td class="py-2 px-2 text-xs text-right font-black ${marginColor} whitespace-nowrap">${opp.marginPct.toFixed(1)}%</td>
+                    <td class="py-2 pl-2 text-xs text-right font-bold text-gray-300 whitespace-nowrap">${opp.discountPct.toFixed(0)}%</td>
                 </tr>
             `;
             }).join('');
 
             const headBuy = isAr ? 'الشراء' : 'Buy';
             const headEaAvg = isAr ? 'متوسط EA' : 'EA Avg';
-            const headNet = isAr ? 'صافي البيع' : 'Net Sale';
-            const headProfit = isAr ? 'الربح' : 'Profit';
-            const headMargin = isAr ? 'الهامش' : 'Margin';
+            const headNet = isAr ? 'بعد الضريبة' : 'After Tax';
+            const headProfit = isAr ? 'الربح المحتمل' : 'Potential Profit';
+            const headMargin = isAr ? 'العائد' : 'ROI';
+            const headDiscount = isAr ? 'الخصم' : 'Discount';
             const headName = isAr ? 'اللاعب' : 'Player';
 
             container.innerHTML = `
-                <div class="flex items-center justify-between mb-3">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${shown.length} فرصة من أصل ${scannedCount} تم فحصهم` : `Top ${shown.length} of ${scannedCount} scanned`}</span>
-                    <span class="text-[10px] text-gray-500">${isAr ? 'صافي البيع = متوسط EA بعد خصم ضريبة 5%' : 'Net Sale = EA Avg after 5% EA tax'}</span>
+                ${summaryHtml}
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${shown.length} من ${opportunities.length} فرصة محتملة` : `Top ${shown.length} of ${opportunities.length} potential opportunities`}</span>
+                    <span class="text-[10px] text-gray-500">${isAr ? 'بعد الضريبة = متوسط EA × 0.95 · الربح المحتمل = بعد الضريبة − الشراء' : 'After Tax = EA Avg × 0.95 · Potential Profit = After Tax − Buy'}</span>
                 </div>
                 <div class="bg-fc-dark/80 border border-fc-border rounded-2xl overflow-hidden">
                     <div class="overflow-x-auto hide-scrollbar">
@@ -15094,7 +15349,8 @@
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headEaAvg}</th>
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headNet}</th>
                                     <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headProfit}</th>
-                                    <th class="py-2 pl-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headMargin}</th>
+                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headMargin}</th>
+                                    <th class="py-2 pl-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headDiscount}</th>
                                 </tr>
                             </thead>
                             <tbody>${rowsHtml}</tbody>
@@ -15153,16 +15409,194 @@
                 return;
             }
 
-            const opportunities = computeFlipOpportunities(rows, budget);
+            const cleanRows = sanitizeMarketRows(rows);
             marketLog(isAr
-                ? `تم تحليل الصفحة الملصقة: ${rows.length} قائمة، ${opportunities.length} فرصة ربح ضمن ${budget.toLocaleString()} كوينز.`
-                : `Parsed the pasted page: ${rows.length} listings, ${opportunities.length} profitable flip(s) found within ${budget.toLocaleString()} coins.`, 'ok');
-            renderMarketResults(opportunities, rows.length, isAr);
+                ? `تم تحليل النص الملصق: ${cleanRows.length} عرضاً.`
+                : `Parsed the pasted data: ${cleanRows.length} listings.`, 'ok');
+            runMarketAnalysis(cleanRows, { source: 'paste', scannedAt: new Date().toISOString() });
+        };
+
+        // ===================================================================
+        // MARKET SCANNER — bookmarklet + postMessage
+        // ===================================================================
+        // The one pipeline every source feeds (bookmarklet or paste):
+        // rows → computeFlipOpportunities (with the current filters) →
+        // renderMarketResults. The last scan is kept in memory so changing a
+        // filter or the sort re-ranks instantly without rescanning.
+        let lastMarketScan = null; // { rows, scannedAt, scannedPages, source }
+        function readMarketFilters() {
+            const n = (id, d) => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isFinite(v) && v >= 0 ? v : d; };
+            const sortEl = document.getElementById('market-sort-select');
+            return {
+                budget: Math.round(n('market-budget-input', 20000)),
+                minProfit: n('market-min-profit-input', 0),
+                minRoi: n('market-min-roi-input', 0),
+                minDiscount: n('market-min-discount-input', 0),
+                sortBy: sortEl ? sortEl.value : 'roi'
+            };
+        }
+        function runMarketAnalysis(rows, meta) {
+            lastMarketScan = { rows, ...(meta || {}) };
+            renderLastMarketScan();
+        }
+        function renderLastMarketScan() {
+            if (!lastMarketScan) return;
+            const isAr = currentLanguage === 'ar';
+            const f = readMarketFilters();
+            const opportunities = computeFlipOpportunities(lastMarketScan.rows, f.budget, f);
+            renderMarketResults(opportunities, lastMarketScan.rows.length, isAr, f.budget);
+            renderMarketLastScanLine();
+        }
+        window.rerunMarketFilters = function() { renderLastMarketScan(); };
+
+        function renderMarketLastScanLine() {
+            const el = document.getElementById('market-last-scan');
+            if (!el || !lastMarketScan || !lastMarketScan.scannedAt) return;
+            const isAr = currentLanguage === 'ar';
+            const d = new Date(lastMarketScan.scannedAt);
+            const when = isNaN(d) ? '' : d.toLocaleString(isAr ? 'ar' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const via = lastMarketScan.source === 'scanner' ? (isAr ? 'الماسح' : 'scanner') : (isAr ? 'لصق يدوي' : 'manual paste');
+            el.textContent = isAr ? `آخر فحص: ${when} (${via})` : `Last scan: ${when} (${via})`;
+            el.classList.remove('hidden');
+        }
+
+        // Scan status: only ever reflects real events (window opened, a
+        // real message from the scanner, the window closing). Progress
+        // numbers come from the scanner's own per-page messages.
+        const MARKET_STATE_STYLE = {
+            ready:     { cls: 'bg-gray-500/15 text-gray-300 border-gray-500/30' },
+            open:      { cls: 'bg-fc-gold/15 text-fc-gold border-fc-gold/30' },
+            scanning:  { cls: 'bg-fc-accent/15 text-fc-accent border-fc-accent/30' },
+            receiving: { cls: 'bg-fc-accent/15 text-fc-accent border-fc-accent/30' },
+            complete:  { cls: 'bg-green-500/15 text-green-400 border-green-500/30' },
+            failed:    { cls: 'bg-red-500/15 text-red-400 border-red-500/30' }
+        };
+        const MARKET_STATE_LABEL = {
+            ready:     { en: 'Ready', ar: 'جاهز' },
+            open:      { en: 'FUTBIN open', ar: 'FUTBIN مفتوح' },
+            scanning:  { en: 'Scanning', ar: 'جارٍ الفحص' },
+            receiving: { en: 'Receiving data', ar: 'استلام البيانات' },
+            complete:  { en: 'Complete', ar: 'اكتمل' },
+            failed:    { en: 'Needs attention', ar: 'يحتاج انتباهك' }
+        };
+        let marketScanState = 'ready';
+        function setMarketScanState(state, detail) {
+            marketScanState = state;
+            const badge = document.getElementById('market-state-badge');
+            const text = document.getElementById('market-state-text');
+            const isAr = currentLanguage === 'ar';
+            if (badge) {
+                badge.className = `inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-wide ${MARKET_STATE_STYLE[state].cls}`;
+                badge.textContent = isAr ? MARKET_STATE_LABEL[state].ar : MARKET_STATE_LABEL[state].en;
+            }
+            if (text) text.textContent = detail || '';
+        }
+
+        let marketWindow = null;
+        let marketWatchTimer = null;
+        const FUTBIN_MARKET_URL = 'https://www.futbin.com/27/market-player-list';
+        const FUTBIN_ORIGIN_RE = /^https:\/\/(www\.)?futbin\.com$/;
+
+        // Opened straight from the button's click handler so it counts as a
+        // user-initiated popup. The reference is what every incoming
+        // message is checked against.
+        window.openFutbinScan = function() {
+            const isAr = currentLanguage === 'ar';
+            marketWindow = window.open(FUTBIN_MARKET_URL, 'fcMarketScanner');
+            if (!marketWindow) {
+                setMarketScanState('failed', isAr
+                    ? 'منع المتصفح النافذة المنبثقة. اسمح بالنوافذ المنبثقة لهذه الصفحة ثم حاول مجدداً — أو استخدم الطريقة اليدوية أدناه.'
+                    : 'The browser blocked the popup. Allow popups for this page and try again — or use the manual method below.');
+                return;
+            }
+            setMarketScanState('open', isAr
+                ? 'على FUTBIN، اضغط على إشارة «FC Market Scanner» المرجعية.'
+                : 'On FUTBIN, click your "FC Market Scanner" bookmark.');
+            clearInterval(marketWatchTimer);
+            marketWatchTimer = setInterval(() => {
+                if (!marketWindow || !marketWindow.closed) return;
+                clearInterval(marketWatchTimer);
+                if (marketScanState !== 'complete') {
+                    setMarketScanState('failed', isAr
+                        ? 'أُغلقت نافذة FUTBIN قبل وصول نتيجة الفحص. فشل الإرجاع التلقائي — لا يزال بإمكانك لصق نتيجة الماسح في الطريقة اليدوية أدناه.'
+                        : 'The FUTBIN window closed before a scan arrived. Automatic return failed — you can still paste the scanner output in the manual section below.');
+                }
+            }, 1000);
+        };
+
+        // The ONLY entry point for scanner messages. Accepted only if it
+        // comes from the FUTBIN window this app opened (event.source), from
+        // futbin.com (event.origin), and has the expected shape.
+        window.addEventListener('message', (event) => {
+            if (!marketWindow || event.source !== marketWindow) return;
+            if (!FUTBIN_ORIGIN_RE.test(event.origin)) return;
+            const data = event.data;
+            if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+            const isAr = currentLanguage === 'ar';
+
+            if (data.type === 'FC_MARKET_HELLO') {
+                const pagesEl = document.getElementById('market-pages-input');
+                const endPage = Math.min(200, Math.max(1, parseInt(pagesEl && pagesEl.value, 10) || 30));
+                // Reply only to FUTBIN's exact origin; tell the scanner where
+                // to send results (a file:// app has no targetable origin).
+                event.source.postMessage({
+                    type: 'FC_MARKET_CONFIG', startPage: 1, endPage,
+                    appOrigin: (location.origin && location.origin !== 'null') ? location.origin : '*'
+                }, event.origin);
+                setMarketScanState('scanning', isAr ? 'جارٍ فحص صفحات سوق FUTBIN...' : 'Scanning FUTBIN market pages...');
+            } else if (data.type === 'FC_MARKET_PROGRESS') {
+                const page = parseInt(data.page, 10), planned = parseInt(data.pagesPlanned, 10), listings = parseInt(data.listings, 10);
+                if (!isFinite(page) || !isFinite(listings)) return;
+                setMarketScanState('scanning', isAr
+                    ? `جارٍ فحص صفحات سوق FUTBIN... الصفحة ${page}${isFinite(planned) ? ` من ${planned}` : ''} · ${listings.toLocaleString()} عرضاً حتى الآن`
+                    : `Scanning FUTBIN market pages... page ${page}${isFinite(planned) ? ` of ${planned}` : ''} · ${listings.toLocaleString()} listings so far`);
+            } else if (data.type === 'FC_MARKET_DATA') {
+                if (!Array.isArray(data.rows)) return;
+                setMarketScanState('receiving', isAr ? 'تم استلام بيانات السوق.' : 'Market data received.');
+                const rows = sanitizeMarketRows(data.rows);
+                const scannedAt = (typeof data.scannedAt === 'string' && !isNaN(new Date(data.scannedAt))) ? data.scannedAt : new Date().toISOString();
+                clearInterval(marketWatchTimer);
+                if (rows.length === 0) {
+                    setMarketScanState('failed', isAr
+                        ? 'اكتمل الفحص لكن لم تُقرأ أي عروض — ربما تغيّر تصميم صفحة FUTBIN. جرّب الطريقة اليدوية أدناه.'
+                        : 'The scan finished but no listings could be read — FUTBIN may have changed its page layout. Try the manual method below.');
+                    return;
+                }
+                runMarketAnalysis(rows, { source: 'scanner', scannedAt, scannedPages: parseInt(data.scannedPages, 10) || null });
+                setMarketScanState('complete', isAr
+                    ? `تم فحص ${rows.length.toLocaleString()} عرضاً في السوق${data.scannedPages ? ` عبر ${parseInt(data.scannedPages, 10)} صفحة` : ''}.`
+                    : `${rows.length.toLocaleString()} market listings scanned${data.scannedPages ? ` across ${parseInt(data.scannedPages, 10)} pages` : ''}.`);
+            } else if (data.type === 'FC_MARKET_ERROR') {
+                clearInterval(marketWatchTimer);
+                const msg = typeof data.message === 'string' ? data.message.slice(0, 200) : '';
+                setMarketScanState('failed', (isAr ? 'فشل الفحص على FUTBIN' : 'The scan failed on FUTBIN') + (msg ? ` (${msg})` : '') + (isAr
+                    ? '. لا يزال بإمكانك استخدام الطريقة اليدوية أدناه.'
+                    : '. You can still use the manual method below.'));
+            }
+        });
+
+        window.toggleMarketInstall = function() {
+            const panel = document.getElementById('market-install-panel');
+            if (panel) panel.classList.toggle('hidden');
+        };
+        window.copyMarketBookmarklet = function() {
+            const isAr = currentLanguage === 'ar';
+            const labelEl = document.getElementById('market-copy-bookmarklet-label');
+            const done = () => { if (labelEl) { labelEl.textContent = isAr ? 'تم النسخ ✓' : 'Copied ✓'; setTimeout(() => { labelEl.textContent = isAr ? 'نسخ الماسح' : 'Copy Market Scanner'; }, 1500); } };
+            const ta = document.getElementById('market-bookmarklet-code');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(FUTBIN_BOOKMARKLET_URL).then(done).catch(() => { if (ta) { ta.select(); document.execCommand('copy'); done(); } });
+            } else if (ta) { ta.select(); document.execCommand('copy'); done(); }
         };
 
         window.addEventListener('DOMContentLoaded', async () => {
             const marketScriptEl = document.getElementById('market-console-script');
             if (marketScriptEl) marketScriptEl.value = FUTBIN_CONSOLE_SCRIPT;
+            const bookmarkletEl = document.getElementById('market-bookmarklet-code');
+            if (bookmarkletEl) bookmarkletEl.value = FUTBIN_BOOKMARKLET_URL;
+            const bookmarkletLink = document.getElementById('market-bookmarklet-link');
+            if (bookmarkletLink) bookmarkletLink.setAttribute('href', FUTBIN_BOOKMARKLET_URL);
+            setMarketScanState('ready', currentLanguage === 'ar' ? 'بانتظار فحص FUTBIN.' : 'Waiting for a FUTBIN scan.');
             window.renderPresetPoints();
             window.calculatePackReturns();
             updateUndoButtonState();
