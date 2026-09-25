@@ -268,6 +268,10 @@
                     <i class="fa-solid fa-arrow-trend-up"></i>
                     <span data-i18n="navMarket">Market</span>
                 </button>
+                <button onclick="switchTab('lab')" id="nav-lab" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-flask"></i>
+                    <span data-i18n="navLab">Tactics Lab</span>
+                </button>
             </div>
 
             <!-- Language Switcher & Config Gear Button -->
@@ -307,6 +311,10 @@
             <button onclick="switchTab('market')" id="mob-nav-market" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-arrow-trend-up text-base mb-0.5"></i>
                 <span data-i18n="navMarket">Market</span>
+            </button>
+            <button onclick="switchTab('lab')" id="mob-nav-lab" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-flask text-base mb-0.5"></i>
+                <span data-i18n="navLab">Tactics Lab</span>
             </button>
         </div>
     </header>
@@ -751,6 +759,11 @@
                         <!-- Populated by renderTeamTacticalShape() -->
                     </div>
 
+                    <!-- Tactical Analysis — estimate of the game's six-axis
+                         Tactical Summary, or the user's own in-game report
+                         for this exact setup (renderSquadTacticalAnalysis). -->
+                    <div id="squad-tactical-analysis" class="border-t border-fc-border pt-4 space-y-2"></div>
+
                     <div class="border-t border-fc-border pt-4 space-y-2.5">
                         <span data-i18n="playstylesByLine" class="text-xs font-bold text-gray-400 uppercase tracking-wider">PlayStyles by Line</span>
                         <div id="playstyles-by-line" class="space-y-2">
@@ -971,6 +984,12 @@
                     <!-- Populated by renderGeneralStatsPanel() -->
                 </div>
             </div>
+        </div>
+
+        <!-- TACTICS LAB — collects the game's Tactical Summary for planned
+             setups (rendered by renderTacticsLab). -->
+        <div id="view-lab" class="hidden space-y-6">
+            <div id="lab-root" class="space-y-6"></div>
         </div>
 
         <div id="view-market" class="hidden space-y-6">
@@ -1569,6 +1588,7 @@
                 dbStatsNoData: "Not enough rated-74+ players loaded yet for this position.",
                 noPlayersFoundStandalone: "No matching players found.",
                 navMarket: "Market",
+                navLab: "Tactics Lab",
                 marketTitle: "Market Trading",
                 marketDesc: "Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax. A pure coin-trading tool — separate from your squad.",
                 marketBudgetLbl: "Trading budget",
@@ -1781,6 +1801,7 @@
                 dbStatsNoData: "لا يوجد عدد كافٍ من اللاعبين بتقييم 74+ لهذا المركز بعد.",
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
                 navMarket: "السوق",
+                navLab: "مختبر التكتيك",
                 marketTitle: "تداول السوق",
                 marketDesc: "ابحث عن لاعبين معروضين بأقل من قيمتهم السوقية المتوقعة، ثم قدّر الربح المحتمل من بيعهم بسعر أعلى بعد ضريبة EA. أداة تداول كوينز بحتة — منفصلة عن تشكيلتك.",
                 marketBudgetLbl: "ميزانية التداول",
@@ -3920,8 +3941,735 @@
             renderPlayerHeatZoneOverlay();
         };
 
+        // ===================================================================
+        // TACTICAL SUMMARY ESTIMATE + TACTICS LAB
+        // ===================================================================
+        // EA's in-game "Tactical Summary" shows six axes (ATK, DEF, WID,
+        // END, LEN, BLD) and always 3 strengths + 3 warnings. EA has
+        // explained WHAT feeds each axis (roles, focuses, build-up style,
+        // defensive approach, line height) but not the formula. So:
+        //   • estimateTacticalSummary() builds each axis from the FC 27
+        //     role/focus trait tags already in ROLE_CATALOG_RAW (the same
+        //     "+ / = / −" traits the game shows) plus the tactic settings;
+        //   • the Tactics Lab collects what the game ACTUALLY says for
+        //     planned setups, and those reports calibrate the estimate
+        //     (per-axis linear correction) and teach it EA's exact wording.
+        // Nothing here touches squad building, roles or chemistry.
+        const TACTIC_AXES = ['atk', 'def', 'wid', 'end', 'len', 'bld'];
+        const TACTIC_AXIS_LABEL = {
+            atk: { short: 'ATK', en: 'Attack', ar: 'الهجوم' }, def: { short: 'DEF', en: 'Defence', ar: 'الدفاع' },
+            wid: { short: 'WID', en: 'Width', ar: 'العرض' }, end: { short: 'END', en: 'Endurance', ar: 'التحمّل' },
+            len: { short: 'LEN', en: 'Length', ar: 'الطول' }, bld: { short: 'BLD', en: 'Build-Up', ar: 'البناء' }
+        };
+        // Same arrangement as the game's hexagon (ATK top, clockwise).
+        const TACTIC_AXIS_ANGLE = { atk: -90, def: -30, wid: 30, end: 90, len: 150, bld: 210 };
+        const BUILD_UP_STYLES = {
+            short:    { en: 'Short Passing', ar: 'تمرير قصير' },
+            balanced: { en: 'Balanced', ar: 'متوازن' },
+            counter:  { en: 'Counter', ar: 'مرتد' }
+        };
+        const DEF_APPROACHES = {
+            deep:       { en: 'Deep', ar: 'عميق', line: 25, min: 1, max: 30 },
+            balanced:   { en: 'Balanced', ar: 'متوازن', line: 50, min: 31, max: 60 },
+            high:       { en: 'High', ar: 'مرتفع', line: 70, min: 61, max: 90 },
+            aggressive: { en: 'Aggressive', ar: 'هجومي', line: 95, min: 91, max: 100 }
+        };
+        const LAB_T = (en, ar) => currentLanguage === 'ar' ? ar : en;
+
+        // --- trait → axis contributions -----------------------------------
+        // Axis tags: strengths count +1, the neutral note +0.4, a drawback −1
+        // on the axis the tag names. Cost tags (stamina, gaps, width limits…)
+        // mean the same thing wherever they appear, so they carry a fixed
+        // effect scaled by how prominent the tag is (drawback 1, note/strength 0.6).
+        const TRAIT_AXIS = {
+            'Attacking': 'atk', 'Attack Support': 'atk', 'Attacking Runs': 'atk', 'Supports Attacks': 'atk', 'Supports Attack': 'atk',
+            'Defending': 'def', 'Stays Back': 'def', 'Defence Support': 'def', 'Supports the Defence': 'def', 'Intercepts Passes': 'def', 'Stay in Position': 'def',
+            'Wide Support': 'wid', 'Dynamic Width': 'wid', 'Dynamic Side': 'wid', 'Cover Side': 'wid',
+            'Creative': 'bld', 'Build-Up Support': 'bld', 'Pass Option': 'bld', 'Supports Play': 'bld'
+        };
+        const TRAIT_COST = {
+            'Stamina Usage':       { end: -1 },
+            'Movement':            { end: -0.6, atk: 0.2 },
+            'Pressure':            { end: -0.6, def: 0.3 },
+            'Aggressiveness':      { end: -0.4, def: 0.2 },
+            'Out of Position':     { end: -0.4, def: -0.4 },
+            'Leaves Gaps':         { def: -1, len: 0.4 },
+            'Limited Width':       { wid: -1 },
+            'Support Centrally':   { wid: -0.5 },
+            'Supports Centrally':  { wid: -0.5 },
+            'Cut Inside':          { wid: -0.4, atk: 0.3 },
+            'Lacks Mobility':      { end: 0.5, atk: -0.4 },
+            'Limited Versatility': { bld: -0.3 },
+            'Rush':                { end: -0.2 }
+        };
+        const TRAIT_WEIGHT = { strengths: 1, notes: 0.4, drawbacks: -1 };
+        // Some axis tags are near-universal ("Pass Option" is a note on most
+        // roles) — they carry little signal, so they count for less.
+        const TRAIT_FACTOR = { 'Pass Option': 0.35, 'Stay in Position': 0.5 };
+        const ESTIMATE_SCALE = { atk: 0.45, def: 0.35, wid: 0.5, end: 0.55, len: 0.5, bld: 0.45 };
+
+        function findRoleTraits(pos, roleName, focusName) {
+            const effPos = ROLE_CATALOG_POS_ALIAS[pos] || pos;
+            const roles = ROLE_CATALOG_RAW[effPos] || [];
+            const role = roles.find(r => r.role === roleName);
+            const focus = role && role.focuses.find(f => f.focus === focusName);
+            return focus ? focus.traits : null;
+        }
+
+        // Raw (uncalibrated) axis estimate for a setup:
+        //   { formation, roles: {slotIdx: {role, focus}}, buildUp, approach, lineHeight }
+        function estimateTacticAxesRaw(setup) {
+            const sum = { atk: 0, def: 0, wid: 0, end: 0, len: 0, bld: 0 };
+            const slots = formationSlots[setup.formation] || [];
+            slots.forEach((slot, idx) => {
+                const r = setup.roles && setup.roles[idx];
+                if (!r) return;
+                const traits = findRoleTraits(slot.pos, r.role, r.focus);
+                if (!traits) return;
+                Object.entries(TRAIT_WEIGHT).forEach(([cat, w]) => {
+                    (traits[cat] || []).forEach(tag => {
+                        if (TRAIT_COST[tag]) {
+                            const m = cat === 'drawbacks' ? 1 : 0.6;
+                            Object.entries(TRAIT_COST[tag]).forEach(([ax, v]) => { sum[ax] += v * m; });
+                        } else if (TRAIT_AXIS[tag]) {
+                            sum[TRAIT_AXIS[tag]] += w * (TRAIT_FACTOR[tag] != null ? TRAIT_FACTOR[tag] : 1);
+                        }
+                    });
+                });
+            });
+            // Tactic settings (EA: build-up style shapes transitions and
+            // build-up; the defensive approach sets line height, pressure and
+            // stamina drain; length also depends on line height).
+            const bu = setup.buildUp || 'balanced';
+            if (bu === 'counter') { sum.bld -= 2.5; sum.atk += 1; sum.len += 1; sum.end -= 0.5; }
+            if (bu === 'short') { sum.bld += 2.5; sum.atk -= 0.5; sum.len -= 1; }
+            const line = typeof setup.lineHeight === 'number' ? setup.lineHeight : (DEF_APPROACHES[setup.approach] || DEF_APPROACHES.balanced).line;
+            sum.len += (line - 50) / 12;
+            if (setup.approach === 'aggressive') { sum.end -= 2.5; sum.def -= 0.5; }
+            else if (setup.approach === 'high') { sum.end -= 1; }
+            else if (setup.approach === 'deep') { sum.end += 0.8; sum.def += 1; sum.atk -= 0.5; }
+            // Formation spread: distance between the deepest outfield line
+            // and the attacking line (from the formation topology).
+            const topo = FORMATION_TOPOLOGY[setup.formation];
+            if (topo) {
+                const depths = Object.values(topo.lines).map(l => l.depth);
+                sum.len += ((Math.max(...depths) - Math.min(...depths)) - 0.58) * 10;
+            }
+            if (setup.__rawSums) return sum;
+            // Scored RELATIVE to a typical team (the average of all formation
+            // baselines), so 5 = typical and the settings/roles move it.
+            const centre = tacticEstimateCentre();
+            const axes = {};
+            // Smooth S-curve instead of a hard clamp: extreme setups still
+            // stay ordered (very low vs. extremely low) inside 0.5–9.5.
+            TACTIC_AXES.forEach(ax => { axes[ax] = 5 + 4.5 * Math.tanh(((sum[ax] - centre[ax]) * ESTIMATE_SCALE[ax]) / 4.5); });
+            return axes;
+        }
+        let tacticEstimateCentreCache = null;
+        function tacticEstimateCentre() {
+            if (tacticEstimateCentreCache) return tacticEstimateCentreCache;
+            const forms = Object.keys(FORMATION_TOPOLOGY);
+            const acc = { atk: 0, def: 0, wid: 0, end: 0, len: 0, bld: 0 };
+            forms.forEach(f => {
+                const s2 = estimateTacticAxesRaw({ formation: f, buildUp: 'balanced', approach: 'balanced', lineHeight: 50, roles: labBaselineRoles(f), __rawSums: true });
+                TACTIC_AXES.forEach(a => { acc[a] += s2[a] / forms.length; });
+            });
+            tacticEstimateCentreCache = acc;
+            return acc;
+        }
+
+        // --- lab storage ----------------------------------------------------
+        // Everything lives in localStorage under one key (a few hundred
+        // reports is well under 1 MB). Export/Import give a file backup.
+        const TACTICS_LAB_KEY = 'fc27_tactics_lab_v1';
+        let tacticsLab = null;
+        function loadTacticsLab() {
+            if (tacticsLab) return tacticsLab;
+            let data = null;
+            try { data = JSON.parse(localStorage.getItem(TACTICS_LAB_KEY) || 'null'); } catch (e) { data = null; }
+            tacticsLab = (data && data.version === 1) ? data : { version: 1, reports: {}, skipped: {}, createdAt: new Date().toISOString() };
+            if (!tacticsLab.seeded) seedTacticsLabFromScreenshot();
+            return tacticsLab;
+        }
+        function saveTacticsLab() {
+            try { localStorage.setItem(TACTICS_LAB_KEY, JSON.stringify(tacticsLab)); return true; }
+            catch (e) { return false; }
+        }
+        function tacticSetupSignature(setup) {
+            const slots = formationSlots[setup.formation] || [];
+            const roles = slots.map((s, i) => setup.roles && setup.roles[i] ? `${setup.roles[i].role}/${setup.roles[i].focus}` : '-').join(',');
+            return `${setup.formation}|${setup.buildUp}|${setup.approach}|${setup.lineHeight}|${roles}`;
+        }
+        // The first report: the in-game result the user shared as a photo
+        // for the app's suggested setup (Counter, High 78). Sentences are
+        // exact; the graph values are left for the user to enter.
+        function seedTacticsLabFromScreenshot() {
+            tacticsLab.seeded = true;
+            const roles = { 0: ['Goalkeeper', 'Defend'], 1: ['Attacking Wingback', 'Attack'], 2: ['Wide Back', 'Support'], 3: ['Stopper', 'Aggressive'],
+                4: ['Falseback', 'Defend'], 5: ['Holding', 'Defend'], 6: ['Deep-Lying Playmaker', 'Build-Up'], 7: ['Winger', 'Attack'],
+                8: ['Half Winger', 'Attack'], 9: ['Winger', 'Attack'], 10: ['False 9', 'Attack'] };
+            const setup = { formation: '4-2-3-1', buildUp: 'counter', approach: 'high', lineHeight: 78, roles: {} };
+            Object.entries(roles).forEach(([i, [role, focus]]) => { setup.roles[i] = { role, focus }; });
+            const sig = tacticSetupSignature(setup);
+            tacticsLab.reports[sig] = {
+                ...setup, signature: sig, source: 'screenshot',
+                strengths: ['Always Looking to Attack', 'Space Between The Lines', 'Good Wide Options'],
+                warnings: ['Unimaginative Build-Up Play', 'Endurance Athletes Only', 'Light at Defensive Roles'],
+                axes: null, tacticCode: '', notes: 'From your photo of the in-game Team Tactical Analysis. Graph values not entered yet.',
+                reportedAt: new Date().toISOString()
+            };
+            // Listed under "Custom" so it can be opened to add the graph values.
+            tacticsLab.custom = tacticsLab.custom || {};
+            tacticsLab.custom['custom#screenshot'] = { id: 'custom#screenshot', kind: 'custom', essential: true, signature: sig, setup,
+                label: 'Your screenshot · 4-2-3-1 · Counter · High 78' };
+            saveTacticsLab();
+        }
+
+        // --- calibration from reports ----------------------------------------
+        // For each axis with ≥ 4 reported values: least-squares fit
+        // reported = a + b × estimate (b clamped to a sane range). Below that,
+        // the raw estimate is used as-is.
+        function computeTacticCalibration() {
+            const lab = loadTacticsLab();
+            const cal = {};
+            TACTIC_AXES.forEach(ax => {
+                const pts = Object.values(lab.reports).filter(r => r.axes && typeof r.axes[ax] === 'number').map(r => [estimateTacticAxesRaw(r)[ax], r.axes[ax]]);
+                if (pts.length < 4) { cal[ax] = { n: pts.length, a: 0, b: 1, active: false }; return; }
+                const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+                const sxx = pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0), sxy = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0);
+                const syy = pts.reduce((s, p) => s + (p[1] - my) ** 2, 0);
+                const b = sxx > 1e-6 ? Math.max(0.2, Math.min(3, sxy / sxx)) : 1;
+                const r = (sxx > 1e-6 && syy > 1e-6) ? sxy / Math.sqrt(sxx * syy) : 0;
+                cal[ax] = { n: pts.length, a: my - b * mx, b, r, active: true };
+            });
+            return cal;
+        }
+
+        // --- sentences: EA wording learned from reports ------------------------
+        // Every reported sentence is linked to the axis it tracks most
+        // strongly: the axis whose reported (or, if no graph was entered,
+        // estimated) value sits furthest from the middle in the sentence's
+        // direction across the reports it appeared in.
+        const APP_AXIS_PHRASES = {
+            atk: { high: { en: 'Always Looking to Attack', ar: 'تبحث دائماً عن الهجوم' }, low: { en: 'Cautious going forward', ar: 'حذرة في التقدم' } },
+            def: { high: { en: 'Solid defensive roles', ar: 'أدوار دفاعية صلبة' }, low: { en: 'Light at Defensive Roles', ar: 'قليلة الأدوار الدفاعية' } },
+            wid: { high: { en: 'Good Wide Options', ar: 'خيارات جيدة على الأطراف' }, low: { en: 'Narrow in possession', ar: 'ضيقة أثناء الاستحواذ' } },
+            end: { high: { en: 'Easy on stamina', ar: 'مريحة للياقة' }, low: { en: 'Endurance Athletes Only', ar: 'للاعبي التحمّل فقط' } },
+            len: { high: { en: 'Stretches the pitch lengthwise', ar: 'تمدّ الملعب طولياً' }, low: { en: 'Compact from back to front', ar: 'متقاربة من الخلف للأمام' } },
+            bld: { high: { en: 'Creative build-up', ar: 'بناء لعب إبداعي' }, low: { en: 'Unimaginative Build-Up Play', ar: 'بناء لعب غير مبتكر' } }
+        };
+        // Sentences whose wording names their axis (all five come from the
+        // game screen the user shared) are linked directly.
+        const SENTENCE_AXIS_BY_WORDING = {
+            'strength|Always Looking to Attack': 'atk', 'strength|Good Wide Options': 'wid',
+            'warning|Light at Defensive Roles': 'def', 'warning|Endurance Athletes Only': 'end',
+            'warning|Unimaginative Build-Up Play': 'bld'
+        };
+        // Every other sentence: within one report the game's three
+        // strengths are three DIFFERENT axes (same for warnings), so each
+        // unknown sentence votes for the strongest axis not already taken in
+        // that report — highest for strengths, lowest for warnings — using
+        // the reported graph if entered, else the estimate. The axis with the
+        // most votes across reports wins.
+        function learnSentenceAxes() {
+            const lab = loadTacticsLab();
+            const acc = {};
+            Object.values(lab.reports).forEach(r => {
+                const axes = r.axes && TACTIC_AXES.every(a => typeof r.axes[a] === 'number') ? r.axes : estimateTacticAxesRaw(r);
+                [['strength', r.strengths, 1], ['warning', r.warnings, -1]].forEach(([type, list, dir]) => {
+                    const items = (list || []).filter(Boolean);
+                    const taken = new Set(items.map(t => SENTENCE_AXIS_BY_WORDING[type + '|' + t]).filter(Boolean));
+                    const free = TACTIC_AXES.filter(a => !taken.has(a)).sort((x, y) => (axes[y] - axes[x]) * dir);
+                    items.forEach(text => {
+                        const k = type + '|' + text;
+                        acc[k] = acc[k] || { type, text, n: 0, votes: {} };
+                        acc[k].n++;
+                        const axis = SENTENCE_AXIS_BY_WORDING[k] || free.shift();
+                        if (axis) acc[k].votes[axis] = (acc[k].votes[axis] || 0) + 1;
+                    });
+                });
+            });
+            return Object.values(acc).map(e => {
+                const fixed = SENTENCE_AXIS_BY_WORDING[e.type + '|' + e.text];
+                const axis = fixed || Object.keys(e.votes).sort((x, y) => e.votes[y] - e.votes[x])[0] || 'atk';
+                return { ...e, axis, byWording: !!fixed };
+            });
+        }
+
+        // Calibrated estimate + 3 strengths / 3 warnings.
+        function estimateTacticalSummary(setup) {
+            const raw = estimateTacticAxesRaw(setup);
+            const cal = computeTacticCalibration();
+            const axes = {};
+            TACTIC_AXES.forEach(a => { axes[a] = Math.max(0, Math.min(10, cal[a].active ? cal[a].a + cal[a].b * raw[a] : raw[a])); });
+            const learned = learnSentenceAxes();
+            const used = new Set();
+            const phraseFor = (axis, type) => {
+                const hit = learned.filter(l => l.axis === axis && l.type === type && !used.has(l.text)).sort((x, y) => y.n - x.n)[0];
+                if (hit) { used.add(hit.text); return { text: hit.text, learned: true }; }
+                const p = APP_AXIS_PHRASES[axis][type === 'strength' ? 'high' : 'low'];
+                return { text: LAB_T(p.en, p.ar), learned: false };
+            };
+            const order = TACTIC_AXES.slice().sort((a, b) => axes[b] - axes[a]);
+            return {
+                axes,
+                strengths: order.slice(0, 3).map(a => ({ axis: a, ...phraseFor(a, 'strength') })),
+                warnings: order.slice(3).reverse().map(a => ({ axis: a, ...phraseFor(a, 'warning') })),
+                calibrated: TACTIC_AXES.filter(a => cal[a].active).length
+            };
+        }
+
+        // --- hexagon drawing (same layout as the game) -------------------------
+        function renderTacticHex(axes, opts) {
+            const o = Object.assign({ size: 190, compare: null, dashed: false }, opts || {});
+            const c = o.size / 2, R = o.size / 2 - 24;
+            const pt = (ax, v) => { const a = TACTIC_AXIS_ANGLE[ax] * Math.PI / 180; return [c + Math.cos(a) * R * v / 10, c + Math.sin(a) * R * v / 10]; };
+            const poly = vals => TACTIC_AXES.map(ax => pt(ax, vals[ax]).map(n => n.toFixed(1)).join(',')).join(' ');
+            const ring = v => `<polygon points="${poly(Object.fromEntries(TACTIC_AXES.map(a => [a, v])))}" fill="none" stroke="#475569" stroke-opacity=".7" stroke-width="1"/>`;
+            let svg = `<svg viewBox="0 0 ${o.size} ${o.size}" width="${o.size}" height="${o.size}" role="img" aria-label="Tactical analysis hexagon">`;
+            svg += `<polygon points="${poly(Object.fromEntries(TACTIC_AXES.map(a => [a, 10])))}" fill="#1e293b" fill-opacity=".6" stroke="#64748b"/>`;
+            [2.5, 5, 7.5].forEach(v => { svg += ring(v); });
+            TACTIC_AXES.forEach(ax => { const [x, y] = pt(ax, 10); svg += `<line x1="${c}" y1="${c}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#475569" stroke-opacity=".7"/>`; });
+            if (o.compare) svg += `<polygon points="${poly(o.compare)}" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 3"/>`;
+            if (axes) svg += `<polygon points="${poly(axes)}" fill="#2dd4bf" fill-opacity=".15" stroke="#5eead4" stroke-width="2.5" ${o.dashed ? 'stroke-dasharray="5 4"' : ''}/>`;
+            // Labels sit 14px outside the frame; top/bottom ones are nudged so
+            // they never leave the SVG box.
+            TACTIC_AXES.forEach(ax => {
+                const a = TACTIC_AXIS_ANGLE[ax] * Math.PI / 180;
+                const x = c + Math.cos(a) * (R + 16), y = c + Math.sin(a) * (R + 12);
+                svg += `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="800" fill="#cbd5e1">${TACTIC_AXIS_LABEL[ax].short}</text>`;
+            });
+            return svg + '</svg>';
+        }
+
+        // --- test plans ----------------------------------------------------------
+        // Baseline per formation: first role of each position, Balanced focus
+        // where it exists; Balanced build-up; Balanced approach, line 50.
+        // Every other test changes exactly ONE thing from the baseline, so
+        // any sentence or axis shift can be traced to that one change.
+        const LAB_FORMATION_ORDER = ['4-3-3', '4-2-3-1', '4-4-2', '4-1-2-1-2', '3-5-2', '4-5-1', '4-4-1-1', '3-1-4-2', '4-2-1-3', '4-2-2-2', '4-4-2 (2)', '5-4-1', '5-3-2'];
+        const LAB_MIRROR = { RB: 'LB', RM: 'LM', RW: 'LW' };
+        function labRoleOptions(pos) {
+            const effPos = ROLE_CATALOG_POS_ALIAS[pos] || pos;
+            return (ROLE_CATALOG_RAW[effPos] || []).flatMap(r => r.focuses.map(f => ({ role: r.role, focus: f.focus })));
+        }
+        function labBaselineRoles(formation) {
+            const roles = {};
+            (formationSlots[formation] || []).forEach((s, i) => {
+                const list = ROLE_CATALOG_RAW[ROLE_CATALOG_POS_ALIAS[s.pos] || s.pos] || [];
+                const r = list[0];
+                if (!r) return;
+                const f = r.focuses.find(x => x.focus === 'Balanced') || r.focuses[0];
+                roles[i] = { role: r.role, focus: f.focus };
+            });
+            return roles;
+        }
+        let tacticsLabPlanCache = null;
+        function buildTacticsLabPlan() {
+            if (tacticsLabPlanCache) return tacticsLabPlanCache;
+            const covered = new Set();
+            const plan = {};
+            LAB_FORMATION_ORDER.filter(f => formationSlots[f]).forEach((formation, fi) => {
+                const slots = formationSlots[formation];
+                const baseRoles = labBaselineRoles(formation);
+                const base = { formation, buildUp: 'balanced', approach: 'balanced', lineHeight: 50, roles: baseRoles };
+                const tests = [{ id: `${formation}#base`, kind: 'base', essential: true, setup: base }];
+                // Settings: essential once (first formation) — they're applied team-wide.
+                [['buildUp', 'short'], ['buildUp', 'counter']].forEach(([k, v]) =>
+                    tests.push({ id: `${formation}#bu-${v}`, kind: 'setting', essential: fi === 0, change: { setting: k, value: v }, setup: { ...base, buildUp: v } }));
+                ['deep', 'high', 'aggressive'].forEach(v =>
+                    tests.push({ id: `${formation}#da-${v}`, kind: 'setting', essential: fi === 0, change: { setting: 'approach', value: v }, setup: { ...base, approach: v, lineHeight: DEF_APPROACHES[v].line } }));
+                // Roles: one slot at a time.
+                const seenPosInFormation = new Set();
+                slots.forEach((slot, idx) => {
+                    const posKey = LAB_MIRROR[slot.pos] || slot.pos;
+                    const firstOfPos = !seenPosInFormation.has(posKey);
+                    seenPosInFormation.add(posKey);
+                    labRoleOptions(slot.pos).forEach(opt => {
+                        if (baseRoles[idx] && baseRoles[idx].role === opt.role && baseRoles[idx].focus === opt.focus) return;
+                        const coverKey = `${posKey}|${opt.role}|${opt.focus}`;
+                        const essential = firstOfPos && !covered.has(coverKey);
+                        if (essential) covered.add(coverKey);
+                        tests.push({ id: `${formation}#${idx}-${opt.role}-${opt.focus}`, kind: 'role', essential, change: { slot: idx, pos: slot.pos, ...opt },
+                            setup: { ...base, roles: { ...baseRoles, [idx]: { ...opt } } } });
+                    });
+                });
+                tests.forEach(t => { t.signature = tacticSetupSignature(t.setup); });
+                plan[formation] = tests;
+            });
+            tacticsLabPlanCache = plan;
+            return plan;
+        }
+
+        // --- Tactics Lab UI ------------------------------------------------------
+        const labState = { formation: LAB_FORMATION_ORDER[0], testId: null, essentialOnly: true, view: 'test', showEstimate: false };
+        const escLab = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+        function labAllTests() {
+            const lab = loadTacticsLab();
+            const plan = buildTacticsLabPlan();
+            const custom = Object.values(lab.custom || {});
+            return { plan, custom };
+        }
+        function labTestsFor(formation) {
+            const { plan, custom } = labAllTests();
+            if (formation === '__custom') return custom;
+            return (plan[formation] || []).filter(t => !labState.essentialOnly || t.essential);
+        }
+        function labStatus(test) {
+            const lab = loadTacticsLab();
+            if (lab.reports[test.signature]) return 'done';
+            if (lab.skipped[test.id]) return 'skipped';
+            return 'pending';
+        }
+        function labProgress(tests) {
+            const done = tests.filter(t => labStatus(t) === 'done').length;
+            return { done, total: tests.length };
+        }
+        function labDescribeChange(test) {
+            if (test.kind === 'base') return LAB_T('Baseline setup for this formation', 'الإعداد الأساسي لهذا التشكيل');
+            if (test.kind === 'custom') return test.label || LAB_T('Custom setup', 'إعداد مخصص');
+            const c = test.change;
+            if (c.setting === 'buildUp') return LAB_T(`Only change: Build-Up Style → ${BUILD_UP_STYLES[c.value].en}`, `التغيير الوحيد: أسلوب البناء ← ${BUILD_UP_STYLES[c.value].ar}`);
+            if (c.setting === 'approach') return LAB_T(`Only change: Defensive Approach → ${DEF_APPROACHES[c.value].en} (line ${DEF_APPROACHES[c.value].line})`, `التغيير الوحيد: النهج الدفاعي ← ${DEF_APPROACHES[c.value].ar} (الخط ${DEF_APPROACHES[c.value].line})`);
+            return LAB_T(`Only change: ${c.pos} → ${c.role} · ${c.focus}`, `التغيير الوحيد: ${c.pos} ← ${c.role} · ${c.focus}`);
+        }
+
+        window.renderTacticsLab = function() {
+            const root = document.getElementById('lab-root');
+            if (!root) return;
+            const lab = loadTacticsLab();
+            const { plan, custom } = labAllTests();
+            const allPlan = Object.values(plan).flat();
+            const ess = allPlan.filter(t => t.essential);
+            const pEss = labProgress(ess), pAll = labProgress(allPlan);
+            const reportsCount = Object.keys(lab.reports).length;
+            const tests = labTestsFor(labState.formation);
+            if (!labState.testId || !tests.some(t => t.id === labState.testId)) {
+                const next = tests.find(t => labStatus(t) === 'pending') || tests[0];
+                labState.testId = next ? next.id : null;
+            }
+            const chip = (key, label, prog) => `<button onclick="window.labSelectFormation('${key}')" class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${labState.formation === key ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border hover:border-fc-accent/50'}">${escLab(label)} <span class="${labState.formation === key ? 'text-fc-dark/70' : 'text-gray-500'}">${prog.done}/${prog.total}</span></button>`;
+            const formationChips = LAB_FORMATION_ORDER.filter(f => plan[f]).map(f => chip(f, f, labProgress((plan[f] || []).filter(t => !labState.essentialOnly || t.essential)))).join('')
+                + chip('__custom', LAB_T('Custom', 'مخصص'), labProgress(custom));
+            const statusIcon = st => st === 'done' ? '<i class="fa-solid fa-circle-check text-green-400"></i>' : st === 'skipped' ? '<i class="fa-solid fa-forward text-gray-500"></i>' : '<i class="fa-regular fa-circle text-gray-600"></i>';
+            const list = tests.map(t => `<button onclick="window.labSelectTest('${escLab(t.id)}')" class="w-full text-start px-2 py-1.5 rounded-lg text-[11px] flex items-center gap-2 ${t.id === labState.testId ? 'bg-fc-accent/15 text-white' : 'text-gray-400 hover:bg-fc-dark hover:text-white'}">${statusIcon(labStatus(t))}<span class="truncate">${escLab(labDescribeChange(t).replace(/^Only change: |^التغيير الوحيد: /, ''))}</span>${t.essential === false ? `<span class="ms-auto text-[9px] text-gray-600">${LAB_T('extra', 'إضافي')}</span>` : ''}</button>`).join('')
+                || `<p class="text-xs text-gray-500 p-2">${labState.formation === '__custom' ? LAB_T('No custom setups yet — use “Test my current squad”.', 'لا توجد إعدادات مخصصة بعد — استخدم «اختبر تشكيلتي الحالية».') : LAB_T('No tests.', 'لا اختبارات.')}</p>`;
+
+            root.innerHTML = `
+                <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 shadow-xl space-y-3">
+                    <h2 class="text-2xl md:text-3xl font-extrabold">${LAB_T('Tactics Lab', 'مختبر التكتيك')}</h2>
+                    <p class="text-sm text-gray-400">${LAB_T("Collect what the game's Tactical Summary says for planned setups. Each test changes one thing from a baseline, so every sentence and every axis shift can be traced to that change. Your reports are saved in this browser and teach the app's estimate.", 'اجمع ما يقوله «الملخص التكتيكي» في اللعبة لإعدادات مخططة. كل اختبار يغيّر شيئاً واحداً عن الإعداد الأساسي، فيمكن ربط كل جملة وكل تغيّر في المحاور بذلك التغيير. تقاريرك تُحفظ في هذا المتصفح وتُحسّن تقدير التطبيق.')}</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                        <div class="bg-fc-dark/70 rounded-xl p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('Essential tests', 'الاختبارات الأساسية')}</div><div class="text-lg font-black text-fc-accent">${pEss.done}/${pEss.total}</div></div>
+                        <div class="bg-fc-dark/70 rounded-xl p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('All planned tests', 'كل الاختبارات')}</div><div class="text-lg font-black text-white">${pAll.done}/${pAll.total}</div></div>
+                        <div class="bg-fc-dark/70 rounded-xl p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('Reports saved', 'التقارير المحفوظة')}</div><div class="text-lg font-black text-green-400">${reportsCount}</div></div>
+                        <div class="bg-fc-dark/70 rounded-xl p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('Axes calibrated', 'محاور معايرة')}</div><div class="text-lg font-black text-fc-gold">${Object.values(computeTacticCalibration()).filter(c => c.active).length}/6</div></div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="window.labTestCurrentSquad()" class="px-3 py-1.5 rounded-lg bg-fc-accent text-fc-dark text-xs font-black"><i class="fa-solid fa-shield-halved me-1"></i>${LAB_T('Test my current squad', 'اختبر تشكيلتي الحالية')}</button>
+                        <button onclick="window.labSetView('${labState.view === 'test' ? 'findings' : 'test'}')" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent"><i class="fa-solid ${labState.view === 'test' ? 'fa-chart-simple' : 'fa-flask'} me-1"></i>${labState.view === 'test' ? LAB_T('Findings', 'النتائج') : LAB_T('Back to tests', 'العودة للاختبارات')}</button>
+                        <button onclick="window.labExport()" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent"><i class="fa-solid fa-download me-1"></i>${LAB_T('Export backup', 'تصدير نسخة احتياطية')}</button>
+                        <label class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent cursor-pointer"><i class="fa-solid fa-upload me-1"></i>${LAB_T('Import backup', 'استيراد نسخة احتياطية')}<input type="file" accept="application/json,.json" class="hidden" onchange="window.labImport(this)"></label>
+                        <label class="ms-auto flex items-center gap-1.5 text-[11px] text-gray-400"><input type="checkbox" ${labState.essentialOnly ? 'checked' : ''} onchange="window.labToggleEssential(this.checked)"> ${LAB_T('Essential tests only', 'الاختبارات الأساسية فقط')}</label>
+                    </div>
+                    <p id="lab-flash" class="hidden text-[11px] text-green-400"></p>
+                </div>
+                ${labState.view === 'findings' ? renderLabFindings() : `
+                <div class="flex flex-wrap gap-2">${formationChips}</div>
+                <div class="grid gap-4 lg:grid-cols-[260px_1fr]">
+                    <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-2 max-h-[640px] overflow-y-auto hide-scrollbar space-y-0.5">${list}</div>
+                    <div>${renderLabTestCard(tests.find(t => t.id === labState.testId))}</div>
+                </div>`}`;
+            wireLabForm();
+        };
+
+        function renderLabSetupTable(test) {
+            const s = test.setup;
+            const slots = formationSlots[s.formation] || [];
+            const changedSlot = test.change && typeof test.change.slot === 'number' ? test.change.slot : null;
+            const rows = slots.map((slot, i) => {
+                const r = s.roles[i] || {};
+                const hl = i === changedSlot;
+                return `<div class="flex items-center gap-2 px-2 py-1 rounded-lg text-xs ${hl ? 'bg-fc-accent/15 border border-fc-accent/40' : ''}"><span class="w-10 font-black ${hl ? 'text-fc-accent' : 'text-gray-500'}">${slot.pos}</span><span class="${hl ? 'text-white font-bold' : 'text-gray-300'}">${escLab(r.role || '—')} <span class="text-gray-500">·</span> ${escLab(r.focus || '')}</span></div>`;
+            }).join('');
+            const setHl = key => test.change && test.change.setting === key ? 'text-fc-accent font-black' : 'text-white font-bold';
+            return `
+                <div class="grid grid-cols-3 gap-2 text-center text-xs mb-2">
+                    <div class="bg-fc-dark/70 rounded-lg p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('Formation', 'التشكيل')}</div><div class="text-white font-bold">${s.formation}</div></div>
+                    <div class="bg-fc-dark/70 rounded-lg p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('Build-Up Style', 'أسلوب البناء')}</div><div class="${setHl('buildUp')}">${LAB_T(BUILD_UP_STYLES[s.buildUp].en, BUILD_UP_STYLES[s.buildUp].ar)}</div></div>
+                    <div class="bg-fc-dark/70 rounded-lg p-2"><div class="text-[9px] text-gray-500 uppercase">${LAB_T('Defensive Approach', 'النهج الدفاعي')}</div><div class="${setHl('approach')}">${LAB_T(DEF_APPROACHES[s.approach].en, DEF_APPROACHES[s.approach].ar)} · ${s.lineHeight}</div></div>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-x-3">${rows}</div>`;
+        }
+
+        function renderLabTestCard(test) {
+            if (!test) return `<div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-6 text-sm text-gray-400">${LAB_T('Pick a test on the left.', 'اختر اختباراً من القائمة.')}</div>`;
+            const lab = loadTacticsLab();
+            const rep = lab.reports[test.signature] || null;
+            const est = estimateTacticalSummary(test.setup);
+            const known = learnSentenceAxes();
+            const opts = type => [...new Set(known.filter(k => k.type === type).map(k => k.text))].map(t => `<option value="${escLab(t)}">`).join('');
+            const sInputs = (type, arr) => [0, 1, 2].map(i => `<input list="lab-dl-${type}" id="lab-${type}-${i}" value="${escLab(arr && arr[i] || '')}" placeholder="${type === 's' ? LAB_T('Strength (green ✓)', 'نقطة قوة (✓ أخضر)') : LAB_T('Warning (yellow !)', 'تنبيه (! أصفر)')} ${i + 1}" class="w-full bg-fc-dark border border-fc-border rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-fc-accent">`).join('');
+            const sliders = TACTIC_AXES.map(ax => {
+                const v = rep && rep.axes && typeof rep.axes[ax] === 'number' ? rep.axes[ax] : null;
+                return `<label class="flex items-center gap-2 text-[11px]"><span class="w-9 font-black text-gray-300">${TACTIC_AXIS_LABEL[ax].short}</span>
+                    <input type="range" min="0" max="10" step="0.5" value="${v == null ? 5 : v}" data-axis="${ax}" data-touched="${v == null ? '0' : '1'}" class="lab-axis flex-1 accent-teal-400">
+                    <span class="w-8 text-end font-bold ${v == null ? 'text-gray-600' : 'text-white'}" id="lab-axv-${ax}">${v == null ? '—' : v}</span></label>`;
+            }).join('');
+            return `
+                <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-sm font-black text-white">${escLab(labDescribeChange(test))}</p>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${rep ? 'bg-green-500/15 text-green-400' : lab.skipped[test.id] ? 'bg-gray-500/15 text-gray-400' : 'bg-fc-gold/15 text-fc-gold'}">${rep ? LAB_T('Reported', 'تم الإبلاغ') : lab.skipped[test.id] ? LAB_T('Skipped', 'تم التخطي') : LAB_T('Waiting for your report', 'بانتظار تقريرك')}</span>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-gray-500 mb-1">${LAB_T('1. Set this up in the game (Team Tactics → formation, settings and every role):', '1. اضبط هذا في اللعبة (تكتيكات الفريق ← التشكيل والإعدادات وكل الأدوار):')}</p>
+                        ${renderLabSetupTable(test)}
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-[210px_1fr]">
+                        <div class="flex flex-col items-center gap-2">
+                            <div id="lab-hex-preview">${renderTacticHex(rep && rep.axes ? rep.axes : null, { compare: labState.showEstimate ? est.axes : null })}</div>
+                            <label class="text-[10px] text-gray-500 flex items-center gap-1"><input type="checkbox" ${labState.showEstimate ? 'checked' : ''} onchange="window.labToggleEstimate(this.checked)"> ${LAB_T("Show app's estimate (orange)", 'أظهر تقدير التطبيق (برتقالي)')}</label>
+                        </div>
+                        <div class="space-y-3">
+                            <p class="text-[11px] text-gray-500">${LAB_T("2. Drag each slider until the teal shape matches the game's graph (untouched axes aren't saved):", '2. حرّك كل شريط حتى يطابق الشكل رسم اللعبة (المحاور غير المعدّلة لا تُحفظ):')}</p>
+                            <div class="space-y-1.5">${sliders}</div>
+                            <p class="text-[11px] text-gray-500">${LAB_T('3. Copy the six sentences:', '3. انسخ الجمل الست:')}</p>
+                            <datalist id="lab-dl-s">${opts('strength')}</datalist><datalist id="lab-dl-w">${opts('warning')}</datalist>
+                            <div class="grid sm:grid-cols-2 gap-2"><div class="space-y-1.5">${sInputs('s', rep && rep.strengths)}</div><div class="space-y-1.5">${sInputs('w', rep && rep.warnings)}</div></div>
+                            <div class="grid sm:grid-cols-2 gap-2">
+                                <input id="lab-code" value="${escLab(rep && rep.tacticCode || '')}" placeholder="${LAB_T('In-game tactic code (optional)', 'كود التكتيك في اللعبة (اختياري)')}" class="bg-fc-dark border border-fc-border rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-fc-accent">
+                                <input id="lab-notes" value="${escLab(rep && rep.notes || '')}" placeholder="${LAB_T('Notes (optional)', 'ملاحظات (اختياري)')}" class="bg-fc-dark border border-fc-border rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-fc-accent">
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="window.labSaveReport()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-black"><i class="fa-solid fa-floppy-disk me-1"></i>${LAB_T('Save report & next', 'احفظ التقرير والتالي')}</button>
+                                <button onclick="window.labSkip()" class="px-3 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-300">${LAB_T('Skip for now', 'تخطَّ الآن')}</button>
+                                ${rep ? `<button onclick="window.labDeleteReport()" class="px-3 py-2 rounded-xl bg-fc-dark border border-red-500/40 text-xs font-bold text-red-400">${LAB_T('Delete report', 'احذف التقرير')}</button>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    ${labState.showEstimate ? `<p class="text-[11px] text-gray-500">${LAB_T('App estimate', 'تقدير التطبيق')}: <span class="text-green-400">${est.strengths.map(x => escLab(x.text)).join(' · ')}</span> / <span class="text-fc-gold">${est.warnings.map(x => escLab(x.text)).join(' · ')}</span></p>` : ''}
+                </div>`;
+        }
+
+        function wireLabForm() {
+            document.querySelectorAll('#lab-root .lab-axis').forEach(el => {
+                el.addEventListener('input', () => {
+                    el.dataset.touched = '1';
+                    const out = document.getElementById('lab-axv-' + el.dataset.axis);
+                    if (out) { out.textContent = el.value; out.className = 'w-8 text-end font-bold text-white'; }
+                    const axes = readLabAxes(true);
+                    const test = labTestsFor(labState.formation).find(t => t.id === labState.testId);
+                    const prev = document.getElementById('lab-hex-preview');
+                    if (prev) prev.innerHTML = renderTacticHex(axes, { compare: labState.showEstimate && test ? estimateTacticalSummary(test.setup).axes : null });
+                });
+            });
+        }
+        // touched axes only (for saving); preview fills untouched with 5
+        function readLabAxes(forPreview) {
+            const axes = {}; let any = false;
+            document.querySelectorAll('#lab-root .lab-axis').forEach(el => {
+                if (el.dataset.touched === '1') { axes[el.dataset.axis] = parseFloat(el.value); any = true; }
+                else if (forPreview) axes[el.dataset.axis] = 5;
+            });
+            return forPreview ? axes : (any ? axes : null);
+        }
+        function labFlash(msg) {
+            const el = document.getElementById('lab-flash');
+            if (!el) return;
+            el.textContent = msg; el.classList.remove('hidden');
+            clearTimeout(labFlash.t); labFlash.t = setTimeout(() => el.classList.add('hidden'), 2500);
+        }
+
+        window.labSelectFormation = f => { labState.formation = f; labState.testId = null; labState.view = 'test'; window.renderTacticsLab(); };
+        window.labSelectTest = id => { labState.testId = id; window.renderTacticsLab(); };
+        window.labToggleEssential = on => { labState.essentialOnly = !!on; labState.testId = null; window.renderTacticsLab(); };
+        window.labToggleEstimate = on => { labState.showEstimate = !!on; window.renderTacticsLab(); };
+        window.labSetView = v => { labState.view = v; window.renderTacticsLab(); };
+
+        function labGoNext() {
+            const tests = labTestsFor(labState.formation);
+            const i = tests.findIndex(t => t.id === labState.testId);
+            const next = tests.slice(i + 1).find(t => labStatus(t) === 'pending') || tests.find(t => labStatus(t) === 'pending');
+            labState.testId = next ? next.id : labState.testId;
+        }
+        window.labSaveReport = function() {
+            const lab = loadTacticsLab();
+            const test = labTestsFor(labState.formation).find(t => t.id === labState.testId);
+            if (!test) return;
+            const val = id => { const el = document.getElementById(id); return el ? el.value.trim().slice(0, 80) : ''; };
+            const strengths = [0, 1, 2].map(i => val('lab-s-' + i)).filter(Boolean);
+            const warnings = [0, 1, 2].map(i => val('lab-w-' + i)).filter(Boolean);
+            const axes = readLabAxes(false);
+            if (!strengths.length && !warnings.length && !axes) { labFlash(LAB_T('Enter at least the sentences or the graph before saving.', 'أدخل الجمل أو الرسم على الأقل قبل الحفظ.')); return; }
+            lab.reports[test.signature] = { ...test.setup, signature: test.signature, testId: test.id, source: test.kind === 'custom' ? 'custom' : 'plan',
+                strengths, warnings, axes, tacticCode: val('lab-code'), notes: val('lab-notes'), reportedAt: new Date().toISOString() };
+            delete lab.skipped[test.id];
+            const ok = saveTacticsLab();
+            labGoNext();
+            window.renderTacticsLab();
+            labFlash(ok ? LAB_T('Report saved in this browser.', 'تم حفظ التقرير في هذا المتصفح.') : LAB_T('Could not save — browser storage is full or blocked. Export a backup.', 'تعذّر الحفظ — تخزين المتصفح ممتلئ أو محظور. صدّر نسخة احتياطية.'));
+            if (typeof renderSquadTacticalAnalysis === 'function') renderSquadTacticalAnalysis();
+        };
+        window.labSkip = function() {
+            const lab = loadTacticsLab();
+            if (!labState.testId) return;
+            lab.skipped[labState.testId] = true;
+            saveTacticsLab(); labGoNext(); window.renderTacticsLab();
+        };
+        window.labDeleteReport = function() {
+            const lab = loadTacticsLab();
+            const test = labTestsFor(labState.formation).find(t => t.id === labState.testId);
+            if (!test || !lab.reports[test.signature]) return;
+            if (!confirm(LAB_T('Delete this report?', 'حذف هذا التقرير؟'))) return;
+            delete lab.reports[test.signature]; saveTacticsLab(); window.renderTacticsLab();
+        };
+        window.labExport = function() {
+            const blob = new Blob([JSON.stringify(loadTacticsLab(), null, 1)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `tactics-lab-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        };
+        // Import MERGES: reports from the file are added; a report for the
+        // same setup is replaced only if the file's copy is newer.
+        window.labImport = function(input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const data = JSON.parse(reader.result);
+                    if (!data || data.version !== 1 || typeof data.reports !== 'object') throw new Error('bad file');
+                    const lab = loadTacticsLab();
+                    let added = 0;
+                    Object.entries(data.reports).forEach(([sig, r]) => {
+                        if (!r || typeof r !== 'object' || !formationSlots[r.formation]) return;
+                        const clean = { formation: r.formation, buildUp: BUILD_UP_STYLES[r.buildUp] ? r.buildUp : 'balanced', approach: DEF_APPROACHES[r.approach] ? r.approach : 'balanced',
+                            lineHeight: +r.lineHeight || 50, roles: {}, signature: sig, testId: typeof r.testId === 'string' ? r.testId : undefined, source: String(r.source || 'import'),
+                            strengths: (r.strengths || []).slice(0, 3).map(x => String(x).slice(0, 80)), warnings: (r.warnings || []).slice(0, 3).map(x => String(x).slice(0, 80)),
+                            axes: r.axes && typeof r.axes === 'object' ? Object.fromEntries(TACTIC_AXES.filter(a => typeof r.axes[a] === 'number').map(a => [a, Math.max(0, Math.min(10, r.axes[a]))])) : null,
+                            tacticCode: String(r.tacticCode || '').slice(0, 40), notes: String(r.notes || '').slice(0, 300), reportedAt: String(r.reportedAt || '') };
+                        Object.entries(r.roles || {}).forEach(([i, x]) => { if (x && typeof x.role === 'string') clean.roles[i] = { role: x.role.slice(0, 40), focus: String(x.focus || '').slice(0, 40) }; });
+                        if (clean.axes && !Object.keys(clean.axes).length) clean.axes = null;
+                        const mine = lab.reports[sig];
+                        if (!mine || (clean.reportedAt && clean.reportedAt > (mine.reportedAt || ''))) { lab.reports[sig] = clean; added++; }
+                    });
+                    Object.values(data.custom || {}).forEach(t => { if (t && t.id && t.setup && formationSlots[t.setup.formation]) { lab.custom = lab.custom || {}; lab.custom[t.id] = t; } });
+                    saveTacticsLab(); window.renderTacticsLab();
+                    labFlash(LAB_T(`Imported ${added} report(s).`, `تم استيراد ${added} تقرير.`));
+                } catch (e) { labFlash(LAB_T('That file is not a Tactics Lab backup.', 'هذا الملف ليس نسخة احتياطية لمختبر التكتيك.')); }
+                input.value = '';
+            };
+            reader.readAsText(file);
+        };
+
+        // Current squad → custom lab test (formation, assigned roles, and the
+        // tactic settings the app suggests for it).
+        function currentSquadTacticSetup() {
+            const formation = squadState.formation;
+            const slots = formationSlots[formation] || [];
+            const roles = {};
+            slots.forEach((s, i) => { const r = squadState.teamRoles && squadState.teamRoles[i]; if (r) roles[i] = { role: r.role, focus: r.focus }; });
+            if (!Object.keys(roles).length) return null;
+            const identity = typeof computeSquadIdentity === 'function' ? computeSquadIdentity() : null;
+            const tac = identity ? suggestSquadTactics(identity) : null;
+            const buildUp = tac ? (tac.buildUp === 'possession' ? 'short' : tac.buildUp) : 'balanced';
+            const approach = tac && DEF_APPROACHES[tac.approach] ? tac.approach : 'balanced';
+            return { formation, buildUp, approach, lineHeight: tac && tac.lineHeight ? tac.lineHeight : DEF_APPROACHES[approach].line, roles };
+        }
+        window.labTestCurrentSquad = function() {
+            const setup = currentSquadTacticSetup();
+            if (!setup) { alert(LAB_T('Build a squad first — the lab uses its formation and roles.', 'ابنِ تشكيلة أولاً — المختبر يستخدم تشكيلها وأدوارها.')); return; }
+            const lab = loadTacticsLab();
+            lab.custom = lab.custom || {};
+            const signature = tacticSetupSignature(setup);
+            const existing = Object.values(lab.custom).find(t => t.signature === signature);
+            const test = existing || { id: 'custom#' + Date.now(), kind: 'custom', essential: true, signature, setup,
+                label: LAB_T(`My squad · ${setup.formation} · ${BUILD_UP_STYLES[setup.buildUp].en} · ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}`, `تشكيلتي · ${setup.formation} · ${BUILD_UP_STYLES[setup.buildUp].ar} · ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}`) };
+            lab.custom[test.id] = test;
+            saveTacticsLab();
+            labState.formation = '__custom'; labState.testId = test.id; labState.view = 'test';
+            window.switchTab('lab');
+        };
+
+        // --- findings -------------------------------------------------------------
+        function renderLabFindings() {
+            const lab = loadTacticsLab();
+            const learned = learnSentenceAxes().sort((a, b) => b.n - a.n);
+            const cal = computeTacticCalibration();
+            const plan = buildTacticsLabPlan();
+            const sentenceRows = learned.map(l => `<tr class="border-t border-fc-border/50"><td class="py-1 pe-2 ${l.type === 'strength' ? 'text-green-400' : 'text-fc-gold'}">${l.type === 'strength' ? '✓' : '!'} ${escLab(l.text)}</td><td class="py-1 px-2 text-gray-400 text-center">${l.n}</td><td class="py-1 ps-2 text-gray-300">${TACTIC_AXIS_LABEL[l.axis].short}</td></tr>`).join('')
+                || `<tr><td class="text-gray-500 py-2">${LAB_T('No sentences reported yet.', 'لم يُبلّغ عن جمل بعد.')}</td></tr>`;
+            const calRows = TACTIC_AXES.map(a => `<div class="bg-fc-dark/70 rounded-lg p-2 text-center"><div class="text-[10px] font-black text-gray-300">${TACTIC_AXIS_LABEL[a].short}</div><div class="text-[10px] ${cal[a].active ? 'text-green-400' : 'text-gray-500'}">${cal[a].active ? LAB_T(`calibrated · ${cal[a].n} reports · r ${cal[a].r.toFixed(2)}`, `معاير · ${cal[a].n} تقارير · r ${cal[a].r.toFixed(2)}`) : LAB_T(`${cal[a].n}/4 graph values`, `${cal[a].n}/4 قيم رسم`)}</div></div>`).join('');
+            // One-change effects vs each formation's reported baseline.
+            const effects = [];
+            Object.entries(plan).forEach(([formation, tests]) => {
+                const base = lab.reports[tests[0].signature];
+                if (!base) return;
+                tests.slice(1).forEach(t => {
+                    const r = lab.reports[t.signature];
+                    if (!r) return;
+                    const added = [...r.strengths.filter(x => !base.strengths.includes(x)).map(x => `+✓ ${x}`), ...r.warnings.filter(x => !base.warnings.includes(x)).map(x => `+! ${x}`)];
+                    const removed = [...base.strengths.filter(x => !r.strengths.includes(x)).map(x => `−✓ ${x}`), ...base.warnings.filter(x => !r.warnings.includes(x)).map(x => `−! ${x}`)];
+                    const deltas = (r.axes && base.axes) ? TACTIC_AXES.filter(a => typeof r.axes[a] === 'number' && typeof base.axes[a] === 'number' && r.axes[a] !== base.axes[a]).map(a => `${TACTIC_AXIS_LABEL[a].short} ${r.axes[a] > base.axes[a] ? '+' : '−'}${Math.abs(r.axes[a] - base.axes[a])}`) : [];
+                    effects.push({ formation, change: labDescribeChange(t), added, removed, deltas, weight: added.length + removed.length + deltas.length });
+                });
+            });
+            effects.sort((a, b) => b.weight - a.weight);
+            const effectRows = effects.slice(0, 60).map(e => `<div class="border-t border-fc-border/50 py-1.5 text-[11px]"><span class="text-gray-500">${e.formation}</span> · <span class="text-white font-bold">${escLab(e.change.replace(/^Only change: |^التغيير الوحيد: /, ''))}</span>
+                <div class="text-gray-400">${e.added.concat(e.removed).map(escLab).join(' · ') || LAB_T('no sentence change', 'لا تغيير في الجمل')}${e.deltas.length ? ` · <span class="text-fc-accent">${e.deltas.join(' ')}</span>` : ''}</div></div>`).join('')
+                || `<p class="text-[11px] text-gray-500">${LAB_T("Report a formation's baseline and some of its one-change tests to see what each change does.", 'أبلغ عن الإعداد الأساسي لتشكيل وبعض اختبارات التغيير الواحد لترى أثر كل تغيير.')}</p>`;
+            return `
+                <div class="grid gap-4 lg:grid-cols-2">
+                    <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-2">
+                        <p class="text-xs font-black text-white uppercase">${LAB_T('Sentences seen in the game', 'الجمل التي ظهرت في اللعبة')}</p>
+                        <p class="text-[10px] text-gray-500">${LAB_T('Axis = the graph axis this sentence tracks most closely in your reports.', 'المحور = محور الرسم الأكثر ارتباطاً بهذه الجملة في تقاريرك.')}</p>
+                        <table class="w-full text-[11px]"><thead><tr class="text-gray-500 text-start"><th class="text-start">${LAB_T('Sentence', 'الجملة')}</th><th>${LAB_T('Seen', 'مرات')}</th><th class="text-start">${LAB_T('Axis', 'المحور')}</th></tr></thead><tbody>${sentenceRows}</tbody></table>
+                    </div>
+                    <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-2">
+                        <p class="text-xs font-black text-white uppercase">${LAB_T('Estimate calibration', 'معايرة التقدير')}</p>
+                        <p class="text-[10px] text-gray-500">${LAB_T('Each axis is corrected against your reported graph values once 4 are available (r = how closely the estimate tracks the game).', 'يُصحَّح كل محور مقابل قيم الرسم التي أبلغت عنها بعد توفر 4 قيم (r = مدى توافق التقدير مع اللعبة).')}</p>
+                        <div class="grid grid-cols-3 gap-2">${calRows}</div>
+                    </div>
+                </div>
+                <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4">
+                    <p class="text-xs font-black text-white uppercase mb-1">${LAB_T('What each change did (vs. that formation’s baseline)', 'أثر كل تغيير (مقارنة بالإعداد الأساسي للتشكيل)')}</p>
+                    ${effectRows}
+                </div>`;
+        }
+
+        // --- Squad Summary block ----------------------------------------------------
+        function renderSquadTacticalAnalysis() {
+            const el = document.getElementById('squad-tactical-analysis');
+            if (!el) return;
+            const setup = currentSquadTacticSetup();
+            if (!setup) { el.innerHTML = ''; return; }
+            const est = estimateTacticalSummary(setup);
+            const rep = loadTacticsLab().reports[tacticSetupSignature(setup)] || null;
+            const list = (items, cls, icon) => items.map(x => `<li class="flex gap-1.5 ${cls}"><span>${icon}</span><span class="${x.learned === false ? 'italic text-gray-400' : ''}">${escLab(x.text)}</span></li>`).join('');
+            const repList = (arr, cls, icon) => (arr || []).map(t => `<li class="flex gap-1.5 ${cls}"><span>${icon}</span><span>${escLab(t)}</span></li>`).join('');
+            el.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${rep ? LAB_T('Tactical Analysis · in-game (your report)', 'التحليل التكتيكي · من اللعبة (تقريرك)') : LAB_T('Tactical Analysis · estimate', 'التحليل التكتيكي · تقدير')}</span>
+                    <button onclick="window.labTestCurrentSquad()" class="text-[10px] font-bold text-fc-accent hover:underline">${rep ? LAB_T('Edit report', 'عدّل التقرير') : LAB_T('Report the game’s result', 'أبلغ عن نتيجة اللعبة')}</button>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="shrink-0">${renderTacticHex(rep && rep.axes ? rep.axes : est.axes, { size: 150, compare: rep && rep.axes ? est.axes : null, dashed: !rep })}</div>
+                    <div class="flex-1 min-w-[180px] space-y-2 text-[11px]">
+                        <ul class="space-y-0.5">${rep ? repList(rep.strengths, 'text-green-400', '✓') : list(est.strengths, 'text-green-400', '✓')}</ul>
+                        <ul class="space-y-0.5">${rep ? repList(rep.warnings, 'text-fc-gold', '!') : list(est.warnings, 'text-fc-gold', '!')}</ul>
+                    </div>
+                </div>
+                <p class="text-[10px] text-gray-500 leading-snug">${rep
+                    ? LAB_T(`Your recorded in-game result for this exact setup (${BUILD_UP_STYLES[setup.buildUp].en}, ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}).${rep.axes ? ' Orange dashes = app estimate.' : ''}`, `نتيجتك المسجّلة من اللعبة لهذا الإعداد بالضبط (${BUILD_UP_STYLES[setup.buildUp].ar}، ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}).${rep.axes ? ' الخط البرتقالي = تقدير التطبيق.' : ''}`)
+                    : LAB_T(`Estimated from these roles/focuses and the suggested tactics (${BUILD_UP_STYLES[setup.buildUp].en}, ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}) — not EA's exact calculation.${est.calibrated ? ` ${est.calibrated}/6 axes calibrated from your reports.` : ''} Italic = app wording until the game's sentence is reported.`, `تقدير من الأدوار والتركيزات والتكتيك المقترح (${BUILD_UP_STYLES[setup.buildUp].ar}، ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}) — ليس حساب EA الدقيق.${est.calibrated ? ` ${est.calibrated}/6 محاور معايرة من تقاريرك.` : ''} المائل = صياغة التطبيق حتى يُبلَّغ عن جملة اللعبة.`)}</p>`;
+        }
+
         window.switchTab = function(tabId) {
-            ['calculator', 'squad', 'database', 'mysquads', 'players', 'market'].forEach(t => {
+            ['calculator', 'squad', 'database', 'mysquads', 'players', 'market', 'lab'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
                 const nav = document.getElementById(`nav-${t}`);
                 const mobNav = document.getElementById(`mob-nav-${t}`);
@@ -3944,6 +4692,9 @@
             }
             if (tabId === 'players' && typeof renderGeneralStatsPanel === 'function') {
                 renderGeneralStatsPanel();
+            }
+            if (tabId === 'lab' && typeof window.renderTacticsLab === 'function') {
+                window.renderTacticsLab();
             }
         };
 
@@ -10026,6 +10777,7 @@
             renderPlaystylesByLine(groups);
             renderSquadVulnerabilities(groups);
             renderSquadTakeaway(groups);
+            renderSquadTacticalAnalysis();
         }
 
         // Shows the alternate full squads Optimize found spanning the
