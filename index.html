@@ -10555,28 +10555,51 @@
         // actually differs between two squads of similar overall quality,
         // and it changes on regenerate/formation swap even when the average
         // quality doesn't.
+        // The four traits used to be raw averages of DIFFERENT stats compared
+        // with each other — but card stats aren't on a common scale (pace
+        // runs naturally higher on most cards, and "defence" only counted
+        // the back line, whose DEF is high by definition), so one trait won
+        // almost regardless of the players: even a perfectly average squad
+        // got a strong lean. Now each trait is measured against what's
+        // TYPICAL for the exact positions being played (the same database
+        // averages behind every ± number in the app): a squad only "leans
+        // on pace" if its pace is genuinely above normal for those
+        // positions. Falls back to the old self-comparison only if the
+        // database averages aren't loaded.
         function computeSquadIdentity() {
-            const players = Object.values(squadState.selectedXI).filter(Boolean);
-            const outfield = players.filter(p => p.pos !== 'GK' && p.att);
-            if (outfield.length === 0) return null;
-
-            const avg = (key) => outfield.reduce((sum, p) => sum + (typeof p.att[key] === 'number' ? p.att[key] : 0), 0) / outfield.length;
-
-            const backSet = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'];
-            const backLine = players.filter(p => backSet.includes(p.pos) && p.att);
-            const avgBackDef = backLine.length
-                ? backLine.reduce((sum, p) => sum + p.att.def, 0) / backLine.length
-                : avg('def');
-
-            const axes = { pace: avg('pac'), power: avg('phy'), buildup: avg('pas'), defense: avgBackDef };
+            const slotsNow = formationSlots[squadState.formation] || [];
+            const entries = slotsNow.map((s, i) => ({ pos: s.pos, p: squadState.selectedXI[i] }))
+                .filter(e => e.p && e.pos !== 'GK' && e.p.att);
+            if (entries.length === 0) return null;
+            const BACK_POS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'];
+            const backEntries = entries.filter(e => BACK_POS.includes(e.pos));
+            const defEntries = backEntries.length ? backEntries : entries;
+            const norm = (pos, key) => {
+                const g = typeof GENERAL_PLAYER_STATS !== 'undefined' && GENERAL_PLAYER_STATS[pos];
+                return g && g.stats && g.stats[key] ? g.stats[key].avg : null;
+            };
+            const measure = (list, key) => {
+                const raw = list.reduce((sum, e) => sum + (typeof e.p.att[key] === 'number' ? e.p.att[key] : 0), 0) / list.length;
+                const exps = list.map(e => norm(e.pos, key));
+                const expected = exps.every(x => typeof x === 'number') ? exps.reduce((a, b) => a + b, 0) / exps.length : null;
+                return { raw, expected };
+            };
+            const m = { pace: measure(entries, 'pac'), power: measure(entries, 'phy'), buildup: measure(entries, 'pas'), defense: measure(defEntries, 'def') };
+            const axes = { pace: m.pace.raw, power: m.power.raw, buildup: m.buildup.raw, defense: m.defense.raw };
+            const hasNorms = Object.values(m).every(x => x.expected != null);
             const axisMean = (axes.pace + axes.power + axes.buildup + axes.defense) / 4;
+            const devOf = axis => hasNorms ? m[axis].raw - m[axis].expected : axes[axis] - axisMean;
             const ranked = Object.keys(axes)
-                .map(axis => ({ axis, value: axes[axis], dev: axes[axis] - axisMean }))
+                .map(axis => ({ axis, value: axes[axis], dev: devOf(axis) }))
                 .sort((a, b) => b.dev - a.dev);
 
             const dominant = ranked[0];
             const weakest = ranked[ranked.length - 1];
-            const NOTABLE = 3; // deviation (rating points) needed to call a trait out at all
+            // points above/below typical needed to call a trait out
+            const NOTABLE = hasNorms ? 2 : 3;
+            // back line's pace vs. typical — used for the line-height setting
+            const backPace = backEntries.length ? measure(backEntries, 'pac') : null;
+            const backPaceDev = backPace && backPace.expected != null ? backPace.raw - backPace.expected : 0;
 
             const isAr = currentLanguage === 'ar';
 
@@ -10619,11 +10642,15 @@
             };
             const L = (o) => isAr ? o.ar : o.en;
             const val = axis => Math.round(axes[axis]);
+            const devTxt = axis => { const d = Math.round(devOf(axis)); return (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d); };
+            const vsTypical = axis => hasNorms
+                ? (isAr ? `${val(axis)}، ${devTxt(axis)} عن المعتاد لهذه المراكز` : `${val(axis)}, ${devTxt(axis)} vs typical for these positions`)
+                : `${val(axis)}`;
             const weakNotable = weakest.axis !== dominant.axis && weakest.dev <= -NOTABLE;
             const weakClause = weakNotable
                 ? (isAr
-                    ? ` نقطة ضعفها النسبية ${L(NOUN[weakest.axis])} (${val(weakest.axis)}): ${L(WEAKNESS[weakest.axis])}.`
-                    : ` Its relative weak point is ${L(NOUN[weakest.axis])} (${val(weakest.axis)}): it ${L(WEAKNESS[weakest.axis])}.`)
+                    ? ` نقطة ضعفها النسبية ${L(NOUN[weakest.axis])} (${vsTypical(weakest.axis)}): ${L(WEAKNESS[weakest.axis])}.`
+                    : ` Its relative weak point is ${L(NOUN[weakest.axis])} (${vsTypical(weakest.axis)}): it ${L(WEAKNESS[weakest.axis])}.`)
                 : '';
 
             let icon, headline, description;
@@ -10633,8 +10660,12 @@
                 if (!weakNotable) {
                     headline = isAr ? 'متوازنة في كل الجوانب' : 'Balanced Across the Board';
                     description = isAr
-                        ? 'لا سمة تبرز — السرعة والبدنية والتمرير والدفاع الخلفي كلها ضمن 3 نقاط من متوسط التشكيلة نفسها، فلا ميل طبيعي لأسلوب معيّن.'
-                        : "No trait stands out — pace, physicality, passing and back-line defending are all within 3 points of the squad's own average, so there's no built-in lean.";
+                        ? (hasNorms
+                            ? 'لا سمة تبرز — السرعة والبدنية والتمرير والدفاع الخلفي كلها ضمن نقطتين من المعتاد لهذه المراكز، فلا ميل طبيعي لأسلوب معيّن.'
+                            : 'لا سمة تبرز — السرعة والبدنية والتمرير والدفاع الخلفي كلها ضمن 3 نقاط من متوسط التشكيلة نفسها، فلا ميل طبيعي لأسلوب معيّن.')
+                        : (hasNorms
+                            ? "No trait stands out — pace, physicality, passing and back-line defending are all within 2 points of what's typical for these positions, so there's no built-in lean."
+                            : "No trait stands out — pace, physicality, passing and back-line defending are all within 3 points of the squad's own average, so there's no built-in lean.");
                 } else {
                     headline = isAr ? 'بلا سمة مهيمنة' : 'No Dominant Trait';
                     description = (isAr ? 'لا سمة ترتفع بوضوح فوق البقية.' : 'No trait rises clearly above the rest.') + weakClause;
@@ -10643,8 +10674,8 @@
                 icon = TRAITS[dominant.axis].icon;
                 headline = L(TRAITS[dominant.axis]);
                 description = isAr
-                    ? `تعتمد على ${L(NOUN[dominant.axis])} (${val(dominant.axis)}، الأعلى بين سماتها الأربع) — ${L(SUITS[dominant.axis])}.${weakClause || ' لا سمة أخرى أقل بوضوح من البقية.'}`
-                    : `Leans on ${L(NOUN[dominant.axis])} (${val(dominant.axis)}, the highest of its four traits) — ${L(SUITS[dominant.axis])}.${weakClause || ' No other trait sits notably below the rest.'}`;
+                    ? `تعتمد على ${L(NOUN[dominant.axis])} (${vsTypical(dominant.axis)}${hasNorms ? '' : '، الأعلى بين سماتها الأربع'}) — ${L(SUITS[dominant.axis])}.${weakClause || ' لا سمة أخرى أقل بوضوح من البقية.'}`
+                    : `Leans on ${L(NOUN[dominant.axis])} (${vsTypical(dominant.axis)}${hasNorms ? '' : ', the highest of its four traits'}) — ${L(SUITS[dominant.axis])}.${weakClause || ' No other trait sits notably below the rest.'}`;
             }
 
             return {
@@ -10653,13 +10684,16 @@
                 description,
                 suitsShort: dominant.dev >= NOTABLE ? L(SUITS_SHORT[dominant.axis]) : null,
                 strengthLine: dominant.dev >= NOTABLE
-                    ? (isAr ? `${L(NOUN[dominant.axis])} (${val(dominant.axis)})، الأعلى بين سمات التشكيلة`
-                            : `${L(NOUN[dominant.axis]).charAt(0).toUpperCase() + L(NOUN[dominant.axis]).slice(1)} (${val(dominant.axis)}), the XI's highest trait`)
+                    ? (isAr ? `${L(NOUN[dominant.axis])} (${vsTypical(dominant.axis)})`
+                            : `${L(NOUN[dominant.axis]).charAt(0).toUpperCase() + L(NOUN[dominant.axis]).slice(1)} (${vsTypical(dominant.axis)})`)
                     : null,
                 dominantAxis: dominant.axis,
                 dominantNotable: dominant.dev >= NOTABLE,
                 weakestAxis: weakest.axis,
                 weakestNotable: (weakest.axis !== dominant.axis && weakest.dev <= -NOTABLE),
+                comparedToTypical: hasNorms,
+                devs: Object.fromEntries(Object.keys(axes).map(a => [a, devOf(a)])),
+                backPaceDev,
                 stats: {
                     pace: Math.round(axes.pace),
                     power: Math.round(axes.power),
@@ -10690,18 +10724,22 @@
             if (identity.dominantNotable && identity.dominantAxis === 'pace') buildUp = 'counter';
             else if (identity.dominantNotable && identity.dominantAxis === 'buildup') buildUp = 'possession';
 
-            let approach, lineHeight;
-            if (identity.weakestNotable && identity.weakestAxis === 'defense') {
-                approach = 'deep'; lineHeight = 35;
-            } else if (identity.dominantNotable && identity.dominantAxis === 'defense') {
-                approach = 'aggressive'; lineHeight = 88;
-            } else if (identity.dominantNotable && identity.dominantAxis === 'pace') {
-                approach = 'high'; lineHeight = 78;
-            } else {
-                approach = 'balanced'; lineHeight = 55;
-            }
+            let approach;
+            if (identity.weakestNotable && identity.weakestAxis === 'defense') approach = 'deep';
+            else if (identity.dominantNotable && identity.dominantAxis === 'defense') approach = 'aggressive';
+            else if (identity.dominantNotable && identity.dominantAxis === 'pace') approach = 'high';
+            else approach = 'balanced';
+            // Line height: the approach's usual value, moved up for a back
+            // line that's quicker than typical for its positions (more room
+            // to recover) and down for a slower one — kept inside the
+            // approach's own range.
+            const LINE_BASE = { deep: 35, balanced: 55, high: 78, aggressive: 88 };
+            const LINE_RANGE = { deep: [28, 42], balanced: [48, 62], high: [70, 86], aggressive: [84, 95] };
+            const paceDev = typeof identity.backPaceDev === 'number' ? identity.backPaceDev : 0;
+            const lineAdj = Math.max(-8, Math.min(8, Math.round(paceDev * 1.5)));
+            const lineHeight = Math.max(LINE_RANGE[approach][0], Math.min(LINE_RANGE[approach][1], LINE_BASE[approach] + lineAdj));
 
-            const BUILDUP_LABELS = { balanced: { en: 'Balanced', ar: 'متوازن' }, counter: { en: 'Counter', ar: 'مرتد سريع' }, possession: { en: 'Possession', ar: 'استحواذ' } };
+            const BUILDUP_LABELS = { balanced: { en: 'Balanced', ar: 'متوازن' }, counter: { en: 'Counter', ar: 'مرتد سريع' }, possession: { en: 'Short Passing', ar: 'تمرير قصير' } };
             const APPROACH_LABELS = { deep: { en: 'Deep', ar: 'عميق' }, balanced: { en: 'Balanced', ar: 'متوازن' }, high: { en: 'High', ar: 'مرتفع' }, aggressive: { en: 'Aggressive', ar: 'هجومي (عالي المخاطر)' } };
             const BUILDUP_WHY = {
                 balanced: { en: 'No single trait dominant enough to force a style — mix short passing with selective forward runs.', ar: 'لا توجد سمة مهيمنة بما يكفي لفرض أسلوب معين — امزج التمرير القصير مع اختيار لحظات الاندفاع للأمام.' },
@@ -10721,7 +10759,11 @@
                 buildUpWhy: isAr ? BUILDUP_WHY[buildUp].ar : BUILDUP_WHY[buildUp].en,
                 approach,
                 approachLabel: isAr ? APPROACH_LABELS[approach].ar : APPROACH_LABELS[approach].en,
-                approachWhy: isAr ? APPROACH_WHY[approach].ar : APPROACH_WHY[approach].en,
+                approachWhy: (isAr ? APPROACH_WHY[approach].ar : APPROACH_WHY[approach].en) + (lineHeight !== LINE_BASE[approach]
+                    ? (isAr
+                        ? ` الخط عند ${lineHeight} بدل ${LINE_BASE[approach]} لأن سرعة خطك الخلفي ${paceDev > 0 ? 'أعلى' : 'أقل'} من المعتاد لهذه المراكز (${paceDev > 0 ? '+' : '−'}${Math.abs(Math.round(paceDev))}).`
+                        : ` Line set to ${lineHeight} instead of ${LINE_BASE[approach]} because your back line is ${paceDev > 0 ? 'quicker' : 'slower'} than typical for these positions (${paceDev > 0 ? '+' : '−'}${Math.abs(Math.round(paceDev))} pace).`)
+                    : ''),
                 lineHeight
             };
         }
