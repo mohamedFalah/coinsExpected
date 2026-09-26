@@ -4388,6 +4388,7 @@
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <button onclick="window.labTestCurrentSquad()" class="px-3 py-1.5 rounded-lg bg-fc-accent text-fc-dark text-xs font-black"><i class="fa-solid fa-shield-halved me-1"></i>${LAB_T('Test my current squad', 'اختبر تشكيلتي الحالية')}</button>
+                        <button onclick="window.labNewCustom()" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-accent/50 text-xs font-black text-fc-accent"><i class="fa-solid fa-plus me-1"></i>${LAB_T('New custom setup', 'إعداد مخصص جديد')}</button>
                         <button onclick="window.labSetView('${labState.view === 'test' ? 'findings' : 'test'}')" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent"><i class="fa-solid ${labState.view === 'test' ? 'fa-chart-simple' : 'fa-flask'} me-1"></i>${labState.view === 'test' ? LAB_T('Findings', 'النتائج') : LAB_T('Back to tests', 'العودة للاختبارات')}</button>
                         <button onclick="window.labExport()" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent"><i class="fa-solid fa-download me-1"></i>${LAB_T('Export backup', 'تصدير نسخة احتياطية')}</button>
                         <label class="px-3 py-1.5 rounded-lg bg-fc-dark border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent cursor-pointer"><i class="fa-solid fa-upload me-1"></i>${LAB_T('Import backup', 'استيراد نسخة احتياطية')}<input type="file" accept="application/json,.json" class="hidden" onchange="window.labImport(this)"></label>
@@ -4423,6 +4424,91 @@
                 <div class="grid sm:grid-cols-2 gap-x-3">${rows}</div>`;
         }
 
+        // Editable setup for CUSTOM tests without a report yet: formation,
+        // Build-Up Style, Defensive Approach, line height and every role /
+        // focus. (A reported custom test is read-only — "Duplicate & edit"
+        // copies it — so a saved report always matches its setup.)
+        function renderLabSetupEditor(test) {
+            const s = test.setup;
+            const slots = formationSlots[s.formation] || [];
+            const sel = 'bg-fc-dark border border-fc-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-fc-accent';
+            const formationOpts = Object.keys(formationSlots).map(f => `<option value="${f}" ${f === s.formation ? 'selected' : ''}>${f}</option>`).join('');
+            const buOpts = Object.keys(BUILD_UP_STYLES).map(k => `<option value="${k}" ${k === s.buildUp ? 'selected' : ''}>${LAB_T(BUILD_UP_STYLES[k].en, BUILD_UP_STYLES[k].ar)}</option>`).join('');
+            const daOpts = Object.keys(DEF_APPROACHES).map(k => `<option value="${k}" ${k === s.approach ? 'selected' : ''}>${LAB_T(DEF_APPROACHES[k].en, DEF_APPROACHES[k].ar)}</option>`).join('');
+            const rows = slots.map((slot, i) => {
+                const cur = s.roles[i] || {};
+                const opts = labRoleOptions(slot.pos).map(o => {
+                    const v = `${o.role}|${o.focus}`;
+                    return `<option value="${escLab(v)}" ${cur.role === o.role && cur.focus === o.focus ? 'selected' : ''}>${escLab(o.role)} · ${escLab(o.focus)}</option>`;
+                }).join('');
+                return `<label class="flex items-center gap-2 text-xs"><span class="w-10 font-black text-gray-400">${slot.pos}</span>
+                    <select class="${sel} flex-1 min-w-0" onchange="window.labEditCustom('role', this.value, ${i})">${opts}</select></label>`;
+            }).join('');
+            return `
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                    <label class="text-[10px] text-gray-500 uppercase">${LAB_T('Formation', 'التشكيل')}<select class="${sel} w-full mt-0.5" onchange="window.labEditCustom('formation', this.value)">${formationOpts}</select></label>
+                    <label class="text-[10px] text-gray-500 uppercase">${LAB_T('Build-Up Style', 'أسلوب البناء')}<select class="${sel} w-full mt-0.5" onchange="window.labEditCustom('buildUp', this.value)">${buOpts}</select></label>
+                    <label class="text-[10px] text-gray-500 uppercase">${LAB_T('Defensive Approach', 'النهج الدفاعي')}<select class="${sel} w-full mt-0.5" onchange="window.labEditCustom('approach', this.value)">${daOpts}</select></label>
+                    <label class="text-[10px] text-gray-500 uppercase">${LAB_T('Line height', 'ارتفاع الخط')}<input type="number" min="1" max="100" value="${s.lineHeight}" class="${sel} w-full mt-0.5" onchange="window.labEditCustom('lineHeight', this.value)"></label>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-x-3 gap-y-1.5">${rows}</div>
+                <p class="text-[10px] text-gray-500 mt-2">${LAB_T('Set this to exactly what you have in the game, then fill in the report below.', 'اضبط هذا تماماً كما هو في اللعبة، ثم املأ التقرير بالأسفل.')}</p>`;
+        }
+        // A custom setup is locked once ITS OWN report is saved. Copies made
+        // with New / Duplicate stay editable even while identical to a
+        // reported setup (the report was saved from another test).
+        function labIsLocked(t) {
+            const r = t && loadTacticsLab().reports[t.signature];
+            return !!r && (r.testId === t.id || (!r.testId && !t.isCopy));
+        }
+        function labCurrentCustom() {
+            const lab = loadTacticsLab();
+            return (lab.custom || {})[labState.testId] || null;
+        }
+        window.labEditCustom = function(field, value, slotIdx) {
+            const lab = loadTacticsLab();
+            const t = labCurrentCustom();
+            if (!t || labIsLocked(t)) return;
+            const s = t.setup;
+            if (field === 'formation' && formationSlots[value]) {
+                s.formation = value;
+                s.roles = labBaselineRoles(value);
+            } else if (field === 'buildUp' && BUILD_UP_STYLES[value]) {
+                s.buildUp = value;
+            } else if (field === 'approach' && DEF_APPROACHES[value]) {
+                s.approach = value;
+                s.lineHeight = DEF_APPROACHES[value].line;
+            } else if (field === 'lineHeight') {
+                s.lineHeight = Math.max(1, Math.min(100, parseInt(value, 10) || 50));
+            } else if (field === 'role' && typeof slotIdx === 'number') {
+                const [role, focus] = String(value).split('|');
+                s.roles[slotIdx] = { role, focus };
+            } else return;
+            t.signature = tacticSetupSignature(s);
+            t.label = LAB_T(`Custom · ${s.formation} · ${BUILD_UP_STYLES[s.buildUp].en} · ${DEF_APPROACHES[s.approach].en} ${s.lineHeight}`, `مخصص · ${s.formation} · ${BUILD_UP_STYLES[s.buildUp].ar} · ${DEF_APPROACHES[s.approach].ar} ${s.lineHeight}`);
+            saveTacticsLab();
+            window.renderTacticsLab();
+        };
+        function labAddCustom(setup) {
+            const lab = loadTacticsLab();
+            lab.custom = lab.custom || {};
+            const id = 'custom#' + Date.now() + Math.floor(Math.random() * 1000);
+            const t = { id, kind: 'custom', essential: true, isCopy: true, setup, signature: tacticSetupSignature(setup),
+                label: LAB_T(`Custom · ${setup.formation} · ${BUILD_UP_STYLES[setup.buildUp].en} · ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}`, `مخصص · ${setup.formation} · ${BUILD_UP_STYLES[setup.buildUp].ar} · ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}`) };
+            lab.custom[id] = t;
+            saveTacticsLab();
+            labState.formation = '__custom'; labState.testId = id; labState.view = 'test';
+            window.renderTacticsLab();
+        }
+        window.labNewCustom = function() {
+            labAddCustom({ formation: '4-2-3-1', buildUp: 'balanced', approach: 'balanced', lineHeight: 50, roles: labBaselineRoles('4-2-3-1') });
+        };
+        window.labDuplicateCustom = function() {
+            const t = labCurrentCustom() || labTestsFor(labState.formation).find(x => x.id === labState.testId);
+            if (!t) return;
+            labAddCustom(JSON.parse(JSON.stringify(t.setup)));
+        };
+
         function renderLabTestCard(test) {
             if (!test) return `<div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-6 text-sm text-gray-400">${LAB_T('Pick a test on the left.', 'اختر اختباراً من القائمة.')}</div>`;
             const lab = loadTacticsLab();
@@ -4444,8 +4530,13 @@
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${rep ? 'bg-green-500/15 text-green-400' : lab.skipped[test.id] ? 'bg-gray-500/15 text-gray-400' : 'bg-fc-gold/15 text-fc-gold'}">${rep ? LAB_T('Reported', 'تم الإبلاغ') : lab.skipped[test.id] ? LAB_T('Skipped', 'تم التخطي') : LAB_T('Waiting for your report', 'بانتظار تقريرك')}</span>
                     </div>
                     <div>
-                        <p class="text-[11px] text-gray-500 mb-1">${LAB_T('1. Set this up in the game (Team Tactics → formation, settings and every role):', '1. اضبط هذا في اللعبة (تكتيكات الفريق ← التشكيل والإعدادات وكل الأدوار):')}</p>
-                        ${renderLabSetupTable(test)}
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <p class="text-[11px] text-gray-500">${test.kind === 'custom' && !labIsLocked(test)
+                                ? LAB_T('1. Your setup — change anything to match the game exactly:', '1. إعدادك — غيّر أي شيء ليطابق اللعبة تماماً:')
+                                : LAB_T('1. Set this up in the game (Team Tactics → formation, settings and every role):', '1. اضبط هذا في اللعبة (تكتيكات الفريق ← التشكيل والإعدادات وكل الأدوار):')}</p>
+                            <button onclick="window.labDuplicateCustom()" class="text-[10px] font-bold text-fc-accent hover:underline"><i class="fa-regular fa-copy me-1"></i>${LAB_T('Duplicate & edit', 'انسخ وعدّل')}</button>
+                        </div>
+                        ${test.kind === 'custom' && !labIsLocked(test) ? renderLabSetupEditor(test) : renderLabSetupTable(test)}
                     </div>
                     <div class="grid gap-4 md:grid-cols-[210px_1fr]">
                         <div class="flex flex-col items-center gap-2">
