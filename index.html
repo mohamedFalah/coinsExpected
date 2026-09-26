@@ -524,6 +524,8 @@
                         </button>
                     </div>
                 </div>
+                <!-- Pool-mode banner (updatePoolModeBanner) -->
+                <div id="pool-mode-banner" class="hidden flex flex-wrap items-center gap-2 bg-fc-accent/10 border border-fc-accent/30 rounded-xl px-3 py-2 mt-3"></div>
 
                 <!-- Header (label) is its own full-width line above the
                      content, not a flex-wrap item competing for space next
@@ -1207,7 +1209,7 @@
 
     <!-- Player Pool Build Modal -->
     <div id="player-pool-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="window.closePlayerPoolModal()">
-        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full max-h-[85vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-2xl w-full max-h-[90vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
             <button onclick="window.closePlayerPoolModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
                 <i class="fa-solid fa-xmark"></i>
             </button>
@@ -1228,6 +1230,16 @@
                     <div id="pool-search-results" class="space-y-2"></div>
                 </div>
 
+                <!-- Use-pool switch: ON = every build uses only the pool
+                     (owned, no budget); OFF = pool stays saved but ignored. -->
+                <label class="flex items-start gap-3 bg-fc-dark/70 border border-fc-border rounded-xl p-3 cursor-pointer">
+                    <input type="checkbox" id="pool-active-toggle" onchange="window.setPoolModeActive(this.checked)" class="mt-0.5 accent-teal-400">
+                    <span class="text-xs text-gray-300">
+                        <span class="font-bold text-white" data-i18n="poolUseToggle">Use this pool when building</span><br>
+                        <span class="text-gray-500" data-i18n="poolUseToggleHint">On: Optimize, Regenerate and formation changes use only these players (owned — no budget). Off: the pool stays saved; squads are built from the whole database.</span>
+                    </span>
+                </label>
+
                 <div class="space-y-2 pt-2 border-t border-fc-border">
                     <div class="flex items-center justify-between">
                         <span class="text-xs font-bold text-gray-400 uppercase tracking-wider" data-i18n="poolStackLabel">Player Pool</span>
@@ -1246,6 +1258,10 @@
                         <span data-i18n="poolClearBtn">Clear Pool</span>
                     </button>
                 </div>
+
+                <!-- Every strong combination found in the pool, across all
+                     formations (renderPoolResults). -->
+                <div id="pool-results" class="space-y-2 pt-2 border-t border-fc-border"></div>
             </div>
         </div>
     </div>
@@ -1500,11 +1516,13 @@
                 tradeoffActive: "Active",
                 buildFromPoolBtn: "BUILD FROM POOL",
                 poolModalTitle: "Build From Player Pool",
-                poolModalDesc: "Add 11 or more players, then hit Build — the best formation and starting XI will be picked from the pool automatically. Any player you queue here (even before reaching 11) is also favored by Optimize and Regenerate for any slot they suit.",
+                poolUseToggle: "Use this pool when building",
+                poolUseToggleHint: "On: Optimize, Regenerate and formation changes use only these players (owned — no budget). Off: the pool stays saved; squads are built from the whole database.",
+                poolModalDesc: "Add players you own once — they stay saved. FIND ALL SQUADS searches every formation for the strongest chemistry-aware combinations your pool can make, and lists them all.",
                 poolSearchLabel: "Search Any Player",
                 poolStackLabel: "Player Pool",
                 poolEmptyStack: "No players added yet. Search above and add at least 11.",
-                poolBuildBtn: "BUILD SQUAD",
+                poolBuildBtn: "FIND ALL SQUADS",
                 poolClearBtn: "Clear Pool",
                 nextBestUpgrade: "NEXT BEST UPGRADE",
                 optimizeFirst: "Optimize a squad first to calculate the highest-impact player upgrade.",
@@ -1713,11 +1731,13 @@
                 tradeoffActive: "الحالية",
                 buildFromPoolBtn: "بناء من مجموعة لاعبين",
                 poolModalTitle: "بناء التشكيلة من مجموعة لاعبين",
-                poolModalDesc: "أضف 11 لاعبًا أو أكثر، ثم اضغط بناء — سيتم اختيار أفضل تشكيلة وأفضل تشكيلة أساسية من المجموعة تلقائيًا. أي لاعب تضيفه هنا (حتى قبل الوصول إلى 11) سيتم تفضيله أيضًا من قِبل زرّي (تحسين) و(إعادة توليد) في أي مركز يناسبه.",
+                poolUseToggle: "استخدم هذه المجموعة عند البناء",
+                poolUseToggleHint: "تشغيل: التحسين وإعادة التوليد وتغيير الخطة تستخدم هؤلاء اللاعبين فقط (مملوكون — بلا ميزانية). إيقاف: تبقى المجموعة محفوظة، والبناء من قاعدة البيانات كاملة.",
+                poolModalDesc: "أضف اللاعبين الذين تملكهم مرة واحدة — يبقون محفوظين. «اعثر على كل التشكيلات» يبحث في كل الخطط عن أقوى التركيبات مع مراعاة الكيمياء، ويعرضها كلها.",
                 poolSearchLabel: "ابحث عن أي لاعب",
                 poolStackLabel: "مجموعة اللاعبين",
                 poolEmptyStack: "لم تتم إضافة أي لاعب بعد. ابحث أعلاه وأضف 11 لاعبًا على الأقل.",
-                poolBuildBtn: "ابنِ التشكيلة",
+                poolBuildBtn: "اعثر على كل التشكيلات",
                 poolClearBtn: "تفريغ المجموعة",
                 nextBestUpgrade: "الترقية التالية المقترحة",
                 optimizeFirst: "قم بتحسين التشكيلة أولاً لحساب أفضل ترقية مؤثرة للاعب.",
@@ -5482,6 +5502,12 @@
             // with { requirePriced: false } to opt out of the price filter
             // (there's no squad "candidate pool" concept to dedupe there
             // either, so no identity filtering applies in that tab at all).
+            // POOL MODE: every building path draws only from the saved
+            // pool (owned players — unpriced cards included). Reference
+            // lookups pass { ignorePool: true } to keep the full database.
+            if (!(options && options.ignorePool) && typeof isPoolModeActive === 'function' && isPoolModeActive()) {
+                return resolvedPoolPlayers();
+            }
             const requirePriced = !options || options.requirePriced !== false;
             const base = requirePriced
                 ? fc27Database.filter(p => typeof p.price === 'number' && p.price > 0)
@@ -5498,6 +5524,23 @@
         // of, so normalized name is the practical identity: used everywhere
         // a squad must never contain the same person twice, even via two
         // different cards.
+        // Search text folding: accents/diacritics removed and special
+        // letters mapped, so "diaz" finds "Díaz", "odegaard" finds
+        // "Ødegaard", "gundogan" finds "Gündoğan". A multi-word query also
+        // matches when every word appears somewhere in the name.
+        function foldSearchText(str) {
+            return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[øØ]/g, 'o').replace(/ß/g, 'ss').replace(/[æÆ]/g, 'ae').replace(/[đĐ]/g, 'd')
+                .replace(/[łŁ]/g, 'l').replace(/ı/g, 'i').toLowerCase().trim();
+        }
+        function nameMatchesQuery(name, query) {
+            const n = foldSearchText(name), q = foldSearchText(query);
+            if (!q) return false;
+            if (n.includes(q)) return true;
+            const words = q.split(/\s+/).filter(Boolean);
+            return words.length > 1 && words.every(w => n.includes(w));
+        }
+
         function playerIdentityKey(player) {
             return player && player.name ? player.name.trim().toLowerCase() : '';
         }
@@ -5513,6 +5556,8 @@
         function effectivePrice(player) {
             if (!player) return 0;
             if (squadState.ownedIds && squadState.ownedIds.has(player.id)) return 0;
+            // Pool players are owned while pool mode is on.
+            if (typeof isPoolModeActive === 'function' && isPoolModeActive() && isPoolPlayer(player)) return 0;
             return player.price;
         }
 
@@ -5612,7 +5657,7 @@
             const styleBaseline = {};
             const styleKeys = ['pac', 'phy', 'pas', 'def', 'sho', 'dri'];
             positions.forEach(pos => {
-                const candidates = getActiveDatabase().filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+                const candidates = getActiveDatabase({ ignorePool: true }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
                 const scores = candidates.map(p => computeKeyAttrFitScore(p, pos)).filter(s => s != null);
                 baseline[pos] = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 
@@ -5829,7 +5874,7 @@
         function computeGeneralPlayerStats() {
             const perPosition = {};
             GENERAL_STATS_POSITIONS.forEach(pos => {
-                const pool = getActiveDatabase({ requirePriced: false }).filter(p =>
+                const pool = getActiveDatabase({ requirePriced: false, ignorePool: true }).filter(p =>
                     (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING && p.att
                 );
                 const stats = {};
@@ -5888,7 +5933,7 @@
         function getPlaystylePrevalence(positions, playstyleName) {
             let dataSample = 0, count = 0;
             positions.forEach(pos => {
-                const pool = getActiveDatabase({ requirePriced: false }).filter(p =>
+                const pool = getActiveDatabase({ requirePriced: false, ignorePool: true }).filter(p =>
                     (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING
                 );
                 const withData = pool.filter(p =>
@@ -6015,7 +6060,7 @@
         // small.
         function getPlaystylePriorityForPosition(pos) {
             const relevant = getRelevantPlaystylesForPosition(pos);
-            const eligiblePool = getActiveDatabase({ requirePriced: false }).filter(p =>
+            const eligiblePool = getActiveDatabase({ requirePriced: false, ignorePool: true }).filter(p =>
                 (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING
             );
             if (relevant.length === 0 || eligiblePool.length === 0) {
@@ -7978,6 +8023,7 @@
         }
 
         function runSquadOptimizerImpl() {
+            if (typeof isPoolModeActive === 'function' && isPoolModeActive() && poolOptimizeCurrentFormation(false)) return;
             snapshotSquadForUndo();
             // Cleared up front so every early-return path below (manual
             // budget mode) leaves no stale animation data behind for
@@ -8538,6 +8584,7 @@
         }
 
         function regenerateSquadImpl() {
+            if (typeof isPoolModeActive === 'function' && isPoolModeActive() && poolOptimizeCurrentFormation(true)) return;
             // Same reasoning as runSquadOptimizerImpl: clear stale
             // animation data up front so every early-return path here
             // (manual mode no-op, "no more unique squads") leaves nothing
@@ -9266,7 +9313,7 @@
             if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
 
             const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
-            const matches = getActiveDatabase().filter(p => p.name.toLowerCase().includes(q) && !usedIds.has(playerIdentityKey(p))).slice(0, 8);
+            const matches = getActiveDatabase().filter(p => nameMatchesQuery(p.name, q) && !usedIds.has(playerIdentityKey(p))).slice(0, 8);
             if (matches.length === 0) {
                 resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
                 return;
@@ -9367,7 +9414,7 @@
             if (roleSelect) { roleSelect.innerHTML = ''; roleSelect.disabled = true; }
             if (clearBtn) clearBtn.classList.add('hidden');
 
-            const matches = getActiveDatabase({ requirePriced: false }).filter(p => p.name.toLowerCase().includes(q));
+            const matches = getActiveDatabase({ requirePriced: false, ignorePool: true }).filter(p => nameMatchesQuery(p.name, q));
             playerSearchState = { results: matches, page: 0, renderItem: nameSearchResultHtml };
             renderPlayerSearchPage();
         };
@@ -9476,7 +9523,7 @@
             const maxPrice = maxPriceInput ? parseInt(maxPriceInput.value, 10) : NaN;
             const hasMaxPrice = !isNaN(maxPrice) && maxPrice > 0;
 
-            let pool = getActiveDatabase({ requirePriced: false }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+            let pool = getActiveDatabase({ requirePriced: false, ignorePool: true }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
             if (hasMaxPrice) pool = pool.filter(p => (p.price || 0) <= maxPrice);
 
             // "Above average only": the same rated-74+ database baseline
@@ -9515,7 +9562,7 @@
         // names containing quotes/apostrophes can't break the onclick
         // attribute — same safe pattern as addPlayerToSlot('${id}').
         window.openStandalonePlayerModal = function(id) {
-            const player = getActiveDatabase({ requirePriced: false }).find(p => p.id === id) || fc27Database.find(p => p.id === id);
+            const player = getActiveDatabase({ requirePriced: false, ignorePool: true }).find(p => p.id === id) || fc27Database.find(p => p.id === id);
             if (!player) return;
             window.openPlayerModal(player, null, undefined, false, true);
         };
@@ -9576,7 +9623,82 @@
         // Kept as an array (not a Set) so insertion order is stable for the
         // stack UI; de-duplicated by playerIdentityKey so the same real
         // player can't be queued twice via two different cards.
-        let playerPool = [];
+        // ===================================================================
+        // PLAYER POOL — saved, switchable, chemistry-aware
+        // ===================================================================
+        // • The pool is SAVED in this browser (localStorage) — add players
+        //   once; they're still there next time.
+        // • "Use pool" switch: ON → every building path (Optimize,
+        //   Regenerate, formation changes, gap-fills, alternatives,
+        //   suggestions) draws ONLY from the pool, via getActiveDatabase(),
+        //   and pool players count as owned (price 0, budget unused).
+        //   OFF → the pool stays saved but is ignored; the whole database
+        //   is used as normal.
+        // • Build analyses the pool across ALL formations and lists every
+        //   strong combination found (the same players can appear in several
+        //   formations), ranked; clicking one applies it.
+        const PLAYER_POOL_KEY = 'fc27_player_pool_v1';
+        // `var` on purpose: getActiveDatabase() (defined much earlier) reads
+        // these, and may run before this line during startup.
+        var playerPool = [];            // player objects (fresh DB copies when available)
+        var playerPoolActive = false;   // "Use pool" switch
+        let poolAnalysis = null;        // { signature, results[], sortBy }
+
+        function savePlayerPool() {
+            try { localStorage.setItem(PLAYER_POOL_KEY, JSON.stringify({ version: 1, active: playerPoolActive, players: playerPool })); } catch (e) { /* storage full/blocked — pool still works this session */ }
+        }
+        function loadPlayerPool() {
+            try {
+                const data = JSON.parse(localStorage.getItem(PLAYER_POOL_KEY) || 'null');
+                if (data && data.version === 1 && Array.isArray(data.players)) {
+                    playerPool = data.players.filter(p => p && p.id && p.name);
+                    playerPoolActive = !!data.active;
+                }
+            } catch (e) { /* ignore corrupt storage */ }
+        }
+        loadPlayerPool();
+
+        // Pool entries are refreshed from the live database by id (prices,
+        // ratings, PlayStyles update on each sync); the saved snapshot is
+        // the fallback if a card isn't in the current database.
+        let poolResolveCache = { db: null, key: '', list: [] };
+        function resolvedPoolPlayers() {
+            const key = playerPool.map(p => p.id).join(',');
+            if (poolResolveCache.db === fc27Database && poolResolveCache.key === key) return poolResolveCache.list;
+            const byId = new Map(fc27Database.map(p => [p.id, p]));
+            const list = playerPool.map(p => byId.get(p.id) || p);
+            poolResolveCache = { db: fc27Database, key, list };
+            return list;
+        }
+        function isPoolModeActive() { return !!playerPoolActive && Array.isArray(playerPool) && playerPool.length > 0; }
+        function isPoolPlayer(player) { return !!player && playerPool.some(p => p.id === player.id); }
+
+        function updatePoolModeBanner() {
+            const banner = document.getElementById('pool-mode-banner');
+            if (!banner) return;
+            const isAr = currentLanguage === 'ar';
+            if (!isPoolModeActive()) { banner.classList.add('hidden'); return; }
+            banner.classList.remove('hidden');
+            banner.innerHTML = `
+                <i class="fa-solid fa-layer-group text-fc-accent"></i>
+                <span class="text-xs text-gray-200">${isAr
+                    ? `وضع المجموعة: البناء فقط من <b>${playerPool.length}</b> لاعباً محفوظاً (مملوكين — الميزانية غير مستخدمة).`
+                    : `Pool mode: building only from your <b>${playerPool.length}</b> saved players (owned — budget not used).`}</span>
+                <button onclick="window.openPlayerPoolModal()" class="ms-auto text-[11px] font-bold text-fc-accent hover:underline">${isAr ? 'النتائج والمجموعة' : 'Pool & results'}</button>
+                <button onclick="window.setPoolModeActive(false)" class="text-[11px] font-bold text-gray-400 hover:text-white">${isAr ? 'إيقاف' : 'Turn off'}</button>`;
+        }
+
+        window.setPoolModeActive = function(on) {
+            playerPoolActive = !!on;
+            savePlayerPool();
+            updatePoolModeBanner();
+            renderPlayerPoolPanel();
+            if (typeof computeSlotAlternatives === 'function' && Object.keys(squadState.selectedXI || {}).length) {
+                squadState.totalCost = Object.values(squadState.selectedXI).reduce((s, p) => s + effectivePrice(p), 0);
+                computeSlotAlternatives();
+                renderFootballPitch(); renderSquadSummary();
+            }
+        };
 
         window.openPlayerPoolModal = function() {
             const modal = document.getElementById('player-pool-modal');
@@ -9596,18 +9718,17 @@
 
         function poolStackItemHtml(player) {
             const isAr = currentLanguage === 'ar';
-            const coinLabel = isAr ? 'ك' : 'c';
             const metaTag = typeof player.meta === 'number' ? ` · MR ${player.meta.toFixed(1)}` : '';
             return `
                 <div class="w-full flex items-center justify-between gap-2 bg-fc-dark border border-fc-border rounded-xl p-2 text-left rtl:text-right">
                     <div class="flex items-center gap-2 min-w-0">
-                        <img src="${player.photo}" class="w-8 h-8 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                        <img src="${player.photo}" class="w-8 h-8 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/64x64/111827/9ca3af?text=${encodeURIComponent((player.name || '?').charAt(0))}'">
                         <div class="min-w-0">
                             <div class="text-xs font-bold text-white truncate">${player.name}</div>
-                            <div class="text-[10px] text-gray-400">${player.rating} OVR${metaTag} · ${player.pos}${player.alt && player.alt.length ? ` (${player.alt.join('/')})` : ''}${player.price ? ` · ${player.price.toLocaleString()}${coinLabel}` : ''}</div>
+                            <div class="text-[10px] text-gray-400">${player.rating} OVR${metaTag} · ${player.pos}${player.alt && player.alt.length ? ` (${player.alt.join(', ')})` : ''}</div>
                         </div>
                     </div>
-                    <button onclick="window.removePlayerFromPool('${player.id}')" class="shrink-0 w-7 h-7 rounded-lg bg-fc-card hover:bg-red-500/20 border border-fc-border hover:border-red-500/50 text-gray-400 hover:text-red-400 flex items-center justify-center transition-all">
+                    <button onclick="window.removePlayerFromPool('${player.id}')" class="shrink-0 w-7 h-7 rounded-lg bg-fc-card hover:bg-red-500/20 border border-fc-border hover:border-red-500/50 text-gray-400 hover:text-red-400" title="${isAr ? 'إزالة' : 'Remove'}">
                         <i class="fa-solid fa-xmark text-xs"></i>
                     </button>
                 </div>
@@ -9619,10 +9740,12 @@
             const stackContainer = document.getElementById('pool-stack-list');
             const countLabel = document.getElementById('pool-count-label');
             const buildBtn = document.getElementById('pool-build-btn');
+            const toggle = document.getElementById('pool-active-toggle');
+            if (toggle) toggle.checked = playerPoolActive;
             if (countLabel) countLabel.textContent = `${playerPool.length} / 11+`;
             if (stackContainer) {
                 stackContainer.innerHTML = playerPool.length > 0
-                    ? playerPool.map(poolStackItemHtml).join('')
+                    ? resolvedPoolPlayers().slice().sort((a, b) => (b.rating || 0) - (a.rating || 0)).map(poolStackItemHtml).join('')
                     : `<p class="text-xs text-gray-500 italic" data-i18n="poolEmptyStack">${i18n[currentLanguage].poolEmptyStack}</p>`;
             }
             if (buildBtn) {
@@ -9631,16 +9754,22 @@
                 buildBtn.classList.toggle('opacity-50', !ready);
                 buildBtn.classList.toggle('cursor-not-allowed', !ready);
             }
+            renderPoolResults();
+            updatePoolModeBanner();
         }
 
         window.searchPoolCandidates = function(query) {
             const resultsContainer = document.getElementById('pool-search-results');
             if (!resultsContainer) return;
-            const q = query.trim().toLowerCase();
+            const q = query.trim();
             if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
 
             const pooledIds = new Set(playerPool.map(p => playerIdentityKey(p)));
-            const matches = getActiveDatabase({ requirePriced: false }).filter(p => p.name.toLowerCase().includes(q) && !pooledIds.has(playerIdentityKey(p))).slice(0, 8);
+            // Full database (never the pool itself) — accent-insensitive.
+            const matches = getActiveDatabase({ requirePriced: false, ignorePool: true })
+                .filter(p => nameMatchesQuery(p.name, q) && !pooledIds.has(playerIdentityKey(p)))
+                .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+                .slice(0, 20);
             if (matches.length === 0) {
                 resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
                 return;
@@ -9650,9 +9779,9 @@
             resultsContainer.innerHTML = matches.map(p => {
                 const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
                 return `
-                    <button onclick="window.addPlayerToPool('${p.id}')" class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border rounded-xl p-2.5 text-left rtl:text-right transition-all">
+                    <button onclick="window.addPlayerToPool('${p.id}')" class="w-full flex items-center justify-between gap-2 bg-fc-dark hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-2 text-left rtl:text-right transition-all">
                         <div class="flex items-center gap-2 min-w-0">
-                            <img src="${p.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                            <img src="${p.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/64x64/111827/9ca3af?text=${encodeURIComponent((p.name || '?').charAt(0))}'">
                             <div class="min-w-0">
                                 <div class="text-xs font-bold text-white truncate">${p.name}</div>
                                 <div class="text-[10px] text-gray-400">${p.rating} OVR${metaTag} · ${p.pos}${p.price ? ` · ${p.price.toLocaleString()}${coinLabel}` : ''}</div>
@@ -9669,6 +9798,8 @@
             if (!player) return;
             if (playerPool.some(p => playerIdentityKey(p) === playerIdentityKey(player))) return;
             playerPool.push(player);
+            poolAnalysis = null;
+            savePlayerPool();
             const searchInput = document.getElementById('pool-search-input');
             renderPlayerPoolPanel();
             if (searchInput) window.searchPoolCandidates(searchInput.value);
@@ -9676,40 +9807,30 @@
 
         window.removePlayerFromPool = function(playerId) {
             playerPool = playerPool.filter(p => p.id !== playerId);
+            poolAnalysis = null;
+            savePlayerPool();
             renderPlayerPoolPanel();
             const searchInput = document.getElementById('pool-search-input');
             if (searchInput && searchInput.value.trim().length >= 2) window.searchPoolCandidates(searchInput.value);
         };
 
         window.clearPlayerPool = function() {
+            if (playerPool.length && !confirm(currentLanguage === 'ar' ? 'مسح كل لاعبي المجموعة المحفوظة؟' : 'Remove every player from your saved pool?')) return;
             playerPool = [];
+            poolAnalysis = null;
+            savePlayerPool();
             renderPlayerPoolPanel();
             document.getElementById('pool-search-results').innerHTML = '';
         };
 
-        // Greedy global-max-weight assignment: repeatedly grab the single
-        // best remaining (slot, player) pairing by calculatePlayerScore
-        // among everyone still eligible (real or alt position), remove
-        // both from contention, and repeat. This mirrors the same
-        // exact-then-alt greedy the rest of the app's optimizer already
-        // uses (see runSquadOptimizerImpl) rather than a from-scratch
-        // matching approach, so results feel consistent with how Optimize
-        // fills a squad elsewhere. Any slot that still has no eligible
-        // pool player left after that (pool too thin at that position)
-        // falls back to a second pass that allows ANY unused pool player
-        // regardless of position, so a complete XI is always produced as
-        // long as the pool has >= 11 players — those out-of-position fills
-        // will simply show up with weak/zero chemistry on the pitch, same
-        // as manually forcing a player out of position anywhere else.
+        // Greedy best-fit (kept as one of the search's starting points).
         function assignPoolToFormation(pool, slots) {
             const assigned = new Array(slots.length).fill(null);
             const usedPlayerIdx = new Set();
             const filledSlot = new Array(slots.length).fill(false);
             let totalScore = 0;
-
-            // Pass 1: real-or-alt position matches only.
             while (true) {
-                let best = null; // { slotIdx, poolIdx, score }
+                let best = null;
                 slots.forEach((slot, slotIdx) => {
                     if (filledSlot[slotIdx]) return;
                     pool.forEach((player, poolIdx) => {
@@ -9726,19 +9847,13 @@
                 usedPlayerIdx.add(best.poolIdx);
                 totalScore += best.score;
             }
-
-            // Pass 2: fallback fill for any slot still empty, using
-            // whichever remaining pool player scores best there even
-            // out of position (heavily penalized by calculatePlayerScore's
-            // own fit logic already, so this naturally prefers the least-
-            // bad fit rather than an arbitrary leftover).
             while (true) {
                 let best = null;
                 slots.forEach((slot, slotIdx) => {
                     if (filledSlot[slotIdx]) return;
                     pool.forEach((player, poolIdx) => {
                         if (usedPlayerIdx.has(poolIdx)) return;
-                        const score = calculatePlayerScore(player, slot.pos) - 300; // out-of-position penalty for ranking only
+                        const score = calculatePlayerScore(player, slot.pos) - 300;
                         if (!best || score > best.score) best = { slotIdx, poolIdx, score };
                     });
                 });
@@ -9748,77 +9863,266 @@
                 usedPlayerIdx.add(best.poolIdx);
                 totalScore += best.score;
             }
-
-            const filledCount = filledSlot.filter(Boolean).length;
-            return { assigned, totalScore, filledCount };
+            return { assigned, totalScore, filledCount: filledSlot.filter(Boolean).length };
         }
 
-        window.buildFromPlayerPool = function() {
-            if (playerPool.length < 11) return;
-            snapshotSquadForUndo();
+        // ---------------------------------------------------------------
+        // POOL SEARCH — strongest combinations for one formation
+        // ---------------------------------------------------------------
+        // Same value the main optimizer ranks attempts by:
+        //   overall   = Σ position-fit score + chemistry × CHEM_VALUE_WEIGHT
+        //   chemFirst = chemistry dominates, position fit breaks ties
+        // Starts: plain best-fit, club/league/nation-seeded builds around
+        // the pool's biggest groups, and randomised builds. From each start
+        // a local search keeps applying the single best improving move
+        // (bring in an unused pool player, or swap two players' slots) until
+        // nothing improves. Every distinct result is kept. `fixed` pins slots
+        // (locked players) so they're never moved.
+        const POOL_OOP_PENALTY = 300;
+        function analysePoolFormation(formation, players, opts) {
+            const o = Object.assign({ fixed: {}, randomStarts: 4 }, opts || {});
+            const slots = formationSlots[formation];
+            const prevFormation = squadState.formation;
+            squadState.formation = formation; // calculateSquadChemistry reads the active formation
+            try {
+                const scoreCache = new Map();
+                const eligibleFor = (p, pos) => p.pos === pos || (p.alt && p.alt.includes(pos));
+                const fit = (p, pos) => {
+                    const k = p.id + '|' + pos;
+                    if (!scoreCache.has(k)) scoreCache.set(k, calculatePlayerScore(p, pos) - (eligibleFor(p, pos) ? 0 : POOL_OOP_PENALTY));
+                    return scoreCache.get(k);
+                };
+                const evaluate = xi => {
+                    const chem = calculateSquadChemistry(xi);
+                    let quality = 0;
+                    slots.forEach((s, i) => { if (xi[i]) quality += fit(xi[i], s.pos); });
+                    return { quality, chem: chem.total, overall: quality + chem.total * CHEM_VALUE_WEIGHT, chemFirst: chem.total * 100000 + quality };
+                };
+                const fixedIdx = new Set(Object.keys(o.fixed).map(Number));
+                const fixedIds = new Set(Object.values(o.fixed).map(p => p.id));
+                const free = players.filter(p => !fixedIds.has(p.id));
+                // candidates per slot: eligible players; if none, anyone (out of position)
+                const cands = slots.map(s => { const e = free.filter(p => eligibleFor(p, s.pos)); return e.length ? e : free; });
 
-            let bestFormation = null, bestResult = null;
-            Object.keys(formationSlots).forEach(formKey => {
-                const result = assignPoolToFormation(playerPool, formationSlots[formKey]);
-                // Prefer a fully-filled XI over a higher-scoring partial one
-                // — an incomplete squad isn't a usable answer no matter how
-                // good the players who did get placed are.
-                if (!bestResult ||
-                    result.filledCount > bestResult.filledCount ||
-                    (result.filledCount === bestResult.filledCount && result.totalScore > bestResult.totalScore)) {
-                    bestResult = result;
-                    bestFormation = formKey;
+                const greedy = (bonus, randomTop) => {
+                    const xi = { ...o.fixed }; const used = new Set(fixedIds);
+                    const order = slots.map((s, i) => i).filter(i => !fixedIdx.has(i)).sort((a, b) => cands[a].length - cands[b].length);
+                    order.forEach(i => {
+                        const opts2 = cands[i].filter(p => !used.has(p.id)).map(p => ({ p, v: fit(p, slots[i].pos) + (bonus ? bonus(p) : 0) })).sort((a, b) => b.v - a.v);
+                        const pool2 = opts2.length ? opts2 : free.filter(p => !used.has(p.id)).map(p => ({ p, v: fit(p, slots[i].pos) }));
+                        if (!pool2.length) return;
+                        const pick = randomTop ? pool2[Math.floor(Math.random() * Math.min(randomTop, pool2.length))] : pool2[0];
+                        xi[i] = pick.p; used.add(pick.p.id);
+                    });
+                    return xi;
+                };
+                const localSearch = (start, key) => {
+                    let xi = { ...start }; let cur = evaluate(xi);
+                    for (let round = 0; round < 40; round++) {
+                        const used = new Set(Object.values(xi).map(p => p.id));
+                        let best = null;
+                        slots.forEach((s, i) => {
+                            if (fixedIdx.has(i)) return;
+                            cands[i].forEach(p => {
+                                if (used.has(p.id)) return;
+                                const t = { ...xi, [i]: p }; const e = evaluate(t);
+                                if (e[key] > cur[key] + 1e-6 && (!best || e[key] > best.e[key])) best = { t, e };
+                            });
+                            for (let j = i + 1; j < slots.length; j++) {
+                                if (fixedIdx.has(j) || !xi[i] || !xi[j]) continue;
+                                if (!eligibleFor(xi[i], slots[j].pos) || !eligibleFor(xi[j], slots[i].pos)) continue;
+                                const t = { ...xi, [i]: xi[j], [j]: xi[i] }; const e = evaluate(t);
+                                if (e[key] > cur[key] + 1e-6 && (!best || e[key] > best.e[key])) best = { t, e };
+                            }
+                        });
+                        if (!best) break;
+                        xi = best.t; cur = best.e;
+                    }
+                    return { xi, ...cur };
+                };
+
+                const starts = [greedy(null, 0)];
+                // chemistry-seeded starts around the pool's biggest groups
+                ['clubId', 'leagueId', 'nationId'].forEach(field => {
+                    const counts = {};
+                    free.forEach(p => { if (p[field] != null) counts[p[field]] = (counts[p[field]] || 0) + 1; });
+                    Object.entries(counts).filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]).slice(0, 2)
+                        .forEach(([val]) => starts.push(greedy(p => (String(p[field]) === val ? 60 : 0), 0)));
+                });
+                for (let r = 0; r < o.randomStarts; r++) starts.push(greedy(null, 3));
+
+                const out = new Map();
+                starts.forEach(st => ['overall', 'chemFirst'].forEach(key => {
+                    const res = localSearch(st, key);
+                    const sig = formation + '|' + slots.map((s, i) => res.xi[i] ? res.xi[i].id : '-').join(',');
+                    if (!out.has(sig)) out.set(sig, res);
+                }));
+                return [...out.values()].map(r => {
+                    const ps = slots.map((s, i) => r.xi[i]).filter(Boolean);
+                    const oop = slots.filter((s, i) => r.xi[i] && !eligibleFor(r.xi[i], s.pos)).length;
+                    const metas = ps.filter(p => typeof p.meta === 'number');
+                    return {
+                        formation, xi: r.xi, quality: r.quality, chem: r.chem, overall: r.overall, oop,
+                        filled: ps.length,
+                        avgRating: ps.reduce((s, p) => s + p.rating, 0) / Math.max(1, ps.length),
+                        avgMeta: metas.length ? metas.reduce((s, p) => s + p.meta, 0) / metas.length : null,
+                        ids: ps.map(p => p.id).sort().join(',')
+                    };
+                });
+            } finally {
+                squadState.formation = prevFormation;
+            }
+        }
+
+        function poolSignature() { return playerPool.map(p => p.id).sort().join(',') + '|' + fc27Database.length; }
+
+        // Whole-pool analysis across every formation, one formation per tick
+        // so the page stays responsive; progress shown in the modal.
+        function runPoolAnalysis(done) {
+            const players = resolvedPoolPlayers();
+            const forms = Object.keys(formationSlots);
+            const results = [];
+            let k = 0;
+            const progressEl = document.getElementById('pool-results');
+            const step = () => {
+                if (k < forms.length) {
+                    if (progressEl) progressEl.innerHTML = `<p class="text-xs text-gray-400"><i class="fa-solid fa-spinner fa-spin me-1"></i>${currentLanguage === 'ar' ? `جارٍ تحليل المجموعة… ${forms[k]} (${k + 1}/${forms.length})` : `Analysing your pool… ${forms[k]} (${k + 1}/${forms.length})`}</p>`;
+                    results.push(...analysePoolFormation(forms[k], players));
+                    k++;
+                    setTimeout(step, 0);
+                    return;
                 }
-            });
-            if (!bestFormation) return;
+                const complete = results.filter(r => r.filled === 11);
+                const list = (complete.length ? complete : results).sort((a, b) => b.overall - a.overall);
+                poolAnalysis = { signature: poolSignature(), results: list, sortBy: (poolAnalysis && poolAnalysis.sortBy) || 'overall', cursor: 0 };
+                if (done) done();
+            };
+            step();
+        }
 
-            squadState.formation = bestFormation;
+        const POOL_SORTS = {
+            overall: (a, b) => b.overall - a.overall,
+            chem: (a, b) => (b.chem - a.chem) || (b.overall - a.overall),
+            rating: (a, b) => (b.avgRating - a.avgRating) || (b.overall - a.overall)
+        };
+        window.setPoolSort = function(by) { if (poolAnalysis && POOL_SORTS[by]) { poolAnalysis.sortBy = by; renderPoolResults(); } };
+
+        function renderPoolResults() {
+            const el = document.getElementById('pool-results');
+            if (!el) return;
+            const isAr = currentLanguage === 'ar';
+            if (!poolAnalysis || poolAnalysis.signature !== poolSignature()) { el.innerHTML = ''; return; }
+            const list = poolAnalysis.results.slice().sort(POOL_SORTS[poolAnalysis.sortBy]);
+            const best = poolAnalysis.results[0];
+            const formationsFound = new Set(list.map(r => r.formation)).size;
+            const shown = list.slice(0, 30);
+            const sortBtn = (key, en, ar) => `<button onclick="window.setPoolSort('${key}')" class="px-2 py-1 rounded-lg text-[10px] font-bold ${poolAnalysis.sortBy === key ? 'bg-fc-accent text-fc-dark' : 'bg-fc-dark text-gray-400 border border-fc-border'}">${isAr ? ar : en}</button>`;
+            el.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-bold text-gray-300 uppercase tracking-wider">${isAr ? 'التشكيلات الممكنة' : 'Possible squads'}</span>
+                    <span class="text-[10px] text-gray-500">${isAr ? `${list.length} تشكيلة مميزة عبر ${formationsFound} خطط` : `${list.length} distinct squads across ${formationsFound} formations`}</span>
+                    <div class="ms-auto flex gap-1">${sortBtn('overall', 'Overall', 'الأفضل عموماً')}${sortBtn('chem', 'Chemistry', 'الكيمياء')}${sortBtn('rating', 'Rating', 'التقييم')}</div>
+                </div>
+                <div class="space-y-1 max-h-72 overflow-y-auto hide-scrollbar">
+                    ${shown.map((r, i) => {
+                        const shared = best ? r.ids.split(',').filter(id => best.ids.includes(id)).length : 0;
+                        const idx = poolAnalysis.results.indexOf(r);
+                        return `<button onclick="window.applyPoolResult(${idx})" class="w-full text-left rtl:text-right bg-fc-dark hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl px-3 py-2 transition-all">
+                            <div class="flex items-center gap-2 text-xs">
+                                <span class="w-5 text-gray-500 font-bold">${i + 1}</span>
+                                <span class="font-black text-white">${r.formation}</span>
+                                <span class="text-green-400 font-bold">${isAr ? 'كيمياء' : 'Chem'} ${r.chem}/33</span>
+                                <span class="text-gray-300">${r.avgRating.toFixed(1)} OVR</span>
+                                ${r.avgMeta != null ? `<span class="text-gray-400">MR ${r.avgMeta.toFixed(1)}</span>` : ''}
+                                ${r.oop ? `<span class="text-orange-400">${r.oop} ${isAr ? 'خارج المركز' : 'out of position'}</span>` : ''}
+                                <span class="ms-auto text-[10px] text-gray-500">${r === best ? (isAr ? 'الأفضل' : 'best') : (isAr ? `${shared}/11 مشترك مع الأفضل` : `${shared}/11 shared with best`)}</span>
+                            </div>
+                        </button>`;
+                    }).join('')}
+                </div>
+                <p class="text-[10px] text-gray-500">${isAr ? 'اضغط أي تشكيلة لتطبيقها. «إعادة التوليد» ينتقل للتشكيلة التالية في نفس الخطة.' : 'Click any squad to apply it. Regenerate then steps to the next-best squad in the same formation.'}</p>`;
+        }
+
+        // Puts a pool result on the pitch. Pool players are owned → cost 0;
+        // the budget setting is left untouched (it isn't used in pool mode).
+        function placePoolXI(formation, xi, logLines) {
+            snapshotSquadForUndo();
+            squadState.formation = formation;
             squadState.pitchShapeMode = 'normal';
             squadState.heatZoneSlotIdx = null;
             squadState.selectedXI = {};
+            Object.keys(xi).forEach(i => { if (xi[i]) squadState.selectedXI[i] = xi[i]; });
             squadState.tradeoffOptions = [];
-            bestResult.assigned.forEach((player, idx) => { if (player) squadState.selectedXI[idx] = player; });
-            squadState.lockedIds = new Set();
-            squadState.lockedPlayers = {};
             squadState.totalCost = Object.values(squadState.selectedXI).reduce((sum, p) => sum + effectivePrice(p), 0);
-
-            let totalRating = 0, totalMeta = 0, metaCount = 0, count = 0;
-            Object.values(squadState.selectedXI).forEach(p => {
-                if (p) { totalRating += p.rating; count++; if (typeof p.meta === 'number' && !isNaN(p.meta)) { totalMeta += p.meta; metaCount++; } }
-            });
-            squadState.avgRating = count > 0 ? Math.round(totalRating / count) : 0;
-            squadState.avgMeta = metaCount > 0 ? (totalMeta / metaCount) : null;
+            const ps = Object.values(squadState.selectedXI);
+            squadState.avgRating = ps.length ? Math.round(ps.reduce((s, p) => s + p.rating, 0) / ps.length) : 0;
+            const metas = ps.filter(p => typeof p.meta === 'number');
+            squadState.avgMeta = metas.length ? metas.reduce((s, p) => s + p.meta, 0) / metas.length : null;
             squadState.chemistry = calculateSquadChemistry();
-            squadState.budget = squadState.totalCost + 50000;
             squadState.buildAnimation = null;
             squadState.history = new Set([computeSquadSignature(squadState.selectedXI)]);
             squadState.exhausted = false;
-
-            const isAr = currentLanguage === 'ar';
-            const poolNames = playerPool.map(p => p.name).join(', ');
-            squadState.explanationLog = [
-                isAr
-                    ? `تم البناء من مجموعة ${playerPool.length} لاعب: <span class="text-white font-bold">${poolNames}</span>.`
-                    : `Built from a pool of ${playerPool.length} players: <span class="text-white font-bold">${poolNames}</span>.`,
-                isAr
-                    ? `أفضل تشكيلة لهذه المجموعة كانت <span class="text-fc-gold font-bold">${bestFormation}</span>، مع ملء ${bestResult.filledCount}/11 مركزًا من مباشرة داخل المجموعة.`
-                    : `The best formation for this pool was <span class="text-fc-gold font-bold">${bestFormation}</span>, filling ${bestResult.filledCount}/11 slots directly from the pool.`
-            ];
-            if (bestResult.filledCount < 11) {
-                squadState.explanationLog.push(isAr
-                    ? `المجموعة لم تحتوِ على ما يكفي من اللاعبين لبعض المراكز — أضف المزيد من اللاعبين المتنوعين وحاول مجددًا.`
-                    : `The pool didn't have enough players for every position — add a more varied pool and try again.`);
-            }
-
+            squadState.explanationLog = logLines;
             const formationSelect = document.getElementById('formation-select');
-            if (formationSelect) formationSelect.value = bestFormation;
-
+            if (formationSelect) formationSelect.value = formation;
             computeSlotAlternatives();
-            window.closePlayerPoolModal();
             renderFootballPitch();
             renderSquadSummary();
             calculateNextBestUpgrade();
+        }
+
+        window.applyPoolResult = function(idx) {
+            if (!poolAnalysis || !poolAnalysis.results[idx]) return;
+            const r = poolAnalysis.results[idx];
+            const isAr = currentLanguage === 'ar';
+            placePoolXI(r.formation, r.xi, [isAr
+                ? `تشكيلة من مجموعتك (${playerPool.length} لاعباً): <span class="text-fc-gold font-bold">${r.formation}</span> — كيمياء ${r.chem}/33، متوسط ${r.avgRating.toFixed(1)}. لاعبو المجموعة مملوكون، لذا التكلفة 0.`
+                : `Squad from your pool (${playerPool.length} players): <span class="text-fc-gold font-bold">${r.formation}</span> — ${r.chem}/33 chemistry, ${r.avgRating.toFixed(1)} avg OVR. Pool players are owned, so the cost is 0.`]);
+            window.closePlayerPoolModal();
         };
+
+        window.buildFromPlayerPool = function() {
+            if (playerPool.length < 11) return;
+            playerPoolActive = true;
+            savePlayerPool();
+            updatePoolModeBanner();
+            const toggle = document.getElementById('pool-active-toggle');
+            if (toggle) toggle.checked = true;
+            runPoolAnalysis(() => {
+                renderPoolResults();
+                if (poolAnalysis.results.length) window.applyPoolResult(0);
+                // keep the modal open so the list of possibilities is visible
+                const modal = document.getElementById('player-pool-modal');
+                if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+            });
+        };
+
+        // Optimize / Regenerate while pool mode is on: chemistry-aware pool
+        // search for the CURRENT formation (locked players stay pinned).
+        // Regenerate steps through that formation's distinct results.
+        function poolOptimizeCurrentFormation(stepToNext) {
+            const formation = squadState.formation;
+            const fixed = {};
+            Object.keys(squadState.selectedXI || {}).forEach(i => {
+                const p = squadState.selectedXI[i];
+                if (p && squadState.lockedIds && squadState.lockedIds.has(p.id)) fixed[i] = p;
+            });
+            const fixedKey = Object.keys(fixed).map(i => i + ':' + fixed[i].id).join(',');
+            const cacheKey = poolSignature() + '|' + formation + '|' + fixedKey;
+            if (!poolOptimizeCurrentFormation.cache || poolOptimizeCurrentFormation.cache.key !== cacheKey) {
+                const list = analysePoolFormation(formation, resolvedPoolPlayers(), { fixed, randomStarts: 6 }).sort((a, b) => b.overall - a.overall);
+                poolOptimizeCurrentFormation.cache = { key: cacheKey, list, cursor: 0 };
+            }
+            const c = poolOptimizeCurrentFormation.cache;
+            if (!c.list.length) return false;
+            c.cursor = stepToNext ? (c.cursor + 1) % c.list.length : 0;
+            const r = c.list[c.cursor];
+            const isAr = currentLanguage === 'ar';
+            placePoolXI(formation, r.xi, [isAr
+                ? `${stepToNext ? 'بديل' : 'أفضل تشكيلة'} من مجموعتك لخطة ${formation} (${c.cursor + 1}/${c.list.length}) — كيمياء ${r.chem}/33، متوسط ${r.avgRating.toFixed(1)}.`
+                : `${stepToNext ? 'Alternative' : 'Best squad'} from your pool for ${formation} (${c.cursor + 1}/${c.list.length}) — ${r.chem}/33 chemistry, ${r.avgRating.toFixed(1)} avg OVR.`]);
+            return true;
+        }
 
         window.searchReplacementPlayers = function(query) {
             const resultsContainer = document.getElementById('player-search-results');
@@ -9834,7 +10138,7 @@
             const coinLabel = isAr ? 'ك' : 'c';
 
             const matches = getActiveDatabase().filter(p =>
-                p.name.toLowerCase().includes(q) &&
+                nameMatchesQuery(p.name, q) &&
                 (p.pos === effectivePos || (p.alt && p.alt.includes(effectivePos)))
             ).slice(0, 8);
             if (matches.length === 0) {
@@ -13487,7 +13791,7 @@
         function getFocusBaseline(pos) {
             const grp = FOCUS_BASELINE_POS_GROUP[pos] || pos;
             let db = [];
-            try { db = (typeof getActiveDatabase === 'function') ? (getActiveDatabase({ requirePriced: false }) || []) : []; } catch (e) { db = []; }
+            try { db = (typeof getActiveDatabase === 'function') ? (getActiveDatabase({ requirePriced: false, ignorePool: true }) || []) : []; } catch (e) { db = []; }
             if (focusBaselineCache.size !== db.length) focusBaselineCache = { size: db.length, byPos: {} };
             if (focusBaselineCache.byPos[grp]) return focusBaselineCache.byPos[grp];
             const pool = db.filter(p => p && p.att && p.pos === grp);
@@ -13846,7 +14150,7 @@
         // of a bare floating number like "85.5" that means nothing on its
         // own to someone unfamiliar with the scale.
         function computeMetaPercentile(player, pos) {
-            const pool = getActiveDatabase().filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+            const pool = getActiveDatabase({ ignorePool: true }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
             if (pool.length === 0) return null;
             const myScore = getMetaValue(player);
             const better = pool.filter(p => getMetaValue(p) > myScore).length;
@@ -16556,6 +16860,7 @@ ${FUTBIN_SCANNER_CORE}
         window.addEventListener('DOMContentLoaded', async () => {
             const marketScriptEl = document.getElementById('market-console-script');
             if (marketScriptEl) marketScriptEl.value = FUTBIN_CONSOLE_SCRIPT;
+            if (typeof updatePoolModeBanner === 'function') updatePoolModeBanner();
             const bookmarkletEl = document.getElementById('market-bookmarklet-code');
             if (bookmarkletEl) bookmarkletEl.value = FUTBIN_BOOKMARKLET_URL;
             const bookmarkletLink = document.getElementById('market-bookmarklet-link');
