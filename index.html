@@ -6237,6 +6237,73 @@
             return curve;
         }
 
+
+        // ===================================================================
+        // ELITE PLAYSTYLE SIGNAL — All vs Top 10% of the same population
+        // ===================================================================
+        // Input: the card summary's `pool` (selected Primary / All Capable
+        // population, rated 74+, de-duplicated) — the same cards the
+        // averages, priority chain, PlayStyle chain and Power Curve use.
+        //
+        // Who is "Top 10%": cards are ranked by their key-attribute fit AT
+        // THIS POSITION (computeKeyAttrFitScore — the position's three key
+        // attributes weighted 3/2/1). That score is position-specific and
+        // is built only from attributes, so PlayStyles can't inflate it.
+        // Meta Rating is deliberately NOT used: EasySBC's meta already
+        // rewards PlayStyles, which would make any PlayStyle look "elite"
+        // by construction.
+        // Cutoff: the 90th-percentile fit score of the whole pool, using the
+        // same interpolated percentile as the Power Curve (quantileSorted).
+        // Every card at or above it is Top 10%, so ties at the cutoff are
+        // all included (the group can be slightly larger than 10%).
+        // Elite is chosen from the FULL pool; only then are PlayStyle
+        // percentages taken over the cards that have recorded PlayStyle
+        // data, in both groups — the existing data-availability rule.
+        const ELITE_PS_TOP_FRAC = 0.10;
+        const ELITE_PS_MIN_ELITE_DATA = 5;   // below this: not shown at all
+        const ELITE_PS_LOW_CONFIDENCE = 15;  // below this: flagged
+        const ELITE_PS_MIN_GAP_PP = 8;       // same threshold as PlayStyle matchups
+        const ELITE_PS_MIN_ELITE_COUNT = 2;
+        const ELITE_PS_MAX_SHOWN = 4;
+        function playstyleNamesOf(p) {
+            return new Set([...(p.playstylesPlus || []), ...(p.playstyles || [])].map(formatPlaystyleEntry));
+        }
+        function computeElitePlaystyleSignal(pool, rankPos) {
+            const scored = (pool || []).map(p => {
+                const s = p && p.att ? computeKeyAttrFitScore(p, rankPos) : null;
+                return (typeof s === 'number' && isFinite(s)) ? { p, s } : null;
+            }).filter(Boolean);
+            const n = scored.length;
+            const out = { rankPos, rankedN: n, eliteN: 0, cutoff: null, allData: 0, eliteData: 0, rows: [], status: 'ok' };
+            if (n * ELITE_PS_TOP_FRAC < 1) { out.status = 'tooFew'; return out; }
+            const sortedScores = scored.map(x => x.s).sort((a, b) => a - b);
+            const cutoff = quantileSorted(sortedScores, 1 - ELITE_PS_TOP_FRAC);
+            const elite = scored.filter(x => x.s >= cutoff - 1e-9).map(x => x.p);
+            out.cutoff = cutoff;
+            out.eliteN = elite.length;
+            const allWith = scored.map(x => x.p).filter(playerHasRecordedPlaystyles);
+            const eliteWith = elite.filter(playerHasRecordedPlaystyles);
+            out.allData = allWith.length;
+            out.eliteData = eliteWith.length;
+            if (eliteWith.length < ELITE_PS_MIN_ELITE_DATA) { out.status = 'noData'; return out; }
+            const countIn = list => {
+                const c = {};
+                list.forEach(p => playstyleNamesOf(p).forEach(nm => { c[nm] = (c[nm] || 0) + 1; }));
+                return c;
+            };
+            const allC = countIn(allWith), eliteC = countIn(eliteWith);
+            out.rows = Object.keys(eliteC).map(name => {
+                const allPct = (allC[name] || 0) / allWith.length * 100;
+                const elitePct = eliteC[name] / eliteWith.length * 100;
+                return { name, allPct, elitePct, eliteCount: eliteC[name], allCount: allC[name] || 0,
+                         gap: elitePct - allPct, lift: allPct > 0 ? elitePct / allPct : null };
+            }).filter(r => r.eliteCount >= ELITE_PS_MIN_ELITE_COUNT && r.gap >= ELITE_PS_MIN_GAP_PP)
+              .sort((a, b) => b.gap - a.gap)
+              .slice(0, ELITE_PS_MAX_SHOWN);
+            out.lowConfidence = eliteWith.length < ELITE_PS_LOW_CONFIDENCE;
+            return out;
+        }
+
         // Database Stats card summary for one display group, computed
         // directly from the selected population's de-duplicated pool:
         // averages, the stdDev-ranked "prioritize" chain, the PlayStyle
@@ -6260,6 +6327,9 @@
                 return { name, count, pct: count / withData.length };
             }).filter(e => e.count > 0).sort((a, b) => a.pct - b.pct);
             const primaryCount = allPool.filter(p => getGroupRelation(p, keys) === 'primary').length;
+            let elitePlaystyles = null;
+            try { elitePlaystyles = computeElitePlaystyleSignal(pool, keys[0]); }
+            catch (err) { console.error('[Database Stats] elite PlayStyle signal failed:', keys, err); }
             let powerCurve = null;
             try { powerCurve = computePowerCurve(pool, statKeys); }
             catch (err) { console.error('[Database Stats] power curve failed:', keys, err); }
@@ -6278,6 +6348,7 @@
                 stats: entry.stats,
                 priorityChain,
                 powerCurve,
+                elitePlaystyles,
                 playstyleInfo: { totalSample: pool.length, dataSample: withData.length, chain },
                 counts: { primary: primaryCount, alt: allPool.length - primaryCount, total: allPool.length },
                 insight: computePrimaryVsAltInsight(keys, allPool)
@@ -6714,6 +6785,53 @@
             `;
         }
 
+        // Elite PlayStyle signal block — sits under the existing PlayStyle
+        // section; that section itself is unchanged.
+        function dbStatsElitePlaystylesHtml(summary, label, isAr) {
+            const e = summary.elitePlaystyles;
+            if (!e) return '';
+            const popDesc = positionPopulationDesc(summary.population, label, isAr);
+            const shell = inner => `
+                <div class="mt-3 px-3 py-2 rounded-xl bg-purple-500/5 border border-purple-500/25 space-y-1.5">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <i class="fa-solid fa-crown text-purple-300 text-xs shrink-0"></i>
+                        <span class="text-xs font-black text-purple-200">${isAr ? 'أنماط لعب شائعة لدى النخبة' : 'PlayStyles over-represented in the Top 10%'}</span>
+                        <span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(summary.population, isAr)}</span>
+                    </div>
+                    ${inner}
+                </div>`;
+            if (e.status === 'tooFew') return shell(`<p class="text-[10px] text-gray-500 italic">${isAr ? 'عدد البطاقات أقل من أن يُحدَّد منه أفضل 10%.' : 'Too few cards to define a Top 10%.'}</p>`);
+            if (e.status === 'noData') return shell(`<p class="text-[10px] text-gray-500 italic">${isAr
+                ? `بطاقات أفضل 10% (${e.eliteN}) لديها بيانات أنماط لعب مسجّلة لـ ${e.eliteData} فقط — أقل من أن تُقارَن.`
+                : `Only ${e.eliteData} of the ${e.eliteN} Top 10% cards have recorded PlayStyle data — too few to compare.`}</p>`);
+            const rows = e.rows.length ? e.rows.map(r => {
+                const icon = PLAYSTYLE_ICONS[r.name] || 'fa-star';
+                const liftTxt = r.lift != null ? `×${r.lift.toFixed(1)}` : (isAr ? 'فقط لدى النخبة' : 'elite only');
+                return `
+                    <div class="space-y-0.5">
+                        <div class="flex items-center gap-1.5 text-[11px]">
+                            <i class="fa-solid ${icon} text-[9px] text-purple-300"></i>
+                            <span class="font-bold text-purple-100">${r.name}</span>
+                            <span class="ms-auto text-[10px] font-black text-purple-300">${liftTxt}</span>
+                        </div>
+                        <div class="grid items-center gap-x-1.5" style="grid-template-columns: 3.4rem 1fr 2.3rem;">
+                            <span class="text-[9px] text-gray-500">${isAr ? 'الكل' : 'All'}</span>
+                            <div class="h-1.5 bg-black/30 rounded-full overflow-hidden" style="direction:ltr;"><div class="h-full rounded-full bg-gray-400/60" style="width:${Math.min(100, r.allPct).toFixed(1)}%"></div></div>
+                            <span class="text-[10px] font-bold text-gray-400 text-right rtl:text-left">${Math.round(r.allPct)}%</span>
+                            <span class="text-[9px] text-purple-300 font-bold">${isAr ? 'أفضل 10%' : 'Top 10%'}</span>
+                            <div class="h-1.5 bg-black/30 rounded-full overflow-hidden" style="direction:ltr;"><div class="h-full rounded-full bg-purple-400" style="width:${Math.min(100, r.elitePct).toFixed(1)}%"></div></div>
+                            <span class="text-[10px] font-black text-purple-200 text-right rtl:text-left">${Math.round(r.elitePct)}%</span>
+                        </div>
+                    </div>`;
+            }).join('') : `<p class="text-[10px] text-gray-400 italic">${isAr
+                ? `لا يوجد نمط لعب أكثر شيوعاً بوضوح (${ELITE_PS_MIN_GAP_PP}+ نقاط مئوية) لدى أفضل 10%.`
+                : `No PlayStyle is clearly (${ELITE_PS_MIN_GAP_PP}+ points) more common in the Top 10%.`}</p>`;
+            const note = isAr
+                ? `أفضل 10% = بطاقات ${popDesc} بتقييم 74+ ذات أعلى ملاءمة للخصائص الأساسية في ${e.rankPos} (${e.eliteN} من ${e.rankedN}). النسب من البطاقات ذات بيانات أنماط لعب مسجّلة: الكل ${e.allData}، النخبة ${e.eliteData}. هذا ارتباط وليس دليلاً على أن النمط يصنع لاعباً أفضل.`
+                : `Top 10% = the ${popDesc} rated 74+ with the highest key-attribute fit at ${e.rankPos} (${e.eliteN} of ${e.rankedN}). Percentages use cards with recorded PlayStyle data: All ${e.allData}, Top 10% ${e.eliteData}. This is an association, not proof that the PlayStyle makes a card better.`;
+            return shell(`${rows}<p class="text-[9px] ${e.lowConfidence ? 'text-orange-400' : 'text-gray-500'} leading-tight pt-0.5">${note}${e.lowConfidence ? (isAr ? ' — عيّنة صغيرة، تعامل معها بحذر' : ' — small sample, treat with caution') : ''}</p>`);
+        }
+
         function renderGeneralStatsPanel() {
             const container = document.getElementById('db-stats-content');
             if (!container) return;
@@ -6836,6 +6954,7 @@
                         ${priorityHtml}
                         ${(() => { try { return dbStatsPowerCurveHtml(summary, label, isAr); } catch (err) { console.error('[Database Stats] power curve render failed:', dp.labelEn, err); return ''; } })()}
                         ${playstylesHtml}
+                        ${(() => { try { return dbStatsElitePlaystylesHtml(summary, label, isAr); } catch (err) { console.error('[Database Stats] elite PlayStyle render failed:', dp.labelEn, err); return ''; } })()}
                         ${dbStatsPopulationInsightHtml(summary.insight, label, isAr)}
                     </div>
                 `;
