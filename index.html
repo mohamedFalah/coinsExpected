@@ -6844,6 +6844,283 @@
             return shell(`${rows}<p class="text-[9px] ${e.lowConfidence ? 'text-orange-400' : 'text-gray-500'} leading-tight pt-0.5">${note}${e.lowConfidence ? (isAr ? ' — عيّنة صغيرة، تعامل معها بحذر' : ' — small sample, treat with caution') : ''}</p>`);
         }
 
+        // ===================================================================
+        // MATCHUP INTELLIGENCE
+        // ===================================================================
+        // Replaces the fixed matchup list's RENDERING with a small ranking
+        // pipeline: candidate relationship → gap on the selected population
+        // → sample-size check → effect size → keep the strongest.
+        //
+        // What the database can establish: attribute DIFFERENCES between
+        // positions and PlayStyle PREVALENCE / association. It has no match
+        // results, so nothing here says one position "beats" another; all
+        // text is generated from the numbers and their direction.
+        //
+        // Ranking signal (comparable across metric types, no library):
+        //   stat metrics      → Cohen's d = (threat mean − response mean) / pooled SD
+        //   PlayStyle metrics → Cohen's h = 2·asin√p_threat − 2·asin√p_response
+        // Gates (reuse existing thresholds): ≥ 4 points for stats
+        // (GENERAL_STATS_MATCHUP_THRESHOLD), ≥ 8 pp for PlayStyles
+        // (GENERAL_STATS_PLAYSTYLE_MATCHUP_THRESHOLD), |effect| ≥ 0.2, and
+        // ≥ 15 cards per side (≥ 15 cards WITH PlayStyle data for PlayStyle
+        // metrics, the existing data-availability rule).
+        const MI_MIN_SAMPLE = 15;
+        const MI_MIN_EFFECT = 0.2;
+        const MI_MAX_CARDS = 8;
+        const MI_MAX_METRICS_PER_CARD = 2;
+        const MI_GROUPS = {
+            CB:  { pos: ['CB'],        en: 'CBs',         ar: 'قلوب الدفاع' },
+            FB:  { pos: ['LB', 'RB'],  en: 'Full-backs',  ar: 'الظهراء' },
+            W:   { pos: ['LW', 'RW'],  en: 'Wingers',     ar: 'الأجنحة' },
+            WM:  { pos: ['LM', 'RM'],  en: 'Wide mids',   ar: 'لاعبو الوسط الطرفيون' },
+            ST:  { pos: ['ST', 'CF'],  en: 'Strikers',    ar: 'المهاجمون' },
+            CDM: { pos: ['CDM'],       en: 'CDMs',        ar: 'مرتكزو الوسط' },
+            CM:  { pos: ['CM'],        en: 'CMs',         ar: 'لاعبو الوسط' },
+            CAM: { pos: ['CAM'],       en: 'CAMs',        ar: 'صانعو الألعاب' },
+            GK:  { pos: ['GK'],        en: 'Goalkeepers', ar: 'الحراس' }
+        };
+        const MI_TYPES = {
+            recovery:   { en: 'Recovery / Pace', ar: 'الاسترداد / السرعة', icon: 'fa-person-running' },
+            oneVone:    { en: '1v1', ar: 'مواجهة فردية', icon: 'fa-people-arrows' },
+            physical:   { en: 'Physical', ar: 'بدني', icon: 'fa-dumbbell' },
+            shotStop:   { en: 'Shot-stopping', ar: 'التصدي', icon: 'fa-hand' },
+            penetration:{ en: 'Passing / Penetration', ar: 'التمرير / الاختراق', icon: 'fa-arrow-right-to-bracket' },
+            playstyle:  { en: 'PlayStyle vs PlayStyle', ar: 'نمط مقابل نمط', icon: 'fa-wand-sparkles' },
+            pipeline:   { en: 'Crossing pipeline', ar: 'خط العرضيات', icon: 'fa-link' }
+        };
+        // Candidate position pairs. `pinned` = concepts kept from the old
+        // list (shown first whenever their data clears the gates). Each
+        // pair carries every relationship that makes sense for it; only
+        // the metrics that clear the gates are displayed.
+        const miSt = (type, rKey, tKey) => ({ kind: 'stat', type, rKey, tKey });
+        const miPs = (type, rPs, tPs) => ({ kind: 'ps', type, rPs, tPs });
+        const MI_CANDIDATES = [
+            { id: 'cb_w',   pinned: true,  response: 'CB',  threat: 'W',   metrics: [miSt('recovery', 'pac', 'pac'), miSt('oneVone', 'def', 'dri'), miPs('playstyle', 'Jockey', 'Quick Step')] },
+            { id: 'cb_st',  pinned: true,  response: 'CB',  threat: 'ST',  metrics: [miSt('physical', 'phy', 'phy'), miSt('recovery', 'pac', 'pac'), miPs('playstyle', 'Anticipate', 'Quick Step')] },
+            { id: 'fb_w',   pinned: true,  response: 'FB',  threat: 'W',   metrics: [miSt('recovery', 'pac', 'pac'), miSt('oneVone', 'def', 'dri'), miPs('playstyle', 'Jockey', 'Rapid')] },
+            { id: 'cdm_cam',pinned: true,  response: 'CDM', threat: 'CAM', metrics: [miSt('oneVone', 'def', 'dri'), miSt('physical', 'phy', 'phy'), miSt('recovery', 'pac', 'pac')] },
+            { id: 'cdm_cam_ps', pinned: true, response: 'CDM', threat: 'CAM', titleEn: 'Interception vs. Penetration', titleAr: 'الاعتراض مقابل الاختراق',
+              metrics: [miPs('penetration', 'Intercept', 'Incisive Pass'), miPs('penetration', 'Anticipate', 'Technical')] },
+            { id: 'fb_wm',  response: 'FB',  threat: 'WM',  metrics: [miSt('recovery', 'pac', 'pac'), miSt('oneVone', 'def', 'dri'), miPs('playstyle', 'Jockey', 'Rapid')] },
+            { id: 'cdm_st', response: 'CDM', threat: 'ST',  metrics: [miSt('physical', 'phy', 'phy'), miSt('recovery', 'pac', 'pac')] },
+            { id: 'cm_cam', response: 'CM',  threat: 'CAM', metrics: [miSt('oneVone', 'def', 'dri'), miPs('penetration', 'Intercept', 'Incisive Pass')] },
+            { id: 'cb_cam', response: 'CB',  threat: 'CAM', metrics: [miSt('oneVone', 'def', 'dri'), miPs('penetration', 'Intercept', 'Incisive Pass')] },
+            { id: 'cb_wm',  response: 'CB',  threat: 'WM',  metrics: [miSt('recovery', 'pac', 'pac')] },
+            { id: 'gk_st',  response: 'GK',  threat: 'ST',  metrics: [miSt('shotStop', 'ref', 'sho')] }
+        ];
+        // Pipeline = a source→target link inside one team, not a contest:
+        // shown as a profile (no gap, not ranked), kept from the old list.
+        const MI_PIPELINE = {
+            id: 'fb_cb_pipeline', source: 'FB', target: 'CB',
+            sourceKey: 'pas', targetKey: 'phy', sourcePs: 'Whipped Pass', targetPs: 'Aerial Fortress'
+        };
+
+        function miStats(vals) {
+            const n = vals.length;
+            if (!n) return null;
+            const mean = vals.reduce((a, b) => a + b, 0) / n;
+            const sd = n > 1 ? Math.sqrt(vals.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (n - 1)) : 0;
+            return { n, mean, sd };
+        }
+        function miAttrVals(pool, key) {
+            return pool.map(p => p && p.att ? p.att[key] : undefined).filter(v => typeof v === 'number' && isFinite(v));
+        }
+        function miPsShare(pool, name) {
+            const withData = pool.filter(playerHasRecordedPlaystyles);
+            const count = withData.filter(p => playstyleNamesOf(p).has(name)).length;
+            return { n: withData.length, count, p: withData.length ? count / withData.length : 0 };
+        }
+        // "X is over-represented among Top 10% Y" — from the existing elite
+        // PlayStyle signal (key-attribute-fit Top 10%), if it lists X.
+        function miEliteNote(pool, groupKey, psName) {
+            try {
+                const sig = computeElitePlaystyleSignal(pool, MI_GROUPS[groupKey].pos[0]);
+                const row = sig && sig.status === 'ok' ? sig.rows.find(r => r.name === psName) : null;
+                return row ? { group: groupKey, name: psName, allPct: Math.round(row.allPct), elitePct: Math.round(row.elitePct) } : null;
+            } catch (e) { return null; }
+        }
+
+        function computeMatchupIntelligence(population) {
+            const poolCache = {};
+            const poolOf = g => (poolCache[g] = poolCache[g] || getPositionPopulationPool(MI_GROUPS[g].pos, population, { requireAtt: true }));
+            let evaluated = 0;
+            const cards = [];
+            const pinnedWithoutGap = [];
+            MI_CANDIDATES.forEach(c => {
+                const rPool = poolOf(c.response), tPool = poolOf(c.threat);
+                const results = [];
+                c.metrics.forEach(m => {
+                    evaluated++;
+                    if (m.kind === 'stat') {
+                        const r = miStats(miAttrVals(rPool, m.rKey)), t = miStats(miAttrVals(tPool, m.tKey));
+                        if (!r || !t || r.n < MI_MIN_SAMPLE || t.n < MI_MIN_SAMPLE) return;
+                        const gap = t.mean - r.mean;
+                        const pooled = Math.sqrt(((r.n - 1) * r.sd * r.sd + (t.n - 1) * t.sd * t.sd) / Math.max(1, r.n + t.n - 2));
+                        const effect = pooled > 0 ? gap / pooled : 0;
+                        if (Math.abs(Math.round(gap)) < GENERAL_STATS_MATCHUP_THRESHOLD || Math.abs(effect) < MI_MIN_EFFECT) return;
+                        results.push({ ...m, r, t, gap, effect });
+                    } else {
+                        const r = miPsShare(rPool, m.rPs), t = miPsShare(tPool, m.tPs);
+                        if (r.n < MI_MIN_SAMPLE || t.n < MI_MIN_SAMPLE) return;
+                        const gapPp = (t.p - r.p) * 100;
+                        const effect = 2 * Math.asin(Math.sqrt(t.p)) - 2 * Math.asin(Math.sqrt(r.p));
+                        if (Math.abs(Math.round(gapPp)) < GENERAL_STATS_PLAYSTYLE_MATCHUP_THRESHOLD || Math.abs(effect) < MI_MIN_EFFECT) return;
+                        results.push({ ...m, r, t, gap: gapPp, effect,
+                            eliteNotes: [miEliteNote(tPool, c.threat, m.tPs), miEliteNote(rPool, c.response, m.rPs)].filter(Boolean) });
+                    }
+                });
+                if (!results.length) { if (c.pinned) pinnedWithoutGap.push(c); return; }
+                // Cross-attribute metrics (e.g. Dribbling vs Defending)
+                // subtract two DIFFERENT ratings, so they never outrank a
+                // same-attribute or PlayStyle comparison — inside a card
+                // or when ranking cards.
+                const isCross = m => m.kind === 'stat' && m.rKey !== m.tKey;
+                results.sort((a, b) => (isCross(a) - isCross(b)) || (Math.abs(b.effect) - Math.abs(a.effect)));
+                const direct = results.filter(m => !isCross(m));
+                cards.push({ ...c, results: results.slice(0, MI_MAX_METRICS_PER_CARD),
+                    signal: direct.length ? Math.abs(direct[0].effect) : 0,
+                    crossSignal: Math.abs(results[0].effect) });
+            });
+            const byRank = (a, b) => (b.signal - a.signal) || (b.crossSignal - a.crossSignal);
+            const pinned = cards.filter(c => c.pinned).sort(byRank);
+            const discovered = cards.filter(c => !c.pinned).sort(byRank);
+            // Pipeline profile (not ranked, no gap).
+            let pipeline = null;
+            const src = poolOf(MI_PIPELINE.source), tgt = poolOf(MI_PIPELINE.target);
+            const sS = miStats(miAttrVals(src, MI_PIPELINE.sourceKey)), tS = miStats(miAttrVals(tgt, MI_PIPELINE.targetKey));
+            if (sS && tS && sS.n >= MI_MIN_SAMPLE && tS.n >= MI_MIN_SAMPLE) {
+                pipeline = {
+                    ...MI_PIPELINE, sS, tS,
+                    sBase: miStats(miAttrVals(getPositionPopulationPool(GENERAL_STATS_LINES.DEF.concat(GENERAL_STATS_LINES.MID, GENERAL_STATS_LINES.ATT), population, { requireAtt: true }), MI_PIPELINE.sourceKey)),
+                    tBase: miStats(miAttrVals(getPositionPopulationPool(GENERAL_STATS_LINES.DEF.concat(GENERAL_STATS_LINES.MID, GENERAL_STATS_LINES.ATT), population, { requireAtt: true }), MI_PIPELINE.targetKey)),
+                    sPs: miPsShare(src, MI_PIPELINE.sourcePs), tPs: miPsShare(tgt, MI_PIPELINE.targetPs)
+                };
+            }
+            const slots = MI_MAX_CARDS - (pipeline ? 1 : 0);
+            const shown = pinned.slice(0, slots);
+            const fill = discovered.slice(0, Math.max(0, slots - shown.length));
+            return {
+                cards: [...shown, ...fill], pipeline, evaluated,
+                passed: cards.length, candidates: MI_CANDIDATES.length,
+                pinnedWithoutGap
+            };
+        }
+
+        // ---------------- rendering ----------------
+        function miAttr(k, isAr) { return ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase(); }
+        function miSigned(x) { const v = Math.round(x); return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v); }
+        function miInterpret(c, m, isAr) {
+            const R = isAr ? MI_GROUPS[c.response].ar : MI_GROUPS[c.response].en;
+            const T = isAr ? MI_GROUPS[c.threat].ar : MI_GROUPS[c.threat].en;
+            if (m.kind === 'stat') {
+                const tv = Math.round(m.t.mean), rv = Math.round(m.r.mean), g = Math.abs(Math.round(m.gap));
+                const threatAhead = m.gap > 0;
+                if (m.rKey === m.tKey) {
+                    const A = miAttr(m.tKey, isAr);
+                    return isAr
+                        ? `متوسط ${A} لدى ${T} ${tv} مقابل ${rv} لدى ${R} — فارق ${g} نقاط لصالح ${threatAhead ? T : R}.`
+                        : `${T} average ${tv} ${A} versus ${rv} for ${R} — a ${g}-point ${A.toLowerCase()} gap in favour of ${threatAhead ? T : R}.`;
+                }
+                const tA = miAttr(m.tKey, isAr), rA = miAttr(m.rKey, isAr);
+                return isAr
+                    ? `متوسط ${tA} لدى ${T} ${tv}، ومتوسط ${rA} لدى ${R} ${rv} (فارق ${g}). خاصيتان مختلفتان: هذا يقارن مستوى التقييمين، لا نتيجة المواجهة.`
+                    : `${T} average ${tv} ${tA}; ${R} average ${rv} ${rA} (${g} apart). Different attributes — this compares rating levels, not duel outcomes.`;
+            }
+            const tp = Math.round(m.t.p * 100), rp = Math.round(m.r.p * 100);
+            let txt = isAr
+                ? `${m.tPs} موجود لدى ${tp}% من ${T} ذوي بيانات أنماط اللعب، و${m.rPs} لدى ${rp}% من ${R}. هذا يقارن مدى شيوع كل نمط في مركزه، لا من يتفوّق.`
+                : `${m.tPs} appears on ${tp}% of ${T} with PlayStyle data; ${m.rPs} on ${rp}% of ${R}. This compares how common each trait is at its position, not who wins.`;
+            (m.eliteNotes || []).forEach(n => {
+                const G = isAr ? MI_GROUPS[n.group].ar : MI_GROUPS[n.group].en;
+                txt += isAr
+                    ? ` ${n.name} ممثّل بنسبة أعلى لدى أفضل 10% من ${G} (${n.allPct}% ← ${n.elitePct}%).`
+                    : ` ${n.name} is over-represented among Top 10% ${G} (${n.allPct}% → ${n.elitePct}%).`;
+            });
+            return txt;
+        }
+        function miMetricHtml(c, m, isAr) {
+            const R = isAr ? MI_GROUPS[c.response].ar : MI_GROUPS[c.response].en;
+            const T = isAr ? MI_GROUPS[c.threat].ar : MI_GROUPS[c.threat].en;
+            const type = MI_TYPES[m.type];
+            const threatAhead = m.gap > 0;
+            const tCls = threatAhead ? 'text-orange-400' : 'text-white', rCls = threatAhead ? 'text-white' : 'text-emerald-400';
+            const tBar = threatAhead ? 'bg-orange-400' : 'bg-blue-400/70', rBar = threatAhead ? 'bg-blue-400/70' : 'bg-emerald-400';
+            let bars, metricLabel, sample;
+            if (m.kind === 'stat') {
+                metricLabel = m.rKey === m.tKey ? miAttr(m.tKey, isAr) : `${miAttr(m.tKey, isAr)} ${isAr ? 'مقابل' : 'vs.'} ${miAttr(m.rKey, isAr)}`;
+                bars = statBarRowHtml(T, m.t.mean, tBar, tCls) + statBarRowHtml(R, m.r.mean, rBar, rCls);
+                sample = isAr ? `${m.t.n} / ${m.r.n} بطاقة` : `${m.t.n} / ${m.r.n} cards`;
+            } else {
+                metricLabel = `${m.tPs} ${isAr ? 'مقابل' : 'vs.'} ${m.rPs}`;
+                bars = statBarRowHtml(T, m.t.p * 100, tBar, tCls, '%') + statBarRowHtml(R, m.r.p * 100, rBar, rCls, '%');
+                sample = isAr ? `${m.t.n} / ${m.r.n} بطاقة لديها بيانات أنماط لعب` : `${m.t.n} / ${m.r.n} cards with PlayStyle data`;
+            }
+            return `
+                <div class="space-y-1.5 pb-2 border-b border-fc-border/50 last:border-0 last:pb-0">
+                    <div class="flex items-center gap-1.5 text-[10px] font-bold text-gray-400">
+                        <i class="fa-solid ${type.icon} text-gray-500"></i>${isAr ? type.ar : type.en} · <span class="text-gray-300">${metricLabel}</span>
+                        <span class="ms-auto font-black ${threatAhead ? 'text-orange-400' : 'text-emerald-400'}">${isAr ? 'الفارق' : 'Gap'} ${miSigned(m.gap)}${m.kind === 'ps' ? (isAr ? ' نقطة مئوية' : ' pp') : ''}</span>
+                    </div>
+                    ${bars}
+                    <p class="text-[11px] text-gray-400 leading-snug">${miInterpret(c, m, isAr)}</p>
+                    <p class="text-[9px] text-gray-500">${sample} · ${isAr ? 'حجم الأثر' : 'effect size'} ${Math.abs(m.effect).toFixed(2)}</p>
+                </div>`;
+        }
+        function miCardHtml(c, isAr) {
+            const R = isAr ? MI_GROUPS[c.response].ar : MI_GROUPS[c.response].en;
+            const T = isAr ? MI_GROUPS[c.threat].ar : MI_GROUPS[c.threat].en;
+            const title = c.titleEn ? (isAr ? c.titleAr : c.titleEn) : `${R} ${isAr ? 'مقابل' : 'vs.'} ${T}`;
+            const top = c.results[0];
+            const threatAhead = top.gap > 0;
+            return `
+                <div class="bg-fc-dark border ${threatAhead ? 'border-orange-500/40' : 'border-emerald-500/40'} rounded-2xl p-5 space-y-3">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid ${threatAhead ? 'fa-triangle-exclamation text-orange-400' : 'fa-shield-halved text-emerald-400'}"></i>
+                        <span class="text-sm font-black text-white">${title}</span>
+                        <span class="ms-auto rtl:ms-0 rtl:me-auto text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap ${c.pinned ? 'text-gray-300 bg-black/30' : 'text-purple-300 bg-purple-500/15'}">${c.pinned ? (isAr ? 'أساسية' : 'core') : (isAr ? 'مكتشفة تلقائياً' : 'auto-discovered')}</span>
+                    </div>
+                    <div class="text-[10px] text-gray-500">${isAr ? 'التهديد' : 'Threat'}: <b class="text-gray-300">${T}</b> · ${isAr ? 'الاستجابة' : 'Response'}: <b class="text-gray-300">${R}</b></div>
+                    <div class="space-y-2">${c.results.map(m => miMetricHtml(c, m, isAr)).join('')}</div>
+                </div>`;
+        }
+        function miPipelineHtml(pl, isAr) {
+            const S = isAr ? MI_GROUPS[pl.source].ar : MI_GROUPS[pl.source].en;
+            const Tg = isAr ? MI_GROUPS[pl.target].ar : MI_GROUPS[pl.target].en;
+            const sA = miAttr(pl.sourceKey, isAr), tA = miAttr(pl.targetKey, isAr);
+            const rel = (v, b) => b ? miSigned(v - b.mean) : '';
+            const psLine = (share, name, G) => share.n >= MI_MIN_SAMPLE
+                ? (isAr ? `${name}: ${Math.round(share.p * 100)}% من ${G} ذوي بيانات أنماط اللعب (${share.n}).` : `${name}: ${Math.round(share.p * 100)}% of ${G} with PlayStyle data (${share.n}).`)
+                : (isAr ? `${name}: بيانات أنماط لعب غير كافية (${share.n}).` : `${name}: not enough PlayStyle data (${share.n}).`);
+            return `
+                <div class="bg-fc-dark border border-blue-500/40 rounded-2xl p-5 space-y-3">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-link text-blue-400"></i>
+                        <span class="text-sm font-black text-white">${isAr ? `خط العرضيات: من ${S} إلى ${Tg}` : `Crossing Pipeline: ${S} to ${Tg}`}</span>
+                        <span class="ms-auto rtl:ms-0 rtl:me-auto text-[10px] font-black px-2 py-0.5 rounded-full text-blue-300 bg-blue-500/15 whitespace-nowrap">${isAr ? 'ملف، بلا فارق' : 'profile · no gap'}</span>
+                    </div>
+                    <div class="text-[10px] text-gray-500">${isAr ? 'المصدر' : 'Source'}: <b class="text-gray-300">${S} (${sA})</b> → ${isAr ? 'الهدف' : 'Target'}: <b class="text-gray-300">${Tg} (${tA})</b></div>
+                    ${statBarRowHtml(S, pl.sS.mean, 'bg-blue-400/70', 'text-white')}
+                    ${statBarRowHtml(Tg, pl.tS.mean, 'bg-emerald-400', 'text-white')}
+                    <p class="text-[11px] text-gray-400 leading-snug">${isAr
+                        ? `متوسط ${sA} لدى ${S} ${Math.round(pl.sS.mean)} (${rel(pl.sS.mean, pl.sBase)} عن متوسط كل اللاعبين خارج المرمى)، ومتوسط ${tA} لدى ${Tg} ${Math.round(pl.tS.mean)} (${rel(pl.tS.mean, pl.tBase)}). خاصيتان مختلفتان في طرفي نفس الخط، لذا لا يُطرح أحدهما من الآخر.`
+                        : `${S} average ${Math.round(pl.sS.mean)} ${sA} (${rel(pl.sS.mean, pl.sBase)} vs all outfield cards); ${Tg} average ${Math.round(pl.tS.mean)} ${tA} (${rel(pl.tS.mean, pl.tBase)}). Different attributes at the two ends of one link, so they are shown side by side, not subtracted.`}</p>
+                    <p class="text-[10px] text-gray-500">${psLine(pl.sPs, pl.sourcePs, S)} ${psLine(pl.tPs, pl.targetPs, Tg)}</p>
+                </div>`;
+        }
+        function renderMatchupIntelligenceHtml(population, isAr) {
+            const mi = computeMatchupIntelligence(population);
+            const cards = mi.cards.map(c => miCardHtml(c, isAr));
+            if (mi.pipeline) cards.push(miPipelineHtml(mi.pipeline, isAr));
+            const grid = cards.length
+                ? `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards.join('')}</div>`
+                : `<p class="text-xs text-gray-500 italic">${i18n[currentLanguage].dbStatsNoMatchups}</p>`;
+            const quiet = mi.pinnedWithoutGap.map(c => c.titleEn ? (isAr ? c.titleAr : c.titleEn) : `${isAr ? MI_GROUPS[c.response].ar : MI_GROUPS[c.response].en} ${isAr ? 'مقابل' : 'vs.'} ${isAr ? MI_GROUPS[c.threat].ar : MI_GROUPS[c.threat].en}`);
+            const footer = isAr
+                ? `تم تقييم ${mi.evaluated} علاقة عبر ${mi.candidates} زوج مراكز؛ اجتاز ${mi.passed} زوجاً شروط العيّنة (15+ بطاقة لكل جهة) والفارق (4+ نقاط أو 8+ نقاط مئوية، وحجم أثر 0.2+). المعروض مرتّب حسب حجم الأثر، والمقارنات بين خاصيتين مختلفتين (مثل المراوغة مقابل الدفاع) تأتي بعد مقارنات الخاصية نفسها وأنماط اللعب.${quiet.length ? ` بلا فارق واضح هذه المرة: ${quiet.join('، ')}.` : ''} هذه فروق وارتباطات إحصائية، وليست نتائج مباريات.`
+                : `Evaluated ${mi.evaluated} relationships across ${mi.candidates} position pairs; ${mi.passed} pairs cleared the sample (15+ cards per side) and gap (4+ points or 8+ pp, effect size 0.2+) checks. Shown in order of effect size; cross-attribute comparisons (e.g. Dribbling vs Defending) rank after same-attribute and PlayStyle ones.${quiet.length ? ` No clear gap this time: ${quiet.join(', ')}.` : ''} These are statistical differences and associations, not match results.`;
+            return `${grid}<p class="text-[10px] text-gray-500 mt-3 leading-snug">${footer}</p>`;
+        }
+
         function renderGeneralStatsPanel() {
             const container = document.getElementById('db-stats-content');
             if (!container) return;
@@ -6981,62 +7258,12 @@
               }
             }).join('');
 
-            const matchups = computeStatMatchupInsights(population);
-            const matchupsHtml = matchups.length > 0
-                ? matchups.map(m => {
-                    const subjLabel = isAr ? m.subjectLabelAr : m.subjectLabelEn;
-                    const threatLabel = isAr ? m.threatLabelAr : m.threatLabelEn;
-                    const title = isAr ? m.titleAr : m.titleEn;
-                    const short = isAr ? m.shortAr : m.shortEn;
-                    const isSynergy = m.tone === 'synergy';
-                    const borderClass = isSynergy ? 'border-blue-500/40' : 'border-orange-500/40';
-                    const iconClass = isSynergy ? 'fa-link text-blue-400' : 'fa-triangle-exclamation text-orange-400';
-                    const badgeClass = isSynergy ? 'text-blue-400 bg-blue-500/15' : 'text-orange-400 bg-orange-500/15';
-                    const subjBarClass = isSynergy ? 'bg-blue-400/70' : 'bg-blue-400/70';
-                    const threatBarClass = isSynergy ? 'bg-emerald-400' : 'bg-orange-400';
-                    const threatTextClass = isSynergy ? 'text-emerald-400' : 'text-orange-400';
-
-                    let barsHtml = '';
-                    let badgeText = '';
-                    if (m.kind === 'playstyle') {
-                        badgeText = `${m.gapPct}${isAr ? '% فرق' : '% gap'}`;
-                        barsHtml = `
-                            ${statBarRowHtml(subjLabel, m.subjPct, subjBarClass, 'text-white', '%')}
-                            ${statBarRowHtml(threatLabel, m.threatPct, threatBarClass, threatTextClass, '%')}
-                        `;
-                        // Sample size caveat — same honesty principle as the
-                        // per-position playstyle chain: this is prevalence
-                        // among players with RECORDED playstyle data only.
-                        const sampleNote = isAr
-                            ? `بناءً على ${m.subjSample + m.threatSample} لاعب لديهم بيانات أنماط لعب مسجّلة`
-                            : `based on ${m.subjSample + m.threatSample} players with recorded playstyle data`;
-                        barsHtml += `<p class="text-[9px] text-gray-500 mt-1">${sampleNote}</p>`;
-                    } else {
-                        badgeText = isSynergy
-                            ? (isAr ? 'ملاءمة داخلية' : 'own-squad fit')
-                            : `${Math.max(...m.metricResults.map(r => r.gap))}${isAr ? ' فرق' : ' pt gap'}`;
-                        barsHtml = m.metricResults.map(r => `
-                            <div class="space-y-1.5 ${m.metricResults.length > 1 ? 'pb-2 border-b border-fc-border/50 last:border-0 last:pb-0' : ''}">
-                                <div class="text-[10px] font-bold text-gray-500">${isAr ? r.labelAr : r.labelEn}</div>
-                                ${statBarRowHtml(subjLabel, r.subjAvg, subjBarClass, 'text-white')}
-                                ${statBarRowHtml(threatLabel, r.threatAvg, threatBarClass, threatTextClass)}
-                            </div>
-                        `).join('');
-                    }
-
-                    return `
-                        <div class="bg-fc-dark border ${borderClass} rounded-2xl p-5 space-y-3">
-                            <div class="flex items-center gap-2">
-                                <i class="fa-solid ${iconClass}"></i>
-                                <span class="text-sm font-black text-white">${title}</span>
-                                <span class="ml-auto rtl:ml-0 rtl:mr-auto text-[10px] font-black ${badgeClass} px-2 py-0.5 rounded-full whitespace-nowrap">${badgeText}</span>
-                            </div>
-                            <div class="space-y-2">${barsHtml}</div>
-                            <p class="text-xs text-gray-400">${short}</p>
-                        </div>
-                    `;
-                }).join('')
-                : `<p class="text-xs text-gray-500 italic">${t.dbStatsNoMatchups}</p>`;
+            let matchupsHtml;
+            try { matchupsHtml = renderMatchupIntelligenceHtml(population, isAr); }
+            catch (err) {
+                console.error('[Database Stats] matchup intelligence failed:', err);
+                matchupsHtml = `<p class="text-xs text-orange-400">${isAr ? 'تعذّر حساب المواجهات — راجع وحدة التحكم.' : "Couldn't calculate matchups — see the browser console."}</p>`;
+            }
 
             container.innerHTML = `
                 ${dbStatsPopulationToggleHtml(isAr, population)}
@@ -7049,7 +7276,7 @@
                     <p class="text-[10px] text-gray-500 mb-3">${isAr
                         ? `محسوبة من: ${population === 'primary' ? 'المراكز الأساسية فقط' : 'كل من يستطيع اللعب في المركز (أساسي أو بديل)'} — كل بطاقة تُحتسب مرة واحدة في كل جهة.`
                         : `Calculated from: ${population === 'primary' ? 'primary positions only' : 'every card that can play the position (primary + alternative)'} — each card counts once per side.`}</p>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${matchupsHtml}</div>
+                    ${matchupsHtml}
                 </div>
             `;
         }
