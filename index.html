@@ -6158,6 +6158,65 @@
             return res;
         }
 
+
+        // ===================================================================
+        // DATABASE POWER CURVE — typical vs elite, per attribute
+        // ===================================================================
+        // Runs on the SAME pool the card's averages/priority/PlayStyles use
+        // (computeDisplayPopulationSummary's `pool`: selected population,
+        // rated 74+, de-duplicated by card id). No separate selection.
+        //
+        // "Top X% threshold" = the attribute value at the (1 − X)
+        // quantile of that pool, using linear interpolation between the
+        // two nearest ranks (the standard "type 7" estimator, same as
+        // Excel PERCENTILE.INC / NumPy's default). It is a CUTOFF — the
+        // value a card needs to sit in the top X% — not an average of the
+        // top X% of cards.
+        //
+        // Small populations: a tier is only reported when at least one
+        // whole card actually falls inside it (n × X ≥ 1), i.e. Top 25%
+        // needs n ≥ 4, Top 10% n ≥ 10, Top 5% n ≥ 20. Below
+        // POWER_CURVE_LOW_CONFIDENCE_N the whole curve is flagged.
+        const POWER_CURVE_TIERS = [
+            { id: 'top25', frac: 0.25 },
+            { id: 'top10', frac: 0.10 },
+            { id: 'top05', frac: 0.05 }
+        ];
+        const POWER_CURVE_LOW_CONFIDENCE_N = 40;
+        function quantileSorted(sortedAsc, q) {
+            const n = sortedAsc.length;
+            if (n === 0) return null;
+            if (n === 1) return sortedAsc[0];
+            const h = (n - 1) * q;
+            const lo = Math.floor(h);
+            const hi = Math.min(n - 1, lo + 1);
+            return sortedAsc[lo] + (h - lo) * (sortedAsc[hi] - sortedAsc[lo]);
+        }
+        function computePowerCurve(pool, statKeys) {
+            const curve = {};
+            statKeys.forEach(k => {
+                const vals = [];
+                (pool || []).forEach(p => {
+                    const v = p && p.att ? p.att[k] : undefined;
+                    if (typeof v === 'number' && isFinite(v)) vals.push(v);
+                });
+                if (vals.length === 0) { curve[k] = null; return; }
+                vals.sort((a, b) => a - b);
+                const n = vals.length;
+                const avg = vals.reduce((a, b) => a + b, 0) / n;
+                const entry = { n, avg };
+                POWER_CURVE_TIERS.forEach(tier => {
+                    entry[tier.id] = (n * tier.frac >= 1) ? quantileSorted(vals, 1 - tier.frac) : null;
+                });
+                // Groundwork for a future "prioritize" signal: how far the
+                // elite (Top 10% threshold) sits above the typical card.
+                // NOT used for ranking yet.
+                entry.eliteSeparation = entry.top10 != null ? entry.top10 - avg : null;
+                curve[k] = entry;
+            });
+            return curve;
+        }
+
         // Database Stats card summary for one display group, computed
         // directly from the selected population's de-duplicated pool:
         // averages, the stdDev-ranked "prioritize" chain, the PlayStyle
@@ -6181,12 +6240,24 @@
                 return { name, count, pct: count / withData.length };
             }).filter(e => e.count > 0).sort((a, b) => a.pct - b.pct);
             const primaryCount = allPool.filter(p => getGroupRelation(p, keys) === 'primary').length;
+            let powerCurve = null;
+            try { powerCurve = computePowerCurve(pool, statKeys); }
+            catch (err) { console.error('[Database Stats] power curve failed:', keys, err); }
+            // Groundwork only: annotate the existing chain with elite
+            // separation (Top 10% threshold − average). The chain's ORDER
+            // is still the existing stdDev ranking, unchanged.
+            priorityChain.forEach(c => {
+                const pc = powerCurve && powerCurve[c.key];
+                c.eliteSeparation = pc ? pc.eliteSeparation : null;
+            });
             return {
                 population,
+                keysFirst: keys[0],
                 pool, // the selected population's de-duplicated cards — future percentile/power-curve math must use this
                 sampleSize: pool.length,
                 stats: entry.stats,
                 priorityChain,
+                powerCurve,
                 playstyleInfo: { totalSample: pool.length, dataSample: withData.length, chain },
                 counts: { primary: primaryCount, alt: allPool.length - primaryCount, total: allPool.length },
                 insight: computePrimaryVsAltInsight(keys, allPool)
@@ -6559,6 +6630,70 @@
             `;
         }
 
+        // Compact Power Curve block: one row per attribute — a thin track
+        // (the card's own zoomed value range) with a filled span from the
+        // average to the Top 5% threshold and a tick at each cutoff, then
+        // the four exact numbers. Numbers are the source of truth; the
+        // track is only a visual aid.
+        function dbStatsPowerCurveHtml(summary, label, isAr) {
+            const curve = summary.powerCurve;
+            if (!curve) return '';
+            const keys = statKeysForPosition(summary.keysFirst || 'CM').filter(k => curve[k]);
+            if (keys.length === 0) return '';
+            const attrLabel = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+            const vals = [];
+            keys.forEach(k => { const c = curve[k]; [c.avg, c.top25, c.top10, c.top05].forEach(v => { if (v != null) vals.push(v); }); });
+            const lo = Math.max(0, Math.floor(Math.min(...vals)) - 4);
+            const hi = Math.min(99, Math.ceil(Math.max(...vals)) + 2);
+            const span = Math.max(1, hi - lo);
+            const x = v => Math.max(0, Math.min(100, ((v - lo) / span) * 100));
+            const fmt = v => v == null ? '—' : Math.round(v);
+            const cols = 'grid-template-columns: 4.75rem minmax(3rem,1fr) repeat(4, 2.1rem);';
+            const head = isAr ? ['المتوسط', 'أعلى 25%', 'أعلى 10%', 'أعلى 5%'] : ['Avg', 'Top 25%', 'Top 10%', 'Top 5%'];
+            const minN = Math.min(...keys.map(k => curve[k].n));
+            const lowConf = minN < POWER_CURVE_LOW_CONFIDENCE_N;
+            const missingTier = keys.some(k => curve[k].top05 == null || curve[k].top10 == null || curve[k].top25 == null);
+            const rows = keys.map(k => {
+                const c = curve[k];
+                const topEnd = c.top05 != null ? c.top05 : (c.top10 != null ? c.top10 : (c.top25 != null ? c.top25 : c.avg));
+                const tick = (v, cls) => v == null ? '' : `<span class="absolute top-1/2 -translate-y-1/2 w-0.5 h-2.5 rounded ${cls}" style="left:calc(${x(v)}% - 1px)"></span>`;
+                const tip = c.eliteSeparation != null
+                    ? (isAr ? `عتبة أعلى 10% أعلى من المتوسط بـ ${Math.round(c.eliteSeparation)} (${c.n} بطاقة)` : `Top 10% threshold is ${Math.round(c.eliteSeparation)} above average (${c.n} cards)`)
+                    : `${c.n} ${isAr ? 'بطاقة' : 'cards'}`;
+                return `
+                    <div class="grid items-center gap-x-1.5" style="${cols}" title="${tip}">
+                        <span class="text-[11px] font-semibold text-gray-400 truncate">${attrLabel(k)}</span>
+                        <div class="relative h-2 bg-black/30 rounded-full" style="direction:ltr;">
+                            <div class="absolute inset-y-0 rounded-full bg-gradient-to-r from-blue-400/60 to-fc-accent" style="left:${x(c.avg)}%; width:${Math.max(1, x(topEnd) - x(c.avg))}%;"></div>
+                            ${tick(c.avg, 'bg-white')}${tick(c.top25, 'bg-fc-accent/60')}${tick(c.top10, 'bg-fc-accent/80')}${tick(c.top05, 'bg-fc-accent')}
+                        </div>
+                        <span class="text-right rtl:text-left text-xs font-black text-white">${fmt(c.avg)}</span>
+                        <span class="text-right rtl:text-left text-xs font-bold text-fc-accent/70">${fmt(c.top25)}</span>
+                        <span class="text-right rtl:text-left text-xs font-black text-fc-accent/85">${fmt(c.top10)}</span>
+                        <span class="text-right rtl:text-left text-xs font-black text-fc-accent">${fmt(c.top05)}</span>
+                    </div>`;
+            }).join('');
+            const note = isAr
+                ? `من ${positionPopulationDesc(summary.population, label, true)}، بتقييم 74+ (${summary.sampleSize} بطاقة${minN < summary.sampleSize ? `؛ ${summary.sampleSize - minN} بلا قيمة في بعض الخصائص فاستُبعدت منها` : ''}). «أعلى X%» هي عتبة — القيمة التي تحتاجها البطاقة لتكون ضمن أفضل X% — وليست متوسطاً.${missingTier ? ' «—» = العيّنة أصغر من أن تحتوي هذه الفئة.' : ''}`
+                : `From ${positionPopulationDesc(summary.population, label, false)}, rated 74+ (${summary.sampleSize} cards${minN < summary.sampleSize ? `; ${summary.sampleSize - minN} missing a value on some attributes, skipped there` : ''}). "Top X%" is a threshold — the value a card needs to be in the top X% — not an average.${missingTier ? ' "—" = too few cards for that tier.' : ''}`;
+            return `
+                <div class="mt-3 px-3 py-2 rounded-xl bg-black/20 border border-fc-border space-y-1.5">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <i class="fa-solid fa-chart-line text-fc-accent text-xs shrink-0"></i>
+                        <span class="text-xs font-black text-white">${isAr ? 'منحنى قوة القاعدة' : 'Database Power Curve'}</span>
+                        <span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(summary.population, isAr)}</span>
+                    </div>
+                    <p class="text-[10px] text-gray-400 leading-tight">${isAr ? `كيف ترتفع خصائص ${label} من البطاقة المعتادة إلى النخبة.` : `How ${label} attributes rise from typical to elite.`}</p>
+                    <div class="grid items-center gap-x-1.5 text-[9px] font-bold text-gray-500 uppercase" style="${cols}">
+                        <span></span><span></span>
+                        ${head.map(h => `<span class="text-right rtl:text-left leading-tight">${h}</span>`).join('')}
+                    </div>
+                    ${rows}
+                    <p class="text-[9px] ${lowConf ? 'text-orange-400' : 'text-gray-500'} leading-tight pt-0.5">${note}${lowConf ? (isAr ? ' — عيّنة صغيرة، تعامل معها بحذر' : ' — small sample, treat with caution') : ''}</p>
+                </div>
+            `;
+        }
+
         function renderGeneralStatsPanel() {
             const container = document.getElementById('db-stats-content');
             if (!container) return;
@@ -6679,6 +6814,7 @@
                         ${popHtml}
                         <div class="space-y-2 mt-3">${statRows}</div>
                         ${priorityHtml}
+                        ${(() => { try { return dbStatsPowerCurveHtml(summary, label, isAr); } catch (err) { console.error('[Database Stats] power curve render failed:', dp.labelEn, err); return ''; } })()}
                         ${playstylesHtml}
                         ${dbStatsPopulationInsightHtml(summary.insight, label, isAr)}
                     </div>
