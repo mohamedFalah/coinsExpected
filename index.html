@@ -268,6 +268,10 @@
                     <i class="fa-solid fa-arrow-trend-up"></i>
                     <span data-i18n="navMarket">Market</span>
                 </button>
+                <button onclick="switchTab('club')" id="nav-club" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-people-group"></i>
+                    <span data-i18n="navClub">Club</span>
+                </button>
                 <button onclick="switchTab('lab')" id="nav-lab" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
                     <i class="fa-solid fa-flask"></i>
                     <span data-i18n="navLab">Tactics Lab</span>
@@ -311,6 +315,10 @@
             <button onclick="switchTab('market')" id="mob-nav-market" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-arrow-trend-up text-base mb-0.5"></i>
                 <span data-i18n="navMarket">Market</span>
+            </button>
+            <button onclick="switchTab('club')" id="mob-nav-club" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-people-group text-base mb-0.5"></i>
+                <span data-i18n="navClub">Club</span>
             </button>
             <button onclick="switchTab('lab')" id="mob-nav-lab" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-flask text-base mb-0.5"></i>
@@ -988,6 +996,11 @@
             </div>
         </div>
 
+        <!-- MY CLUB — registered (owned) players + analysis (renderClubTab). -->
+        <div id="view-club" class="hidden space-y-6">
+            <div id="club-root" class="space-y-6"></div>
+        </div>
+
         <!-- TACTICS LAB — collects the game's Tactical Summary for planned
              setups (rendered by renderTacticsLab). -->
         <div id="view-lab" class="hidden space-y-6">
@@ -1607,6 +1620,7 @@
                 noPlayersFoundStandalone: "No matching players found.",
                 navMarket: "Market",
                 navLab: "Tactics Lab",
+                navClub: "Club",
                 marketTitle: "Market Trading",
                 marketDesc: "Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax. A pure coin-trading tool — separate from your squad.",
                 marketBudgetLbl: "Trading budget",
@@ -1822,6 +1836,7 @@
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
                 navMarket: "السوق",
                 navLab: "مختبر التكتيك",
+                navClub: "النادي",
                 marketTitle: "تداول السوق",
                 marketDesc: "ابحث عن لاعبين معروضين بأقل من قيمتهم السوقية المتوقعة، ثم قدّر الربح المحتمل من بيعهم بسعر أعلى بعد ضريبة EA. أداة تداول كوينز بحتة — منفصلة عن تشكيلتك.",
                 marketBudgetLbl: "ميزانية التداول",
@@ -1922,6 +1937,8 @@
             // shown and replace it with the default best-fit squad again.
             // Only fall back to a full build if there's genuinely no squad
             // yet (e.g. database still loading on first paint).
+            const clubView = document.getElementById('view-club');
+            if (clubView && !clubView.classList.contains('hidden') && typeof window.renderClubTab === 'function') window.renderClubTab();
             if (squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0) {
                 computeSlotAlternatives();
                 populateManagerDropdown();
@@ -4780,7 +4797,7 @@
         }
 
         window.switchTab = function(tabId) {
-            ['calculator', 'squad', 'database', 'mysquads', 'players', 'market', 'lab'].forEach(t => {
+            ['calculator', 'squad', 'database', 'mysquads', 'players', 'market', 'lab', 'club'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
                 const nav = document.getElementById(`nav-${t}`);
                 const mobNav = document.getElementById(`mob-nav-${t}`);
@@ -4806,6 +4823,9 @@
             }
             if (tabId === 'lab' && typeof window.renderTacticsLab === 'function') {
                 window.renderTacticsLab();
+            }
+            if (tabId === 'club' && typeof window.renderClubTab === 'function') {
+                window.renderClubTab();
             }
         };
 
@@ -10629,6 +10649,822 @@
                 if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
             });
         };
+
+        // ===================================================================
+        // MY CLUB — register the players you own, then see what they mean
+        // ===================================================================
+        // The club register IS the saved Player Pool (PLAYER_POOL_KEY): one
+        // list, so a player added here is also available to the Squad
+        // Builder's pool mode, and vice versa. Nothing new is stored.
+        //
+        // Every analysis reuses logic the app already has, so this tab
+        // never disagrees with the Squad Builder:
+        //   • formations  — runPoolAnalysis (chemistry-aware, all formations)
+        //   • roles       — computeTeamRoles / getRoleSuggestion
+        //   • how to play — computeSquadIdentity + suggestSquadTactics
+        //   • movement    — getHeatmapFocusEntry (scraped in-game heat maps)
+        //   • benchmarks  — GENERAL_PLAYER_STATS (database average, 74+)
+        // Those functions read squadState, so they run inside withClubXI(),
+        // which swaps the club's XI in and ALWAYS restores the user's squad.
+        const CLUB_POSITIONS = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST', 'CF'];
+        const CLUB_LINES = [
+            { key: 'GK', en: 'Goalkeepers', ar: 'حراسة المرمى', icon: 'fa-hand', pos: ['GK'] },
+            { key: 'DEF', en: 'Defence', ar: 'الدفاع', icon: 'fa-shield-halved', pos: ['CB', 'LB', 'RB', 'LWB', 'RWB'] },
+            { key: 'MID', en: 'Midfield', ar: 'الوسط', icon: 'fa-chess-knight', pos: ['CDM', 'CM', 'CAM', 'LM', 'RM'] },
+            { key: 'ATT', en: 'Attack', ar: 'الهجوم', icon: 'fa-crosshairs', pos: ['LW', 'RW', 'ST', 'CF'] }
+        ];
+        // Where each position sits on the coverage map (x across, y down;
+        // the attacking end is at the top, same as the Squad pitch).
+        const CLUB_MAP_COORDS = {
+            ST: [50, 9], CF: [50, 22], LW: [16, 17], RW: [84, 17], CAM: [50, 35],
+            LM: [13, 42], RM: [87, 42], CM: [50, 49], CDM: [50, 62],
+            LWB: [13, 61], RWB: [87, 61], LB: [16, 77], RB: [84, 77], CB: [50, 78], GK: [50, 92]
+        };
+        const CLUB_STATUS = {
+            strong: { color: '#4ade80', en: '2+ natural players', ar: 'لاعبان أساسيان أو أكثر' },
+            thin:   { color: '#fbbf24', en: '1 natural player', ar: 'لاعب أساسي واحد' },
+            cover:  { color: '#60a5fa', en: 'Alternatives only', ar: 'بدلاء فقط' },
+            gap:    { color: '#f87171', en: 'Nobody', ar: 'لا أحد' }
+        };
+        const CLUB_ATTR_KEYS = ['pac', 'sho', 'pas', 'dri', 'def', 'phy'];
+        let clubAnalysisRunning = false;
+        let clubExpandedId = null;
+        let clubSkeletonLang = null;
+
+        const clubT = (en, ar) => (currentLanguage === 'ar' ? ar : en);
+        function clubEsc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function clubAttrLabel(k) {
+            return ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+        }
+        function clubPlayers() {
+            return (typeof resolvedPoolPlayers === 'function' ? resolvedPoolPlayers() : []).filter(p => p && p.id);
+        }
+        function clubPositionsOf(p) {
+            return [p.pos, ...(Array.isArray(p.alt) ? p.alt : [])].filter((x, i, a) => x && a.indexOf(x) === i);
+        }
+        function clubPhotoHtml(p, sizeClass) {
+            return `<img src="${clubEsc(p.photo || '')}" class="${sizeClass} rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/64x64/111827/9ca3af?text=${encodeURIComponent((p.name || '?').charAt(0))}'">`;
+        }
+
+        // Primary / alternative players for every position, best first.
+        function computeClubCoverage(players) {
+            const cov = {};
+            CLUB_POSITIONS.forEach(pos => {
+                const primary = players.filter(p => p.pos === pos).sort((a, b) => getMetaValue(b) - getMetaValue(a));
+                const alt = players.filter(p => p.pos !== pos && Array.isArray(p.alt) && p.alt.includes(pos)).sort((a, b) => getMetaValue(b) - getMetaValue(a));
+                const status = primary.length >= 2 ? 'strong' : primary.length === 1 ? 'thin' : alt.length ? 'cover' : 'gap';
+                cov[pos] = { primary, alt, status };
+            });
+            return cov;
+        }
+
+        // Runs fn with the club XI loaded into squadState, then restores
+        // the user's real squad no matter what.
+        function withClubXI(formation, xi, fn) {
+            const saved = {
+                formation: squadState.formation, xi: squadState.selectedXI,
+                roles: squadState.teamRoles, overrides: squadState.manualRoleOverrides
+            };
+            try {
+                squadState.formation = formation;
+                squadState.selectedXI = xi;
+                squadState.manualRoleOverrides = {};
+                squadState.teamRoles = computeTeamRoles(xi, formationSlots[formation]);
+                return fn(squadState.teamRoles);
+            } finally {
+                squadState.formation = saved.formation;
+                squadState.selectedXI = saved.xi;
+                squadState.teamRoles = saved.roles;
+                squadState.manualRoleOverrides = saved.overrides;
+            }
+        }
+
+        // Best result per formation from the shared pool analysis.
+        function clubBestPerFormation() {
+            if (!poolAnalysis || poolAnalysis.signature !== poolSignature()) return null;
+            const seen = new Set();
+            const out = [];
+            poolAnalysis.results.slice().sort((a, b) => b.overall - a.overall).forEach(r => {
+                if (seen.has(r.formation)) return;
+                seen.add(r.formation);
+                out.push(r);
+            });
+            return out;
+        }
+
+        // Everything the "how to play" sections need, for one XI.
+        function computeClubInsights(best, players) {
+            const slots = formationSlots[best.formation];
+            return withClubXI(best.formation, best.xi, roles => {
+                const identity = computeSquadIdentity();
+                const tactics = suggestSquadTactics(identity);
+                const starters = {};
+                slots.forEach((slot, idx) => {
+                    const p = best.xi[idx];
+                    if (!p) return;
+                    const role = roles[idx] || getRoleSuggestion(p, slot.pos);
+                    const hm = role ? getHeatmapFocusEntry(slot.pos, role.role, role.focus, idx) : null;
+                    starters[p.id] = {
+                        slotIdx: idx, pos: slot.pos, label: slot.label, role,
+                        official: role ? getOfficialRoleInfo(slot.pos, role.role, role.focus) : null,
+                        heat: hm ? hm.levels : null,
+                        natural: p.pos === slot.pos || (Array.isArray(p.alt) && p.alt.includes(slot.pos))
+                    };
+                });
+                const bench = {};
+                players.forEach(p => {
+                    if (starters[p.id]) return;
+                    let role = null;
+                    try { role = getRoleSuggestion(p, p.pos); } catch (e) { role = null; }
+                    const hm = role ? getHeatmapFocusEntry(p.pos, role.role, role.focus) : null;
+                    bench[p.id] = {
+                        pos: p.pos, role,
+                        official: role ? getOfficialRoleInfo(p.pos, role.role, role.focus) : null,
+                        heat: hm ? hm.levels : null
+                    };
+                });
+                // Key player / upgrade targets: key-attribute fit vs the
+                // database average fit for the slot they play.
+                const fits = slots.map((slot, idx) => {
+                    const p = best.xi[idx];
+                    if (!p) return null;
+                    const fit = computeKeyAttrFitScore(p, slot.pos);
+                    const avg = getAverageFitScoreForPosition(slot.pos);
+                    return (fit == null || avg == null) ? null : { p, pos: slot.pos, gap: fit - avg };
+                }).filter(Boolean).sort((a, b) => b.gap - a.gap);
+                return { identity, tactics, starters, bench, fits };
+            });
+        }
+
+        // ---------------------------------------------------------------
+        // SVG builders
+        // ---------------------------------------------------------------
+        function clubPitchBase(w, h) {
+            return `
+                <rect x="0" y="0" width="${w}" height="${h}" rx="3" fill="#12372a"/>
+                ${[0, 1, 2, 3, 4, 5, 6].map(i => i % 2 ? `<rect x="0" y="${(h / 7) * i}" width="${w}" height="${h / 7}" fill="#1b4d3e" opacity="0.55"/>` : '').join('')}
+                <g fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="0.5">
+                    <rect x="2" y="2" width="${w - 4}" height="${h - 4}" rx="1"/>
+                    <line x1="2" y1="${h / 2}" x2="${w - 2}" y2="${h / 2}"/>
+                    <circle cx="${w / 2}" cy="${h / 2}" r="${w * 0.12}"/>
+                    <rect x="${w * 0.22}" y="2" width="${w * 0.56}" height="${h * 0.14}"/>
+                    <rect x="${w * 0.22}" y="${h - 2 - h * 0.14}" width="${w * 0.56}" height="${h * 0.14}"/>
+                    <rect x="${w * 0.38}" y="2" width="${w * 0.24}" height="${h * 0.055}"/>
+                    <rect x="${w * 0.38}" y="${h - 2 - h * 0.055}" width="${w * 0.24}" height="${h * 0.055}"/>
+                </g>`;
+        }
+
+        function clubCoverageMapSvg(cov) {
+            const W = 100, H = 142;
+            const nodes = CLUB_POSITIONS.map(pos => {
+                const c = cov[pos];
+                const [x, yPct] = CLUB_MAP_COORDS[pos];
+                const y = yPct * H / 100;
+                const st = CLUB_STATUS[c.status];
+                const r = 5.2 + Math.min(3, c.primary.length) * 0.9;
+                const names = [
+                    ...c.primary.map(p => `${p.name} (${p.rating})`),
+                    ...c.alt.map(p => `${p.name} (${p.rating}, ${clubT('alt', 'بديل')})`)
+                ].join('\n') || clubT('Nobody can play here', 'لا أحد يلعب هنا');
+                return `
+                    <g>
+                        <title>${clubEsc(pos + ' — ' + names)}</title>
+                        <circle cx="${x}" cy="${y}" r="${r}" fill="${st.color}" fill-opacity="${c.status === 'gap' ? 0.08 : 0.22}" stroke="${st.color}" stroke-width="0.7" ${c.status === 'gap' || c.status === 'cover' ? 'stroke-dasharray="1.6 1.1"' : ''}/>
+                        <text x="${x}" y="${y + 1.5}" text-anchor="middle" font-size="4.6" font-weight="900" fill="#fff">${c.primary.length}</text>
+                        <text x="${x}" y="${y - r - 1.4}" text-anchor="middle" font-size="3.2" font-weight="800" fill="${st.color}">${pos}</text>
+                        ${c.alt.length ? (x > 55
+                            ? `<text x="${x - r - 1.2}" y="${y + 1.1}" text-anchor="end" font-size="2.9" font-weight="700" fill="#93c5fd">+${c.alt.length} ${clubT('alt', 'بديل')}</text>`
+                            : `<text x="${x + r + 1.2}" y="${y + 1.1}" text-anchor="start" font-size="2.9" font-weight="700" fill="#93c5fd">+${c.alt.length} ${clubT('alt', 'بديل')}</text>`) : ''}
+                    </g>`;
+            }).join('');
+            return `<svg viewBox="0 0 ${W} ${H}" class="w-full max-w-sm mx-auto block" style="direction:ltr" role="img" aria-label="${clubEsc(clubT('Position coverage map', 'خريطة تغطية المراكز'))}">
+                ${clubPitchBase(W, H)}${nodes}</svg>`;
+        }
+
+        // Player radar: six attributes vs the database average for his
+        // position. Zoomed scale (40–99) so real differences are visible.
+        function clubRadarSvg(p, pos, size) {
+            if (!p.att) return '';
+            const keys = statKeysForPosition(pos);
+            if (!keys.every(k => typeof p.att[k] === 'number')) return '';
+            const base = GENERAL_PLAYER_STATS[pos] && GENERAL_PLAYER_STATS[pos].stats;
+            const R = size * 0.32, cx = size / 2, cy = size / 2;
+            const scale = v => Math.max(0, Math.min(1, ((v || 0) - 40) / 59));
+            const pt = (i, frac) => {
+                const a = -Math.PI / 2 + i * (2 * Math.PI / 6);
+                return [cx + Math.cos(a) * R * frac, cy + Math.sin(a) * R * frac];
+            };
+            const poly = fracs => fracs.map((f, i) => pt(i, f).map(n => n.toFixed(1)).join(',')).join(' ');
+            const mine = keys.map(k => scale(p.att[k]));
+            const avg = base && keys.every(k => base[k]) ? keys.map(k => scale(base[k].avg)) : null;
+            const labels = keys.map((k, i) => {
+                const [lx, ly] = pt(i, 1.32);
+                const v = p.att[k];
+                const b = base && base[k] ? base[k].avg : null;
+                const col = b == null ? '#9ca3af' : v - b >= 3 ? '#4ade80' : v - b <= -3 ? '#fb923c' : '#d1d5db';
+                return `<text x="${lx.toFixed(1)}" y="${(ly + 1).toFixed(1)}" text-anchor="middle" font-size="${size * 0.07}" font-weight="800" fill="${col}">${k.toUpperCase()} ${v != null ? v : ''}</text>`;
+            }).join('');
+            const padX = size * 0.2;
+            return `<svg viewBox="${-padX} 0 ${size + padX * 2} ${size}" width="100%" style="max-width:${size * 1.9}px;direction:ltr" role="img">
+                ${[0.25, 0.5, 0.75, 1].map(f => `<polygon points="${poly(new Array(6).fill(f))}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="0.6"/>`).join('')}
+                ${avg ? `<polygon points="${poly(avg)}" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.55)" stroke-width="0.8" stroke-dasharray="2 1.5"/>` : ''}
+                <polygon points="${poly(mine)}" fill="rgba(0,242,254,0.22)" stroke="#00f2fe" stroke-width="1.2"/>
+                ${labels}
+            </svg>`;
+        }
+
+        // Team identity: the four axes computeSquadIdentity measures, as
+        // points above/below what's typical for those positions.
+        function clubIdentitySvg(identity) {
+            const axes = [
+                { k: 'pace', en: 'Pace', ar: 'السرعة' },
+                { k: 'buildup', en: 'Passing', ar: 'التمرير' },
+                { k: 'defense', en: 'Defending', ar: 'الدفاع' },
+                { k: 'power', en: 'Physical', ar: 'البدنية' }
+            ];
+            const S = 160, cx = 80, cy = 80, R = 58;
+            const frac = d => Math.max(0.08, Math.min(1, 0.5 + (d || 0) / 16));
+            const pt = (i, f) => { const a = -Math.PI / 2 + i * Math.PI / 2; return [cx + Math.cos(a) * R * f, cy + Math.sin(a) * R * f]; };
+            const poly = fs => fs.map((f, i) => pt(i, f).map(n => n.toFixed(1)).join(',')).join(' ');
+            const devs = axes.map(a => (identity && identity.devs ? identity.devs[a.k] : 0) || 0);
+            const labels = axes.map((a, i) => {
+                const [lx, ly] = pt(i, 1.24);
+                const d = Math.round(devs[i]);
+                const col = d >= 2 ? '#4ade80' : d <= -2 ? '#fb923c' : '#d1d5db';
+                return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="9" font-weight="800" fill="#e5e7eb">${clubEsc(clubT(a.en, a.ar))}</text>
+                        <text x="${lx.toFixed(1)}" y="${(ly + 10).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="900" fill="${col}">${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d)}</text>`;
+            }).join('');
+            return `<svg viewBox="-14 -6 ${S + 28} ${S + 16}" class="w-full max-w-[240px] mx-auto block" style="direction:ltr" role="img">
+                ${[0.25, 0.75, 1].map(f => `<polygon points="${poly([f, f, f, f])}" fill="none" stroke="rgba(255,255,255,0.08)"/>`).join('')}
+                <polygon points="${poly([0.5, 0.5, 0.5, 0.5])}" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.55)" stroke-dasharray="3 2"/>
+                <polygon points="${poly(devs.map(frac))}" fill="rgba(0,242,254,0.22)" stroke="#00f2fe" stroke-width="1.6"/>
+                ${labels}
+            </svg>`;
+        }
+
+        // Mini heat map from the scraped in-game data (attacking end top).
+        function clubHeatmapSvg(levels) {
+            if (!levels || typeof HEATMAP_RAW === 'undefined') return '';
+            const W = 60, H = 78;
+            const dots = HEATMAP_RAW.grid.map((g, i) => {
+                const lv = levels.charAt(i);
+                if (!lv || lv === '0') return '';
+                const op = { '1': 0.28, '2': 0.55, '3': 0.9 }[lv] || 0;
+                return `<circle cx="${(g.left / 100 * W).toFixed(1)}" cy="${(g.top / 100 * H).toFixed(1)}" r="${lv === '3' ? 7 : lv === '2' ? 6 : 5}" fill="#f97316" fill-opacity="${op}"/>`;
+            }).join('');
+            return `<svg viewBox="0 0 ${W} ${H}" class="w-14 shrink-0" style="direction:ltr" role="img">
+                <rect width="${W}" height="${H}" rx="2" fill="#12372a"/>
+                <g fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.5"><rect x="1" y="1" width="${W - 2}" height="${H - 2}"/><line x1="1" y1="${H / 2}" x2="${W - 1}" y2="${H / 2}"/><rect x="${W * 0.25}" y="1" width="${W * 0.5}" height="${H * 0.14}"/><rect x="${W * 0.25}" y="${H - 1 - H * 0.14}" width="${W * 0.5}" height="${H * 0.14}"/></g>
+                ${dots}
+            </svg>`;
+        }
+
+        // Formation line-up on a flat pitch.
+        function clubXIPitchSvg(result, compact) {
+            const slots = formationSlots[result.formation];
+            const W = 100, H = 118;
+            const players = slots.map((slot, idx) => {
+                const p = result.xi[idx];
+                const x = Math.max(8, Math.min(92, slot.left));
+                const y = Math.max(7, Math.min(111, slot.top * 1.12 + 3));
+                if (!p) {
+                    return `<g><circle cx="${x}" cy="${y}" r="5" fill="none" stroke="#f87171" stroke-dasharray="1.5 1"/><text x="${x}" y="${y + 1.4}" text-anchor="middle" font-size="3.6" font-weight="900" fill="#f87171">${slot.pos}</text></g>`;
+                }
+                const natural = p.pos === slot.pos || (Array.isArray(p.alt) && p.alt.includes(slot.pos));
+                const ring = natural ? (p.pos === slot.pos ? '#00f2fe' : '#60a5fa') : '#fb923c';
+                const shortName = String(p.name).split(' ').slice(-1)[0].slice(0, 11);
+                return `<g>
+                    <title>${clubEsc(`${slot.pos}: ${p.name} — ${p.rating} OVR${natural ? '' : ' · ' + clubT('out of position', 'خارج المركز')}`)}</title>
+                    <circle cx="${x}" cy="${y}" r="${compact ? 4.6 : 5.2}" fill="#0a0e17" stroke="${ring}" stroke-width="1"/>
+                    <text x="${x}" y="${y + 1.5}" text-anchor="middle" font-size="${compact ? 3.6 : 4}" font-weight="900" fill="#fff">${p.rating}</text>
+                    ${compact ? '' : `<text x="${x}" y="${y + 9}" text-anchor="middle" font-size="3.3" font-weight="700" fill="#e5e7eb">${clubEsc(shortName)}</text>
+                    <text x="${x}" y="${y - 6.8}" text-anchor="middle" font-size="2.8" font-weight="800" fill="${ring}">${slot.pos}</text>`}
+                </g>`;
+            }).join('');
+            return `<svg viewBox="0 0 ${W} ${H}" class="w-full block" style="direction:ltr" role="img" aria-label="${clubEsc(result.formation)}">${clubPitchBase(W, H)}${players}</svg>`;
+        }
+
+        // Defensive-line height gauge (0 = own goal line, 100 = halfway).
+        function clubLineGaugeSvg(lineHeight) {
+            const W = 60, H = 90;
+            const y = H - 6 - (Math.max(0, Math.min(100, lineHeight)) / 100) * (H * 0.5);
+            return `<svg viewBox="0 0 ${W} ${H}" class="w-16 shrink-0" style="direction:ltr" role="img">
+                <rect width="${W}" height="${H}" rx="3" fill="#12372a"/>
+                <g fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"><rect x="2" y="2" width="${W - 4}" height="${H - 4}"/><line x1="2" y1="${H / 2}" x2="${W - 2}" y2="${H / 2}"/><rect x="${W * 0.22}" y="${H - 2 - H * 0.16}" width="${W * 0.56}" height="${H * 0.16}"/></g>
+                <rect x="2" y="${y.toFixed(1)}" width="${W - 4}" height="${(H - 2 - y).toFixed(1)}" fill="#00f2fe" fill-opacity="0.1"/>
+                <line x1="4" y1="${y.toFixed(1)}" x2="${W - 4}" y2="${y.toFixed(1)}" stroke="#00f2fe" stroke-width="1.6" stroke-dasharray="3 2"/>
+                ${[14, 24, 36, 46].map(x => `<circle cx="${x}" cy="${y.toFixed(1)}" r="2.2" fill="#00f2fe"/>`).join('')}
+                <text x="${W / 2}" y="${(y - 6).toFixed(1)}" text-anchor="middle" font-size="8" font-weight="900" fill="#fff">${lineHeight}</text>
+            </svg>`;
+        }
+
+        // ---------------------------------------------------------------
+        // Section renderers
+        // ---------------------------------------------------------------
+        function clubStatTile(icon, value, label, cls) {
+            return `<div class="bg-fc-dark border border-fc-border rounded-xl p-3 flex items-center gap-3">
+                <i class="fa-solid ${icon} ${cls || 'text-fc-accent'} text-lg w-6 text-center"></i>
+                <div class="min-w-0"><div class="text-lg font-black text-white leading-none">${value}</div><div class="text-[10px] text-gray-400 mt-1">${label}</div></div>
+            </div>`;
+        }
+
+        function clubCoverageSection(players, cov) {
+            const legend = Object.keys(CLUB_STATUS).map(k => `
+                <div class="flex items-center gap-2 text-[11px] text-gray-300">
+                    <span class="w-3 h-3 rounded-full shrink-0" style="background:${CLUB_STATUS[k].color}33;border:1.5px ${k === 'gap' || k === 'cover' ? 'dashed' : 'solid'} ${CLUB_STATUS[k].color}"></span>${clubT(CLUB_STATUS[k].en, CLUB_STATUS[k].ar)}
+                </div>`).join('');
+            // Line balance: natural players per line, plus alt-only cover.
+            const lineRows = CLUB_LINES.map(line => {
+                const natural = players.filter(p => line.pos.includes(p.pos)).length;
+                const altOnly = players.filter(p => !line.pos.includes(p.pos) && (p.alt || []).some(a => line.pos.includes(a))).length;
+                return { line, natural, altOnly };
+            });
+            const maxLine = Math.max(1, ...lineRows.map(r => r.natural + r.altOnly));
+            const lineBars = lineRows.map(r => `
+                <div class="flex items-center gap-2">
+                    <span class="w-28 shrink-0 text-xs font-semibold text-gray-400 whitespace-nowrap"><i class="fa-solid ${r.line.icon} me-1 text-gray-500"></i>${clubT(r.line.en, r.line.ar)}</span>
+                    <div class="flex-1 h-3 bg-black/30 rounded-full overflow-hidden flex" style="direction:ltr">
+                        <div class="h-full bg-fc-accent" style="width:${r.natural / maxLine * 100}%"></div>
+                        <div class="h-full bg-blue-400/40" style="width:${r.altOnly / maxLine * 100}%"></div>
+                    </div>
+                    <span class="w-14 shrink-0 text-right rtl:text-left text-xs font-black text-white">${r.natural}${r.altOnly ? `<span class="text-blue-300 font-bold"> +${r.altOnly}</span>` : ''}</span>
+                </div>`).join('');
+            // Rating spread.
+            const buckets = [
+                { en: '<75', test: r => r < 75 }, { en: '75–79', test: r => r >= 75 && r < 80 },
+                { en: '80–84', test: r => r >= 80 && r < 85 }, { en: '85–89', test: r => r >= 85 && r < 90 },
+                { en: '90+', test: r => r >= 90 }
+            ].map(b => ({ ...b, n: players.filter(p => b.test(p.rating || 0)).length }));
+            const maxB = Math.max(1, ...buckets.map(b => b.n));
+            const histo = `<div class="flex items-end gap-2 h-24" style="direction:ltr">${buckets.map(b => `
+                <div class="flex-1 flex flex-col items-center justify-end h-full gap-1">
+                    <span class="text-[10px] font-black text-white">${b.n || ''}</span>
+                    <div class="w-full rounded-t-md bg-gradient-to-t from-fc-accent/30 to-fc-accent" style="height:${b.n ? Math.max(6, b.n / maxB * 100) : 2}%"></div>
+                    <span class="text-[9px] text-gray-500 font-bold">${b.en}</span>
+                </div>`).join('')}</div>`;
+            const versatile = players.slice().sort((a, b) => clubPositionsOf(b).length - clubPositionsOf(a).length || getMetaValue(b) - getMetaValue(a))
+                .filter(p => clubPositionsOf(p).length > 1).slice(0, 3);
+            return `
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 space-y-4">
+                    <div>
+                        <h3 class="text-lg font-black text-white flex items-center gap-2"><i class="fa-solid fa-map-location-dot text-fc-accent"></i>${clubT('Position coverage', 'تغطية المراكز')}</h3>
+                        <p class="text-xs text-gray-400">${clubT('Big number = natural (primary-position) players. Blue “+N alt” = players who list it as an alternative position. Hover a circle for names.', 'الرقم الكبير = لاعبون مركزهم الأساسي هنا. «+N بديل» بالأزرق = لاعبون هذا أحد مراكزهم البديلة. مرّر على الدائرة لرؤية الأسماء.')}</p>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                        <div>${clubCoverageMapSvg(cov)}</div>
+                        <div class="space-y-5">
+                            <div class="grid grid-cols-2 gap-2">${legend}</div>
+                            <div class="space-y-2">
+                                <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">${clubT('Players per line', 'اللاعبون في كل خط')}</div>
+                                ${lineBars}
+                                <p class="text-[10px] text-gray-500">${clubT('Cyan = natural players, blue = can cover from another line.', 'السماوي = لاعبون أساسيون، الأزرق = يغطّون من خط آخر.')}</p>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">${clubT('Rating spread', 'توزيع التقييمات')}</div>
+                                ${histo}
+                            </div>
+                            ${versatile.length ? `<div class="space-y-1.5">
+                                <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">${clubT('Most versatile', 'الأكثر تعدداً للمراكز')}</div>
+                                ${versatile.map(p => `<div class="flex items-center gap-2 text-xs">${clubPhotoHtml(p, 'w-6 h-6')}<span class="font-bold text-white truncate">${clubEsc(p.name)}</span><span class="ms-auto flex gap-1">${clubPositionsOf(p).map((x, i) => `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${i === 0 ? 'bg-fc-accent/20 text-fc-accent border border-fc-accent/30' : 'text-blue-300 border border-dashed border-blue-400/50'}">${x}</span>`).join('')}</span></div>`).join('')}
+                            </div>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function clubDepthSection(cov) {
+            const chip = (p, isAlt) => `
+                <button onclick="window.clubFocusPlayer('${clubEsc(p.id)}')" class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold ${isAlt ? 'border border-dashed border-blue-400/50 text-blue-200 bg-blue-500/5' : 'border border-fc-accent/40 text-white bg-fc-accent/10'} hover:bg-fc-cardHover" title="${clubEsc(isAlt ? clubT(`Plays ${p.pos} normally — this is an alternative position`, `مركزه الأساسي ${p.pos} — هذا مركز بديل`) : clubT('Natural position', 'مركزه الأساسي'))}">
+                    <span class="${isAlt ? 'text-blue-300' : 'text-fc-accent'} font-black">${p.rating}</span>${clubEsc(p.name)}
+                </button>`;
+            const rows = CLUB_LINES.map(line => `
+                <div class="space-y-1.5">
+                    <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid ${line.icon} text-gray-500"></i>${clubT(line.en, line.ar)}</div>
+                    ${line.pos.map(pos => {
+                        const c = cov[pos];
+                        const st = CLUB_STATUS[c.status];
+                        return `<div class="flex items-start gap-2 py-1.5 border-b border-fc-border/40 last:border-0">
+                            <span class="w-12 shrink-0 text-center text-xs font-black rounded-md py-1" style="color:${st.color};background:${st.color}1f;border:1px ${c.status === 'gap' || c.status === 'cover' ? 'dashed' : 'solid'} ${st.color}66">${pos}</span>
+                            <div class="flex flex-wrap gap-1.5 min-w-0">
+                                ${c.primary.map(p => chip(p, false)).join('')}
+                                ${c.alt.map(p => chip(p, true)).join('')}
+                                ${!c.primary.length && !c.alt.length ? `<span class="text-[11px] text-red-300/80 italic py-1">${clubT('Nobody registered can play here', 'لا يوجد لاعب مسجّل يلعب هنا')}</span>` : ''}
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>`).join('');
+            return `
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 space-y-4">
+                    <div>
+                        <h3 class="text-lg font-black text-white flex items-center gap-2"><i class="fa-solid fa-layer-group text-fc-accent"></i>${clubT('Depth chart', 'عمق التشكيلة')}</h3>
+                        <p class="text-xs text-gray-400">${clubT('Solid chips = natural position, dashed = alternative position. Best first. Tap a player to jump to his card.', 'البطاقة الصلبة = المركز الأساسي، المتقطعة = مركز بديل. الأفضل أولاً. اضغط على اللاعب للانتقال إلى بطاقته.')}</p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">${rows}</div>
+                </div>`;
+        }
+
+        function clubFormationSection(players, bestList) {
+            const need = 11 - players.length;
+            const head = `<div>
+                <h3 class="text-lg font-black text-white flex items-center gap-2"><i class="fa-solid fa-chess-board text-fc-accent"></i>${clubT('Best formations for your club', 'أفضل الخطط لناديك')}</h3>
+                <p class="text-xs text-gray-400">${clubT('Every formation is tried with your registered players — position fit plus real chemistry, the same search the Squad Builder’s player pool uses.', 'تُجرّب كل خطة بلاعبيك المسجّلين — ملاءمة المراكز مع الكيمياء الفعلية، بنفس بحث مجموعة اللاعبين في منشئ التشكيلة.')}</p>
+            </div>`;
+            if (need > 0) {
+                return `<div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 space-y-3">${head}
+                    <div class="flex items-center gap-3 bg-fc-dark border border-dashed border-fc-border rounded-xl p-4">
+                        <i class="fa-solid fa-lock text-gray-500 text-xl"></i>
+                        <div class="text-sm text-gray-300">${clubT(`Register <b class="text-white">${need}</b> more player${need === 1 ? '' : 's'} to unlock formation and tactics analysis (11 needed).`, `سجّل <b class="text-white">${need}</b> لاعباً إضافياً لفتح تحليل الخطط والتكتيك (مطلوب 11).`)}</div>
+                    </div></div>`;
+            }
+            if (!bestList) {
+                return `<div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 space-y-3">${head}
+                    <p class="text-sm text-gray-300"><i class="fa-solid fa-spinner fa-spin text-fc-accent me-2"></i>${clubT(`Testing ${Object.keys(formationSlots).length} formations with your players…`, `جارٍ تجربة ${Object.keys(formationSlots).length} خطة بلاعبيك…`)}</p></div>`;
+            }
+            if (!bestList.length) return `<div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6">${head}</div>`;
+            const best = bestList[0];
+            const maxO = best.overall, minO = Math.min(...bestList.map(r => r.overall));
+            const bars = bestList.map((r, i) => {
+                const w = maxO === minO ? 100 : 22 + 78 * (r.overall - minO) / (maxO - minO);
+                return `<button onclick="window.clubShowFormation('${clubEsc(r.formation)}')" class="w-full flex items-center gap-2 text-left rtl:text-right group">
+                    <span class="w-16 shrink-0 text-xs font-black ${i === 0 ? 'text-fc-accent' : 'text-white'}">${clubEsc(r.formation)}</span>
+                    <div class="flex-1 h-3 bg-black/30 rounded-full overflow-hidden" style="direction:ltr"><div class="h-full rounded-full ${i === 0 ? 'bg-fc-accent' : 'bg-fc-accent/45 group-hover:bg-fc-accent/70'}" style="width:${w.toFixed(1)}%"></div></div>
+                    <span class="w-40 shrink-0 text-[10px] text-gray-400 text-right rtl:text-left"><span class="text-green-400 font-bold">${r.chem}/33</span> · ${r.avgRating.toFixed(1)} OVR${r.oop ? ` · <span class="text-orange-400">${r.oop} ${clubT('OOP', 'خارج')}</span>` : ''}</span>
+                </button>`;
+            }).join('');
+            const shown = bestList.find(r => r.formation === (window.__clubShownFormation || best.formation)) || best;
+            const card = (r, isBest) => `
+                <div class="bg-fc-dark border ${isBest ? 'border-fc-accent/60' : 'border-fc-border'} rounded-2xl p-3 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-base font-black text-white">${clubEsc(r.formation)}</span>
+                        ${isBest ? `<span class="text-[10px] font-black text-fc-dark bg-fc-accent rounded px-1.5 py-0.5">${clubT('BEST FIT', 'الأنسب')}</span>` : ''}
+                        <span class="ms-auto text-[11px] text-green-400 font-bold">${clubT('Chem', 'كيمياء')} ${r.chem}/33</span>
+                    </div>
+                    ${clubXIPitchSvg(r, false)}
+                    <div class="flex items-center gap-2 text-[10px] text-gray-400 flex-wrap">
+                        <span><span class="inline-block w-2 h-2 rounded-full bg-fc-accent me-1"></span>${clubT('natural', 'أساسي')}</span>
+                        <span><span class="inline-block w-2 h-2 rounded-full bg-blue-400 me-1"></span>${clubT('alternative', 'بديل')}</span>
+                        <span><span class="inline-block w-2 h-2 rounded-full bg-orange-400 me-1"></span>${clubT('out of position', 'خارج المركز')}</span>
+                    </div>
+                    <button onclick="window.clubApplyFormation('${clubEsc(r.formation)}')" class="w-full px-3 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-black hover:bg-fc-accentHover"><i class="fa-solid fa-futbol me-1"></i>${clubT('Open in Squad Builder', 'افتح في منشئ التشكيلة')}</button>
+                </div>`;
+            return `
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 space-y-4" id="club-formations">
+                    ${head}
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
+                        <div class="lg:col-span-2">${card(shown, shown === best)}</div>
+                        <div class="lg:col-span-3 space-y-2">
+                            <div class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">${clubT('How well each formation suits your players', 'مدى ملاءمة كل خطة للاعبيك')}</div>
+                            ${bars}
+                            <p class="text-[10px] text-gray-500">${clubT('Bar = best line-up found for that formation (position fit + chemistry), relative to your best. Click a formation to see its line-up.', 'الشريط = أفضل تشكيلة وُجدت لتلك الخطة (ملاءمة المراكز + الكيمياء) مقارنة بالأفضل. اضغط على خطة لرؤية تشكيلتها.')}</p>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function clubHowToPlaySection(best, ins) {
+            if (!best || !ins) return '';
+            const id = ins.identity, tac = ins.tactics;
+            const fits = ins.fits;
+            const star = fits[0] && fits[0].gap > 0 ? fits[0] : null;
+            const weak = fits.filter(f => f.gap <= -2).slice(-3).reverse();
+            const cov = computeClubCoverage(clubPlayers());
+            const slotsPos = [...new Set(formationSlots[best.formation].map(s => s.pos))];
+            const thinSpots = slotsPos.filter(pos => cov[pos] && (cov[pos].status === 'gap' || cov[pos].status === 'cover' || (cov[pos].status === 'thin' && formationSlots[best.formation].filter(s => s.pos === pos).length >= 1)));
+            const oopSlots = formationSlots[best.formation].map((s, i) => ({ s, p: best.xi[i] })).filter(o => o.p && !(o.p.pos === o.s.pos || (o.p.alt || []).includes(o.s.pos)));
+            const tacticCard = (icon, title, value, why, extra) => `
+                <div class="bg-fc-dark border border-fc-border rounded-xl p-3 flex gap-3">
+                    ${extra || `<i class="fa-solid ${icon} text-fc-accent text-xl w-8 text-center mt-1"></i>`}
+                    <div class="min-w-0">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${title}</div>
+                        <div class="text-base font-black text-white">${value}</div>
+                        <p class="text-[11px] text-gray-400 leading-snug mt-1">${why}</p>
+                    </div>
+                </div>`;
+            return `
+                <div class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 space-y-4">
+                    <div>
+                        <h3 class="text-lg font-black text-white flex items-center gap-2"><i class="fa-solid fa-compass text-fc-accent"></i>${clubT('How to play with this club', 'كيف تلعب بهذا النادي')}</h3>
+                        <p class="text-xs text-gray-400">${clubT(`Based on your best line-up (${best.formation}), compared with what's typical for the same positions in the database (rated 74+). A starting point — confirm it in game or in the Tactics Lab.`, `مبني على أفضل تشكيلة لديك (${best.formation}) مقارنةً بالمعتاد لنفس المراكز في قاعدة البيانات (74+). نقطة بداية — تأكد منها في اللعبة أو في مختبر التكتيك.`)}</p>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                        <div class="bg-fc-dark border border-fc-border rounded-xl p-4 space-y-2">
+                            <div class="flex items-center gap-2"><i class="fa-solid ${id ? id.icon : 'fa-circle'} text-fc-accent"></i><span class="text-sm font-black text-white">${id ? clubEsc(id.headline) : ''}</span></div>
+                            ${id ? clubIdentitySvg(id) : ''}
+                            <p class="text-[11px] text-gray-400 leading-snug">${id ? id.description : ''}</p>
+                            <p class="text-[10px] text-gray-500">${clubT('Dashed diamond = typical for these positions. Numbers = points above/below.', 'المعيّن المتقطع = المعتاد لهذه المراكز. الأرقام = نقاط فوق/تحت المعتاد.')}</p>
+                        </div>
+                        <div class="space-y-3">
+                            ${tac ? tacticCard('fa-route', clubT('Build-Up Style', 'أسلوب البناء'), clubEsc(tac.buildUpLabel), tac.buildUpWhy) : ''}
+                            ${tac ? tacticCard('', clubT('Defensive Approach · Line height', 'النهج الدفاعي · ارتفاع الخط'), `${clubEsc(tac.approachLabel)} · ${tac.lineHeight}`, tac.approachWhy, clubLineGaugeSvg(tac.lineHeight)) : ''}
+                        </div>
+                        <div class="space-y-3">
+                            ${star ? `<div class="bg-fc-dark border border-green-500/30 rounded-xl p-3 space-y-1">
+                                <div class="text-[10px] font-bold text-green-400 uppercase tracking-wider"><i class="fa-solid fa-star me-1"></i>${clubT('Your difference-maker', 'صانع الفارق لديك')}</div>
+                                <div class="flex items-center gap-2">${clubPhotoHtml(star.p, 'w-9 h-9')}<div class="min-w-0"><div class="text-sm font-black text-white truncate">${clubEsc(star.p.name)}</div><div class="text-[11px] text-gray-400">${star.pos} · ${clubT(`key attributes ${star.gap >= 0 ? '+' : '−'}${Math.abs(Math.round(star.gap))} vs typical`, `الخصائص الأساسية ${star.gap >= 0 ? '+' : '−'}${Math.abs(Math.round(star.gap))} عن المعتاد`)}</div></div></div>
+                                <p class="text-[11px] text-gray-400">${clubT('Build attacks through him — his strongest attributes clearly beat what the position usually has.', 'ابنِ الهجمات عبره — خصائصه الأقوى تتفوق بوضوح على المعتاد في مركزه.')}</p>
+                            </div>` : ''}
+                            ${(weak.length || oopSlots.length || thinSpots.length) ? `<div class="bg-fc-dark border border-orange-500/30 rounded-xl p-3 space-y-1.5">
+                                <div class="text-[10px] font-bold text-orange-400 uppercase tracking-wider"><i class="fa-solid fa-cart-shopping me-1"></i>${clubT('Where to strengthen', 'أين تُقوّي فريقك')}</div>
+                                ${oopSlots.map(o => {
+                                    const c = cov[o.s.pos];
+                                    const hasOption = c && (c.primary.length || c.alt.length);
+                                    return `<div class="text-[11px] text-gray-300">• <b class="text-orange-300">${o.s.pos}</b> — ${hasOption
+                                        ? clubT(`${clubEsc(o.p.name)} plays here out of position — the search kept him for chemistry over your natural ${o.s.pos} options, so a better-linked ${o.s.pos} would help.`, `${clubEsc(o.p.name)} يلعب هنا خارج مركزه — فضّله البحث لأجل الكيمياء على خياراتك في ${o.s.pos}، لذا لاعب ${o.s.pos} أفضل ارتباطاً سيفيد.`)
+                                        : clubT(`${clubEsc(o.p.name)} plays here out of position — nobody registered can play ${o.s.pos}.`, `${clubEsc(o.p.name)} يلعب هنا خارج مركزه — لا يوجد لاعب مسجّل يلعب ${o.s.pos}.`)}</div>`;
+                                }).join('')}
+                                ${weak.map(f => `<div class="text-[11px] text-gray-300">• <b class="text-orange-300">${f.pos}</b> — ${clubT(`${clubEsc(f.p.name)}'s key attributes are ${Math.abs(Math.round(f.gap))} below typical for the position.`, `خصائص ${clubEsc(f.p.name)} الأساسية أقل من المعتاد للمركز بـ ${Math.abs(Math.round(f.gap))}.`)}</div>`).join('')}
+                                ${thinSpots.filter(pos => !oopSlots.some(o => o.s.pos === pos)).map(pos => `<div class="text-[11px] text-gray-300">• <b class="text-orange-300">${pos}</b> — ${cov[pos].status === 'thin' ? clubT('only one natural player — no like-for-like backup.', 'لاعب أساسي واحد فقط — لا يوجد بديل مماثل.') : clubT('no natural player; covered only by an alternative.', 'لا يوجد لاعب أساسي؛ يغطيه لاعب بديل فقط.')}</div>`).join('')}
+                            </div>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function clubPlayerCard(p, ins, best) {
+            const s = ins && ins.starters[p.id];
+            const b = ins && ins.bench[p.id];
+            const info = s || b || null;
+            const pos = s ? s.pos : p.pos;
+            const role = info && info.role;
+            const official = info && info.official;
+            const base = GENERAL_PLAYER_STATS[pos] && GENERAL_PLAYER_STATS[pos].stats;
+            const keys = getKeyAttributesForPosition(pos);
+            const diffs = p.att && base ? statKeysForPosition(pos).filter(k => base[k] && typeof p.att[k] === 'number').map(k => ({ k, d: p.att[k] - base[k].avg, key: keys.includes(k) })) : [];
+            const strengths = diffs.filter(x => x.d >= 3).sort((a, b) => b.d - a.d).slice(0, 2);
+            const weaknesses = diffs.filter(x => x.d <= -3 && x.key).sort((a, b) => a.d - b.d).slice(0, 1);
+            const statusBadge = s
+                ? `<span class="text-[10px] font-black rounded px-1.5 py-0.5 ${s.natural ? 'bg-green-500/15 text-green-300 border border-green-500/30' : 'bg-orange-500/15 text-orange-300 border border-orange-500/30'}">${clubT(`Starter · ${s.pos} in ${best.formation}`, `أساسي · ${s.pos} في ${best.formation}`)}</span>`
+                : (best ? `<span class="text-[10px] font-bold rounded px-1.5 py-0.5 bg-black/30 text-gray-400 border border-fc-border">${clubT('Squad / bench', 'احتياطي')}</span>` : '');
+            const roleName = role ? `${clubEsc(role.role)}${role.focus ? ` · ${clubEsc(role.focus)}` : ''}` : '';
+            const why = role ? (currentLanguage === 'ar' ? role.ar : role.en) : '';
+            const expanded = clubExpandedId === p.id;
+            const inDb = fc27Database.some(x => x.id === p.id);
+            const traits = official && official.traits;
+            const ps = [...(p.playstylesPlus || []).map(n => ({ n: formatPlaystyleEntry(n), plus: true })), ...(p.playstyles || []).map(n => ({ n: formatPlaystyleEntry(n), plus: false }))];
+            return `
+                <div id="club-card-${clubEsc(p.id)}" class="bg-fc-dark border border-fc-border rounded-2xl p-4 space-y-3 transition-all">
+                    <div class="flex items-start gap-3">
+                        ${clubPhotoHtml(p, 'w-12 h-12')}
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2"><span class="text-sm font-black text-white truncate">${clubEsc(p.name)}</span><span class="ms-auto text-lg font-black text-fc-accent leading-none">${p.rating}</span></div>
+                            <div class="flex items-center gap-1 flex-wrap mt-1">
+                                ${clubPositionsOf(p).map((x, i) => `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${i === 0 ? 'bg-fc-accent/20 text-fc-accent border border-fc-accent/30' : 'text-blue-300 border border-dashed border-blue-400/50'}" title="${i === 0 ? clubT('Primary position', 'المركز الأساسي') : clubT('Alternative position', 'مركز بديل')}">${x}</span>`).join('')}
+                                ${typeof p.meta === 'number' ? `<span class="text-[10px] text-gray-500 ms-1">MR ${p.meta.toFixed(1)}</span>` : ''}
+                            </div>
+                            <div class="mt-1.5">${statusBadge}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="flex-1 min-w-0">${clubRadarSvg(p, pos, 120)}</div>
+                        ${info && info.heat ? `<div class="flex flex-col items-center gap-1">${clubHeatmapSvg(info.heat)}<span class="text-[9px] text-gray-500 text-center leading-tight">${clubT('where he plays', 'مناطق تحركه')}</span></div>` : ''}
+                    </div>
+                    ${role ? `<div class="bg-fc-accent/10 border border-fc-accent/30 rounded-xl px-3 py-2">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${clubT(`Best role at ${pos}`, `أفضل دور في ${pos}`)}</div>
+                        <div class="text-sm font-black text-fc-accent">${roleName}</div>
+                        ${why ? `<p class="text-[11px] text-gray-300 leading-snug mt-0.5">${why}</p>` : ''}
+                    </div>` : ''}
+                    ${(strengths.length || weaknesses.length) ? `<div class="flex flex-wrap gap-1.5">
+                        ${strengths.map(x => `<span class="text-[10px] font-bold rounded-full px-2 py-0.5 bg-green-500/15 text-green-300"><i class="fa-solid fa-arrow-up text-[8px] me-1"></i>${clubAttrLabel(x.k)} +${Math.round(x.d)}</span>`).join('')}
+                        ${weaknesses.map(x => `<span class="text-[10px] font-bold rounded-full px-2 py-0.5 bg-orange-500/15 text-orange-300"><i class="fa-solid fa-arrow-down text-[8px] me-1"></i>${clubAttrLabel(x.k)} −${Math.abs(Math.round(x.d))}</span>`).join('')}
+                    </div>` : ''}
+                    ${expanded ? `<div class="space-y-2 border-t border-fc-border pt-3">
+                        ${official && official.roleDescription ? `<p class="text-[11px] text-gray-300 leading-snug"><b class="text-white">${clubEsc(official.role)}:</b> ${clubEsc(official.roleDescription)}</p>` : ''}
+                        ${official && official.focusDescription ? `<p class="text-[11px] text-gray-400 leading-snug"><b class="text-gray-200">${clubEsc(official.focus)}:</b> ${clubEsc(official.focusDescription)}</p>` : ''}
+                        ${traits && (traits.strengths.length || traits.drawbacks.length) ? `<div class="flex flex-wrap gap-1">${traits.strengths.map(t => `<span class="text-[10px] rounded px-1.5 py-0.5 bg-green-500/10 text-green-300">✅ ${clubEsc(t)}</span>`).join('')}${traits.drawbacks.map(t => `<span class="text-[10px] rounded px-1.5 py-0.5 bg-orange-500/10 text-orange-300">⚠️ ${clubEsc(t)}</span>`).join('')}</div>` : ''}
+                        ${ps.length ? `<div class="flex flex-wrap gap-1.5">${ps.map(x => playstyleChipHtml(x.n, x.plus)).join('')}</div>` : `<p class="text-[10px] text-gray-500 italic">${clubT('No PlayStyles recorded for this card.', 'لا توجد أنماط لعب مسجّلة لهذه البطاقة.')}</p>`}
+                        ${inDb ? `<button onclick="window.openStandalonePlayerModal('${clubEsc(p.id)}')" class="text-[11px] font-bold text-fc-accent hover:underline"><i class="fa-solid fa-up-right-from-square me-1"></i>${clubT('Full player page', 'صفحة اللاعب الكاملة')}</button>` : ''}
+                    </div>` : ''}
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.clubToggleCard('${clubEsc(p.id)}')" class="text-[11px] font-bold text-gray-300 hover:text-white">${expanded ? clubT('Less', 'أقل') : clubT('How to use him', 'كيف تستخدمه')} <i class="fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-[9px]"></i></button>
+                        <button onclick="window.clubRemovePlayer('${clubEsc(p.id)}')" class="ms-auto text-[11px] font-bold text-gray-500 hover:text-red-400"><i class="fa-solid fa-xmark me-1"></i>${clubT('Remove', 'إزالة')}</button>
+                    </div>
+                </div>`;
+        }
+
+        // ---------------------------------------------------------------
+        // Tab rendering
+        // ---------------------------------------------------------------
+        function renderClubSkeleton(root) {
+            root.innerHTML = `
+                <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-5">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-extrabold mb-1 flex items-center gap-2"><i class="fa-solid fa-people-group text-fc-accent"></i>${clubT('My Club', 'ناديي')}</h2>
+                        <p class="text-gray-400 text-xs md:text-sm">${clubT('Register the players you own. They’re saved in this browser, analysed by position and alternative position, and turned into formations, roles and tactics.', 'سجّل اللاعبين الذين تملكهم. يُحفظون في هذا المتصفح، ويُحلَّلون حسب المركز الأساسي والبديل، ثم تُقترح لهم الخطط والأدوار والتكتيك.')}</p>
+                    </div>
+                    <div id="club-stats" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-300 uppercase tracking-wider">${clubT('Register a player', 'سجّل لاعباً')}</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none"></i>
+                                <input type="text" id="club-search-input" autocomplete="off" oninput="window.clubSearch(this.value)" placeholder="${clubEsc(clubT('Type a player name…', 'اكتب اسم اللاعب…'))}"
+                                    class="w-full bg-fc-dark border border-fc-border rounded-xl pl-9 pr-3 rtl:pl-3 rtl:pr-9 py-2.5 text-sm text-white focus:outline-none focus:border-fc-accent">
+                            </div>
+                            <div id="club-search-results" class="space-y-1.5 max-h-80 overflow-y-auto hide-scrollbar"></div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-gray-300 uppercase tracking-wider">${clubT('Registered players', 'اللاعبون المسجّلون')}</span>
+                                <button onclick="window.clubClearAll()" class="ms-auto text-[11px] font-bold text-gray-500 hover:text-red-400">${clubT('Clear all', 'مسح الكل')}</button>
+                            </div>
+                            <div id="club-roster" class="flex flex-wrap gap-1.5 max-h-80 overflow-y-auto hide-scrollbar"></div>
+                            <p class="text-[10px] text-gray-500">${clubT('This is the same saved list as the Squad Builder’s “Player Pool”, so your club can be used to build squads there too.', 'هذه نفس القائمة المحفوظة لـ«مجموعة اللاعبين» في منشئ التشكيلة، فيمكن استخدام ناديك لبناء التشكيلات هناك أيضاً.')}</p>
+                        </div>
+                    </div>
+                </div>
+                <div id="club-body" class="space-y-6"></div>`;
+            clubSkeletonLang = currentLanguage;
+        }
+
+        function renderClubStatsAndRoster(players, cov) {
+            const stats = document.getElementById('club-stats');
+            const roster = document.getElementById('club-roster');
+            if (stats) {
+                const avgR = players.length ? (players.reduce((s, p) => s + (p.rating || 0), 0) / players.length).toFixed(1) : '—';
+                const metas = players.filter(p => typeof p.meta === 'number');
+                const avgM = metas.length ? (metas.reduce((s, p) => s + p.meta, 0) / metas.length).toFixed(1) : '—';
+                const covered = CLUB_POSITIONS.filter(pos => cov[pos].status !== 'gap').length;
+                stats.innerHTML = clubStatTile('fa-users', players.length, clubT('registered players', 'لاعب مسجّل'))
+                    + clubStatTile('fa-star', avgR, clubT('average OVR', 'متوسط التقييم'), 'text-fc-gold')
+                    + clubStatTile('fa-gauge-high', avgM, clubT('average Meta Rating', 'متوسط تقييم الميتا'), 'text-purple-300')
+                    + clubStatTile('fa-map-location-dot', `${covered}/${CLUB_POSITIONS.length}`, clubT('positions someone can play', 'مركز يمكن تغطيته'), 'text-green-400');
+            }
+            if (roster) {
+                roster.innerHTML = players.length
+                    ? players.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0)).map(p => `
+                        <span class="inline-flex items-center gap-1.5 bg-fc-dark border border-fc-border rounded-lg ps-1 pe-1 py-1 text-[11px]">
+                            ${clubPhotoHtml(p, 'w-5 h-5')}<b class="text-fc-accent">${p.rating}</b><span class="text-white font-semibold max-w-[8rem] truncate">${clubEsc(p.name)}</span><span class="text-gray-500 font-bold">${p.pos}</span>
+                            <button onclick="window.clubRemovePlayer('${clubEsc(p.id)}')" class="w-5 h-5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10" title="${clubEsc(clubT('Remove', 'إزالة'))}"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+                        </span>`).join('')
+                    : `<p class="text-xs text-gray-500 italic">${clubT('No players yet — search on the left and add the players you own.', 'لا يوجد لاعبون بعد — ابحث واضف اللاعبين الذين تملكهم.')}</p>`;
+            }
+        }
+
+        function renderClubBody() {
+            const body = document.getElementById('club-body');
+            if (!body) return;
+            const players = clubPlayers();
+            const cov = computeClubCoverage(players);
+            renderClubStatsAndRoster(players, cov);
+            if (players.length === 0) {
+                body.innerHTML = `
+                    <div class="bg-fc-card border border-dashed border-fc-border rounded-2xl p-10 text-center space-y-3">
+                        <i class="fa-solid fa-people-group text-4xl text-gray-600"></i>
+                        <p class="text-sm text-gray-300 font-bold">${clubT('Your club is empty', 'ناديك فارغ')}</p>
+                        <p class="text-xs text-gray-500 max-w-md mx-auto">${clubT('Add your players above. As soon as you do, you’ll get a coverage map, depth chart and player cards; with 11+ players you also get the best formations and how to play them.', 'أضف لاعبيك في الأعلى. بمجرد الإضافة ستظهر خريطة التغطية وعمق التشكيلة وبطاقات اللاعبين؛ ومع 11 لاعباً أو أكثر تظهر أفضل الخطط وطريقة اللعب بها.')}</p>
+                        ${fc27Database.length === 0 ? `<p class="text-[11px] text-orange-300">${clubT('The player database isn’t loaded yet — load it from the Database tab to search players.', 'قاعدة بيانات اللاعبين غير محمّلة بعد — حمّلها من تبويب قاعدة البيانات للبحث عن اللاعبين.')}</p>` : ''}
+                    </div>`;
+                return;
+            }
+            let bestList = null;
+            if (players.length >= 11) {
+                bestList = clubBestPerFormation();
+                if (!bestList) clubStartAnalysis();
+            }
+            const best = bestList && bestList.length ? bestList[0] : null;
+            let ins = null;
+            if (best) {
+                try { ins = computeClubInsights(best, players); }
+                catch (err) { console.error('[My Club] insights failed:', err); ins = null; }
+            } else {
+                // Fewer than 11 (or analysis still running): still give each
+                // player his best role at his natural position.
+                const bench = {};
+                players.forEach(p => {
+                    try {
+                        const role = getRoleSuggestion(p, p.pos);
+                        const hm = role ? getHeatmapFocusEntry(p.pos, role.role, role.focus) : null;
+                        bench[p.id] = { pos: p.pos, role, official: role ? getOfficialRoleInfo(p.pos, role.role, role.focus) : null, heat: hm ? hm.levels : null };
+                    } catch (err) { console.error('[My Club] role failed:', p && p.name, err); }
+                });
+                ins = { starters: {}, bench, fits: [] };
+            }
+            const lineOrder = { GK: 0, DEF: 1, MID: 2, ATT: 3 };
+            const lineOf = pos => (CLUB_LINES.find(l => l.pos.includes(pos)) || { key: 'MID' }).key;
+            const cards = players.slice().sort((a, b) => {
+                const sa = ins && ins.starters[a.id], sb = ins && ins.starters[b.id];
+                if (!!sa !== !!sb) return sa ? -1 : 1;
+                const la = lineOrder[lineOf(sa ? sa.pos : a.pos)], lb = lineOrder[lineOf(sb ? sb.pos : b.pos)];
+                return la - lb || getMetaValue(b) - getMetaValue(a);
+            });
+            const safeCard = p => { try { return clubPlayerCard(p, ins, best); } catch (err) { console.error('[My Club] card failed:', p && p.name, err); return ''; } };
+            body.innerHTML = `
+                ${clubCoverageSection(players, cov)}
+                ${clubFormationSection(players, bestList)}
+                ${best && ins && ins.identity !== undefined ? clubHowToPlaySection(best, ins) : ''}
+                ${clubDepthSection(cov)}
+                <div class="space-y-3">
+                    <div>
+                        <h3 class="text-lg font-black text-white flex items-center gap-2"><i class="fa-solid fa-id-card text-fc-accent"></i>${clubT('Player cards', 'بطاقات اللاعبين')}</h3>
+                        <p class="text-xs text-gray-400">${clubT('Radar: cyan = the player, dashed = a typical card at the position he plays (database average, rated 74+); green / orange numbers are clearly above / below it. The small pitch shows where his suggested role actually moves in game.', 'الرادار: السماوي = اللاعب، المتقطع = البطاقة المعتادة في مركزه (متوسط قاعدة البيانات، 74+)؛ الأرقام الخضراء/البرتقالية أعلى/أقل بوضوح. الملعب الصغير يوضح أين يتحرك دوره المقترح داخل اللعبة.')}</p>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">${cards.map(safeCard).join('')}</div>
+                </div>`;
+        }
+
+        function clubStartAnalysis() {
+            if (clubAnalysisRunning) return;
+            clubAnalysisRunning = true;
+            runPoolAnalysis(() => {
+                clubAnalysisRunning = false;
+                renderPlayerPoolPanel();
+                const view = document.getElementById('view-club');
+                if (view && !view.classList.contains('hidden')) renderClubBody();
+            });
+        }
+
+        window.renderClubTab = function() {
+            const root = document.getElementById('club-root');
+            if (!root) return;
+            if (!document.getElementById('club-search-input') || clubSkeletonLang !== currentLanguage) renderClubSkeleton(root);
+            renderClubBody();
+            const input = document.getElementById('club-search-input');
+            if (input && input.value.trim().length >= 2) window.clubSearch(input.value);
+        };
+
+        window.clubSearch = function(query) {
+            const out = document.getElementById('club-search-results');
+            if (!out) return;
+            const q = String(query || '').trim();
+            if (q.length < 2) { out.innerHTML = ''; return; }
+            if (!fc27Database.length) {
+                out.innerHTML = `<p class="text-xs text-orange-300">${clubT('The player database isn’t loaded yet — load it from the Database tab first.', 'قاعدة البيانات غير محمّلة بعد — حمّلها من تبويب قاعدة البيانات أولاً.')}</p>`;
+                return;
+            }
+            const inClub = new Set(playerPool.map(p => playerIdentityKey(p)));
+            const matches = getActiveDatabase({ requirePriced: false, ignorePool: true })
+                .filter(p => nameMatchesQuery(p.name, q))
+                .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+                .slice(0, 15);
+            if (!matches.length) { out.innerHTML = `<p class="text-xs text-gray-500 italic">${clubT('No matching players in the loaded database.', 'لا يوجد لاعبون مطابقون في قاعدة البيانات المحمّلة.')}</p>`; return; }
+            out.innerHTML = matches.map(p => {
+                const already = inClub.has(playerIdentityKey(p));
+                return `
+                    <div class="flex items-center gap-2 bg-fc-dark border border-fc-border rounded-xl p-2">
+                        ${clubPhotoHtml(p, 'w-9 h-9')}
+                        <div class="min-w-0 flex-1">
+                            <div class="text-xs font-bold text-white truncate">${clubEsc(p.name)}</div>
+                            <div class="flex items-center gap-1 mt-0.5 flex-wrap"><span class="text-[10px] font-black text-fc-accent">${p.rating}</span>${clubPositionsOf(p).map((x, i) => `<span class="px-1 rounded text-[9px] font-bold ${i === 0 ? 'bg-fc-accent/20 text-fc-accent' : 'text-blue-300 border border-dashed border-blue-400/50'}">${x}</span>`).join('')}${typeof p.meta === 'number' ? `<span class="text-[10px] text-gray-500">MR ${p.meta.toFixed(1)}</span>` : ''}</div>
+                        </div>
+                        ${already
+                            ? `<span class="text-[10px] font-bold text-green-400 shrink-0"><i class="fa-solid fa-check me-1"></i>${clubT('In club', 'في النادي')}</span>`
+                            : `<button onclick="window.clubAddPlayer('${clubEsc(p.id)}')" class="text-[11px] font-black text-fc-dark bg-fc-accent hover:bg-fc-accentHover px-2.5 py-1.5 rounded-lg shrink-0"><i class="fa-solid fa-plus me-1"></i>${clubT('Add', 'إضافة')}</button>`}
+                    </div>`;
+            }).join('');
+        };
+
+        window.clubAddPlayer = function(id) {
+            window.addPlayerToPool(id);
+            renderClubBody();
+            const input = document.getElementById('club-search-input');
+            if (input) window.clubSearch(input.value);
+        };
+        window.clubRemovePlayer = function(id) {
+            window.removePlayerFromPool(id);
+            if (clubExpandedId === id) clubExpandedId = null;
+            renderClubBody();
+            const input = document.getElementById('club-search-input');
+            if (input) window.clubSearch(input.value);
+        };
+        window.clubClearAll = function() {
+            const before = playerPool.length;
+            window.clearPlayerPool();
+            if (playerPool.length !== before) { clubExpandedId = null; window.__clubShownFormation = null; renderClubBody(); }
+        };
+        window.clubToggleCard = function(id) {
+            clubExpandedId = clubExpandedId === id ? null : id;
+            renderClubBody();
+            const el = document.getElementById('club-card-' + id);
+            if (el && clubExpandedId) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        };
+        window.clubFocusPlayer = function(id) {
+            clubExpandedId = id;
+            renderClubBody();
+            const el = document.getElementById('club-card-' + id);
+            if (el) {
+                el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                el.classList.add('ring-2', 'ring-fc-accent');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-fc-accent'), 1600);
+            }
+        };
+        window.clubShowFormation = function(formation) {
+            window.__clubShownFormation = formation;
+            renderClubBody();
+            const el = document.getElementById('club-formations');
+            if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        };
+        window.clubApplyFormation = function(formation) {
+            const list = clubBestPerFormation();
+            const r = list && list.find(x => x.formation === formation);
+            if (!r) return;
+            const idx = poolAnalysis.results.indexOf(r);
+            if (idx < 0) return;
+            window.applyPoolResult(idx);
+            window.switchTab('squad');
+        };
+
 
         // Optimize / Regenerate while pool mode is on: chemistry-aware pool
         // search for the CURRENT formation (locked players stay pinned).
