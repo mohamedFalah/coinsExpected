@@ -6940,6 +6940,19 @@
             } catch (e) { return null; }
         }
 
+        // One stat relationship on two pools, with the matchup gates.
+        // Shared by the Matchups section and the player modal's
+        // Position Intelligence, so both use exactly the same numbers.
+        function miEvaluateStatMetric(m, rPool, tPool) {
+            const r = miStats(miAttrVals(rPool, m.rKey)), t = miStats(miAttrVals(tPool, m.tKey));
+            if (!r || !t || r.n < MI_MIN_SAMPLE || t.n < MI_MIN_SAMPLE) return null;
+            const gap = t.mean - r.mean;
+            const pooled = Math.sqrt(((r.n - 1) * r.sd * r.sd + (t.n - 1) * t.sd * t.sd) / Math.max(1, r.n + t.n - 2));
+            const effect = pooled > 0 ? gap / pooled : 0;
+            if (Math.abs(Math.round(gap)) < GENERAL_STATS_MATCHUP_THRESHOLD || Math.abs(effect) < MI_MIN_EFFECT) return null;
+            return { ...m, r, t, gap, effect };
+        }
+
         function computeMatchupIntelligence(population) {
             const poolCache = {};
             const poolOf = g => (poolCache[g] = poolCache[g] || getPositionPopulationPool(MI_GROUPS[g].pos, population, { requireAtt: true }));
@@ -6952,13 +6965,8 @@
                 c.metrics.forEach(m => {
                     evaluated++;
                     if (m.kind === 'stat') {
-                        const r = miStats(miAttrVals(rPool, m.rKey)), t = miStats(miAttrVals(tPool, m.tKey));
-                        if (!r || !t || r.n < MI_MIN_SAMPLE || t.n < MI_MIN_SAMPLE) return;
-                        const gap = t.mean - r.mean;
-                        const pooled = Math.sqrt(((r.n - 1) * r.sd * r.sd + (t.n - 1) * t.sd * t.sd) / Math.max(1, r.n + t.n - 2));
-                        const effect = pooled > 0 ? gap / pooled : 0;
-                        if (Math.abs(Math.round(gap)) < GENERAL_STATS_MATCHUP_THRESHOLD || Math.abs(effect) < MI_MIN_EFFECT) return;
-                        results.push({ ...m, r, t, gap, effect });
+                        const res = miEvaluateStatMetric(m, rPool, tPool);
+                        if (res) results.push(res);
                     } else {
                         const r = miPsShare(rPool, m.rPs), t = miPsShare(tPool, m.tPs);
                         if (r.n < MI_MIN_SAMPLE || t.n < MI_MIN_SAMPLE) return;
@@ -7119,6 +7127,287 @@
                 ? `تم تقييم ${mi.evaluated} علاقة عبر ${mi.candidates} زوج مراكز؛ اجتاز ${mi.passed} زوجاً شروط العيّنة (15+ بطاقة لكل جهة) والفارق (4+ نقاط أو 8+ نقاط مئوية، وحجم أثر 0.2+). المعروض مرتّب حسب حجم الأثر، والمقارنات بين خاصيتين مختلفتين (مثل المراوغة مقابل الدفاع) تأتي بعد مقارنات الخاصية نفسها وأنماط اللعب.${quiet.length ? ` بلا فارق واضح هذه المرة: ${quiet.join('، ')}.` : ''} هذه فروق وارتباطات إحصائية، وليست نتائج مباريات.`
                 : `Evaluated ${mi.evaluated} relationships across ${mi.candidates} position pairs; ${mi.passed} pairs cleared the sample (15+ cards per side) and gap (4+ points or 8+ pp, effect size 0.2+) checks. Shown in order of effect size; cross-attribute comparisons (e.g. Dribbling vs Defending) rank after same-attribute and PlayStyle ones.${quiet.length ? ` No clear gap this time: ${quiet.join(', ')}.` : ''} These are statistical differences and associations, not match results.`;
             return `${grid}<p class="text-[10px] text-gray-500 mt-3 leading-snug">${footer}</p>`;
+        }
+
+        // ===================================================================
+        // POSITION INTELLIGENCE (player modal)
+        // ===================================================================
+        // "Where does THIS player sit inside the Database Stats / Matchups
+        // context?" No new statistics — every number comes from:
+        //   • computeDisplayPopulationSummary(keys, DB_STATS_POPULATION)
+        //       → pool, powerCurve (Avg/Top 25/10/5% thresholds),
+        //         elitePlaystyles (Top 10% cutoff + over-represented
+        //         PlayStyles), insight (Primary vs Alternative profile)
+        //   • computeKeyAttrFitScore — the same fit score that defines the
+        //     Top 10%, used here for the player's standing
+        //   • MI_CANDIDATES / miEvaluateStatMetric — the Matchups
+        //     definitions and their gated database gaps
+        //   • getPositionRelation / positionPopulationDesc for labels
+        // `pos` is the modal's effectivePos (slot position, or the natural
+        // position when opened standalone).
+        const PI_SIGNAL_GAP = 3;   // points from the Top 10% threshold to count as above/below
+
+        function piDisplayKeysFor(pos) {
+            const dp = DB_STATS_DISPLAY_POSITIONS.find(d => d.keys.includes(pos));
+            return dp ? dp.keys : [pos];
+        }
+
+        function computePlayerPositionIntel(player, pos) {
+            if (!player || !player.att || !pos) return null;
+            const population = DB_STATS_POPULATION === 'primary' ? 'primary' : 'all';
+            const keys = piDisplayKeysFor(pos);
+            const groupLabel = keys.join(' / ');
+            const summary = computeDisplayPopulationSummary(keys, population);
+            if (!summary || !summary.sampleSize) return { empty: true, pos, population, groupLabel, rel: getPositionRelation(player, pos) };
+            const rel = getPositionRelation(player, pos);
+
+            // --- standing: same fit score as the Top 10% definition ---
+            const fitOf = p => computeKeyAttrFitScore(p, keys[0]);
+            const myFit = fitOf(player);
+            const scores = summary.pool.map(fitOf).filter(s => typeof s === 'number' && isFinite(s));
+            const inPool = summary.pool.some(p => p.id === player.id);
+            let standing = null;
+            if (typeof myFit === 'number' && scores.length) {
+                const better = scores.filter(s => s > myFit + 1e-9).length;
+                const n = scores.length + (inPool ? 0 : 1);
+                const eps = summary.elitePlaystyles;
+                standing = {
+                    fit: myFit, n: scores.length, inPool,
+                    topPct: Math.max(1, Math.ceil(((better + 1) / n) * 100)),
+                    cutoff: eps && eps.cutoff != null ? eps.cutoff : null,
+                    inTop10: eps && eps.cutoff != null ? myFit >= eps.cutoff - 1e-9 : null
+                };
+            }
+
+            // --- key attributes vs the Power Curve ---
+            const pc = summary.powerCurve || {};
+            const attrs = getKeyAttributesForPosition(keys[0])
+                .filter(k => pc[k] && typeof player.att[k] === 'number')
+                .map(k => ({ key: k, v: player.att[k], avg: pc[k].avg, top25: pc[k].top25, top10: pc[k].top10, top05: pc[k].top05 }));
+
+            // --- what stands out: distance from the Top 10% threshold ---
+            const signals = attrs.filter(a => a.top10 != null).map(a => {
+                const d = a.v - a.top10;
+                return { ...a, d, tone: d >= PI_SIGNAL_GAP ? 'up' : d <= -PI_SIGNAL_GAP ? 'down' : 'flat' };
+            });
+            const strong = signals.filter(s => s.tone !== 'flat').sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 3);
+
+            // --- matchup context: existing definitions + gated gaps ---
+            const groupKey = Object.keys(MI_GROUPS).find(g => MI_GROUPS[g].pos.includes(pos));
+            const matchups = [];
+            if (groupKey) {
+                const poolOf = {};
+                const getPool = g => (poolOf[g] = poolOf[g] || getPositionPopulationPool(MI_GROUPS[g].pos, population, { requireAtt: true }));
+                MI_CANDIDATES.filter(c => c.response === groupKey || c.threat === groupKey).forEach(c => {
+                    const side = c.response === groupKey ? 'response' : 'threat';
+                    const oppGroup = side === 'response' ? c.threat : c.response;
+                    const metrics = [];
+                    c.metrics.filter(m => m.kind === 'stat').forEach(m => {
+                        const db = miEvaluateStatMetric(m, getPool(c.response), getPool(c.threat));
+                        if (!db) return;
+                        const myKey = side === 'response' ? m.rKey : m.tKey;
+                        const oppKey = side === 'response' ? m.tKey : m.rKey;
+                        const myVal = player.att[myKey];
+                        if (typeof myVal !== 'number') return;
+                        const sideMean = side === 'response' ? db.r.mean : db.t.mean;
+                        const oppMean = side === 'response' ? db.t.mean : db.r.mean;
+                        metrics.push({
+                            type: m.type, myKey, oppKey, cross: myKey !== oppKey, myVal, sideMean, oppMean,
+                            playerGap: myVal - oppMean, typicalGap: sideMean - oppMean,
+                            effect: db.effect, nSide: side === 'response' ? db.r.n : db.t.n, nOpp: side === 'response' ? db.t.n : db.r.n
+                        });
+                    });
+                    if (!metrics.length) return;
+                    // Most relevant to THIS player: same-attribute first (as
+                    // in Matchups), then where he differs most from the
+                    // typical card at his position.
+                    metrics.sort((a, b) => (a.cross - b.cross) || (Math.abs(b.myVal - b.sideMean) - Math.abs(a.myVal - a.sideMean)));
+                    matchups.push({ id: c.id, pinned: !!c.pinned, side, oppGroup, metrics: metrics.slice(0, 2),
+                        signal: Math.max(...metrics.filter(x => !x.cross).map(x => Math.abs(x.effect)), 0), crossSignal: Math.max(...metrics.map(x => Math.abs(x.effect))) });
+                });
+                matchups.sort((a, b) => (b.pinned - a.pinned) || (b.signal - a.signal) || (b.crossSignal - a.crossSignal));
+            }
+
+            // --- PlayStyles: owned ones the Top 10% over-represents ---
+            let psContext = null;
+            const eps = summary.elitePlaystyles;
+            if (eps && eps.status === 'ok' && eps.rows.length) {
+                const plus = new Set((player.playstylesPlus || []).map(formatPlaystyleEntry));
+                const owned = playstyleNamesOf(player);
+                const have = eps.rows.filter(r => owned.has(r.name)).map(r => ({ ...r, plus: plus.has(r.name) }));
+                const missing = eps.rows.filter(r => !owned.has(r.name)).slice(0, 1);
+                if (have.length || missing.length) psContext = { have, missing, eliteN: eps.eliteN, eliteData: eps.eliteData };
+            }
+
+            // --- Primary vs Alternative: only when this card breaks the
+            // alternative-group pattern (alt group lower, this card not) ---
+            let altContext = null;
+            if (rel === 'alt' && summary.insight && summary.insight.statDiffs && summary.insight.statDiffs.length) {
+                const beats = summary.insight.statDiffs
+                    .filter(d => d.diff < 0 && typeof player.att[d.key] === 'number' && player.att[d.key] >= d.primaryAvg)
+                    .map(d => ({ ...d, v: player.att[d.key] }));
+                altContext = { diffs: summary.insight.statDiffs, beats, primaryN: summary.insight.primaryN, altN: summary.insight.altN };
+                if (!beats.length) altContext.quiet = true;
+            }
+
+            return { pos, keys, groupLabel, population, rel, summary, standing, attrs, strong, signals, matchups: matchups.slice(0, 2), psContext, altContext };
+        }
+
+        function piConclusion(intel, isAr) {
+            const L = k => clubLikeAttr(k, isAr);
+            const up = intel.strong.filter(s => s.tone === 'up');
+            const down = intel.strong.filter(s => s.tone === 'down');
+            // widest same-attribute matchup deficit for this card
+            let mGap = null;
+            intel.matchups.forEach(m => m.metrics.forEach(x => {
+                if (!x.cross && x.playerGap < 0 && (!mGap || x.playerGap < mGap.x.playerGap)) mGap = { m, x };
+            }));
+            const grp = intel.groupLabel;
+            const upTxt = up.length ? up.map(s => L(s.key)).join(isAr ? ' و' : ' and ') : null;
+            const opp = mGap ? (isAr ? MI_GROUPS[mGap.m.oppGroup].ar : MI_GROUPS[mGap.m.oppGroup].en) : null;
+            if (isAr) {
+                const parts = [];
+                if (upTxt) parts.push(`${upTxt} فوق عتبة أفضل 10% لمركز ${grp}`);
+                if (down.length) parts.push(upTxt ? `${L(down[0].key)} أقل من تلك العتبة (${down[0].v} مقابل ${Math.round(down[0].top10)})` : `${L(down[0].key)} أقل من عتبة أفضل 10% لمركز ${grp} (${down[0].v} مقابل ${Math.round(down[0].top10)})`);
+                if (mGap) parts.push(`وأمام ${opp} يبقى ${L(mGap.x.myKey)} الفارق الأوضح (−${Math.abs(Math.round(mGap.x.playerGap))})`);
+                return parts.length ? parts.join('، ') + '.' : `الخصائص الأساسية قريبة من عتبة أفضل 10% لمركز ${grp}.`;
+            }
+            const parts = [];
+            if (upTxt) parts.push(`${upTxt} ${up.length > 1 ? 'sit' : 'sits'} above the Top 10% ${grp} benchmark`);
+            if (down.length) parts.push(upTxt ? `${L(down[0].key)} is below it (${down[0].v} vs ${Math.round(down[0].top10)})` : `${L(down[0].key)} is below the Top 10% ${grp} benchmark (${down[0].v} vs ${Math.round(down[0].top10)})`);
+            if (mGap) parts.push(`against ${opp}, ${L(mGap.x.myKey)} is the widest statistical gap (−${Math.abs(Math.round(mGap.x.playerGap))})`);
+            if (!parts.length) return `Key attributes are close to the Top 10% ${grp} benchmark.`;
+            const s = parts.join(parts.length > 2 ? '; ' : ', while ');
+            return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+        }
+        function clubLikeAttr(k, isAr) {
+            return ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+        }
+
+        function piMatchupLine(intel, m, x, isAr) {
+            const L = k => clubLikeAttr(k, isAr);
+            const opp = isAr ? MI_GROUPS[m.oppGroup].ar : MI_GROUPS[m.oppGroup].en;
+            const me = isAr ? 'هذه البطاقة' : `This ${intel.pos}`;
+            const sg = v => { const r = Math.round(v); return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r); };
+            const pg = Math.round(x.playerGap), tg = Math.round(x.typicalGap);
+            const metricName = x.cross ? `${L(x.myKey)} ${isAr ? 'مقابل' : 'vs'} ${L(x.oppKey)}` : L(x.myKey);
+            let why;
+            if (isAr) {
+                if (Math.abs(pg - tg) <= 1 && pg !== 0) why = `قريب من الفارق المعتاد لبطاقات ${intel.pos} (${sg(tg)}).`;
+                else if (tg < 0) why = pg >= 0 ? `هذه البطاقة عند متوسط ${opp} أو أعلى، بينما البطاقة المعتادة في مركزها أقل بـ ${Math.abs(tg)}.`
+                    : pg > tg ? `تُضيّق الفارق المعتاد من ${Math.abs(tg)} إلى ${Math.abs(pg)} نقاط.` : pg < tg ? `الفارق هنا ${Math.abs(pg)} نقاط، أوسع من المعتاد (${Math.abs(tg)}).` : `الفارق مماثل للمعتاد (${Math.abs(tg)}).`;
+                else if (tg > 0) why = pg <= 0 ? `على عكس البطاقة المعتادة في مركزها (${sg(tg)})، هذه البطاقة لا تتجاوز متوسط ${opp} (${sg(pg)}).`
+                    : pg > tg ? `فارق أكبر عن متوسط ${opp} (${sg(pg)}) من البطاقة المعتادة في مركزها (${sg(tg)}).` : pg < tg ? `فارق أصغر (${sg(pg)}) من المعتاد (${sg(tg)}).` : `فارق مماثل للمعتاد (${sg(tg)}).`;
+                else why = `الفارق المعتاد صفر تقريباً؛ هذه البطاقة ${sg(pg)}.`;
+                if (x.cross) why += ' خاصيتان مختلفتان: مقارنة مستويات تقييم، لا نتيجة مواجهة.';
+            } else {
+                if (Math.abs(pg - tg) <= 1 && pg !== 0) why = `Close to the usual database gap for ${intel.pos} cards (${sg(tg)}).`;
+                else if (tg < 0) why = pg >= 0 ? `This card is level with or above the ${opp} average, where the typical ${intel.pos} is ${Math.abs(tg)} behind.`
+                    : pg > tg ? `This card narrows the usual database gap from ${Math.abs(tg)} points to ${Math.abs(pg)}.` : pg < tg ? `This card's gap (${Math.abs(pg)}) is wider than the usual ${Math.abs(tg)}.` : `Same gap as the database norm (${Math.abs(tg)}).`;
+                else if (tg > 0) why = pg <= 0 ? `Unlike the typical ${intel.pos} (${sg(tg)}), this card doesn't exceed the ${opp} average (${sg(pg)}).`
+                    : pg > tg ? `A larger separation from the average ${opp.replace(/s$/, '')} (${sg(pg)}) than the typical ${intel.pos} (${sg(tg)}).` : pg < tg ? `A smaller separation (${sg(pg)}) than the typical ${intel.pos} (${sg(tg)}).` : `Same separation as the typical ${intel.pos} (${sg(tg)}).`;
+                else why = `The database gap is about zero; this card is ${sg(pg)}.`;
+                if (x.cross) why += ' Different attributes — compares rating levels, not duel outcomes.';
+            }
+            const col = pg > 0 ? 'text-emerald-400' : pg < 0 ? 'text-orange-400' : 'text-gray-300';
+            return `
+                <div class="space-y-0.5">
+                    <div class="flex items-center gap-2 text-[11px]">
+                        <span class="font-bold text-gray-300">${metricName}</span>
+                        <span class="ms-auto font-black ${col}"><bdi>${sg(pg)}</bdi></span>
+                    </div>
+                    <div class="text-[10px] text-gray-400"><bdi>${me}: <b class="text-white">${x.myVal}</b> · ${opp}: <b class="text-white">${Math.round(x.oppMean)}</b> · ${isAr ? `متوسط ${intel.pos}` : `${intel.pos} average`}: ${Math.round(x.sideMean)} (${isAr ? 'الفارق المعتاد' : 'typical gap'} ${sg(tg)})</bdi></div>
+                    <p class="text-[10px] text-gray-500 leading-snug">${why}</p>
+                </div>`;
+        }
+
+        function renderPositionIntelHtml(player, pos) {
+            const isAr = currentLanguage === 'ar';
+            const intel = computePlayerPositionIntel(player, pos);
+            if (!intel) return '';
+            const L = k => clubLikeAttr(k, isAr);
+            const relChip = `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${intel.rel === 'primary' ? 'text-fc-accent border-fc-accent/40' : intel.rel === 'alt' ? 'text-blue-300 border-blue-500/40' : 'text-orange-300 border-orange-500/40'}" style="unicode-bidi:isolate;">${positionRelationLabel(intel.rel, pos, isAr)}</span>`;
+            const popChip = `<span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(intel.population, isAr)}</span>`;
+            const head = `<div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs font-bold text-purple-300 uppercase tracking-wider">${isAr ? 'الذكاء الموقعي' : 'Position Intelligence'}</span>
+                    ${relChip}${popChip}
+                </div>`;
+            const popDesc = positionPopulationDesc(intel.population, intel.groupLabel, isAr);
+            if (intel.empty) {
+                return `<div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1.5">${head}
+                    <p class="text-[11px] text-gray-500 italic">${isAr ? `لا توجد بيانات كافية عن ${popDesc} بتقييم 74+ في قاعدة البيانات المحمّلة.` : `Not enough ${popDesc} rated 74+ in the loaded database.`}</p></div>`;
+            }
+            const st = intel.standing;
+            const standingHtml = st ? `
+                <div class="space-y-1">
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'الملاءمة الموقعية' : 'Positional fit'}</div>
+                    <div class="text-sm font-black text-white">${isAr ? `ضمن أفضل ${st.topPct}% من ${popDesc}` : `Top ${st.topPct}% of ${popDesc}`}
+                        ${st.inTop10 ? `<span class="ms-1 text-[10px] font-black text-purple-200 bg-purple-500/20 rounded px-1.5 py-0.5">${isAr ? 'ضمن أفضل 10%' : 'in the Top 10%'}</span>` : ''}</div>
+                    <p class="text-[10px] text-gray-500 leading-snug">${isAr
+                        ? `ملاءمة الخصائص الأساسية لـ ${intel.groupLabel} (أوزان 3×/2×/1×) — ليست التقييم العام ولا تقييم الميتا. درجة هذه البطاقة ${st.fit.toFixed(1)}${st.cutoff != null ? `، وحد أفضل 10% ${st.cutoff.toFixed(1)}` : ''} (${st.n} بطاقة بتقييم 74+).${st.inPool ? '' : ' هذه البطاقة ليست ضمن مجتمع المقارنة نفسه (المجتمع المختار أو شرط 74+)، لذا تُقارن به فقط.'}`
+                        : `Key-attribute fit for ${intel.groupLabel} (weighted 3×/2×/1×) — not OVR, not Meta Rating. This card ${st.fit.toFixed(1)}${st.cutoff != null ? `; Top 10% cutoff ${st.cutoff.toFixed(1)}` : ''} (${st.n} cards rated 74+).${st.inPool ? '' : ' This card isn’t part of the benchmark population itself (selected population or 74+ filter), so it is only compared against it.'}`}</p>
+                </div>` : '';
+            // Key attributes on the Power Curve: track from Avg to Top 5%
+            // with the player's value as a dot.
+            const attrRows = intel.attrs.map(a => {
+                const lo = Math.min(a.v, a.avg) - 3, hi = Math.max(a.v, a.top05 != null ? a.top05 : a.top10 != null ? a.top10 : a.avg) + 2;
+                const x = v => Math.max(0, Math.min(100, ((v - lo) / Math.max(1, hi - lo)) * 100));
+                const col = a.top10 != null && a.v - a.top10 >= PI_SIGNAL_GAP ? '#4ade80' : a.top10 != null && a.v - a.top10 <= -PI_SIGNAL_GAP ? '#fb923c' : '#e5e7eb';
+                const tick = (v, c) => v == null ? '' : `<span class="absolute top-1/2 -translate-y-1/2 w-0.5 h-2.5 rounded ${c}" style="left:calc(${x(v)}% - 1px)"></span>`;
+                return `
+                    <div class="grid items-center gap-x-2" style="grid-template-columns: 4.6rem 1.7rem 1fr 7.2rem;">
+                        <span class="text-[11px] font-semibold text-gray-400 truncate">${L(a.key)}</span>
+                        <span class="text-xs font-black" style="color:${col}">${a.v}</span>
+                        <div class="relative h-2 bg-black/30 rounded-full" style="direction:ltr;">
+                            ${tick(a.avg, 'bg-white/70')}${tick(a.top10, 'bg-fc-accent')}
+                            <span class="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border border-black" style="left:calc(${x(a.v)}% - 5px);background:${col}"></span>
+                        </div>
+                        <span class="text-[10px] text-gray-500 text-right rtl:text-left whitespace-nowrap">${isAr ? 'متوسط' : 'Avg'} ${Math.round(a.avg)} · ${isAr ? 'أفضل 10%' : 'Top 10%'} ${a.top10 != null ? Math.round(a.top10) : '—'}</span>
+                    </div>`;
+            }).join('');
+            const outHtml = intel.strong.length ? intel.strong.map(s => {
+                const up = s.tone === 'up';
+                return `<div class="flex items-start gap-1.5 text-[11px] ${up ? 'text-emerald-300' : 'text-orange-300'}">
+                    <i class="fa-solid ${up ? 'fa-arrow-up' : 'fa-arrow-down'} text-[9px] mt-1"></i>
+                    <span>${isAr
+                        ? `${L(s.key)} ${s.v} — ${up ? 'أعلى من' : 'أقل من'} عتبة أفضل 10% لمركز ${intel.groupLabel} (${Math.round(s.top10)})${!up ? (s.v < Math.round(s.avg) ? `، وأقل من المتوسط (${Math.round(s.avg)})` : s.v > Math.round(s.avg) + 2 ? `، لكنه أعلى من المتوسط (${Math.round(s.avg)})` : '') : ''}.`
+                        : `${L(s.key)} ${s.v} — ${up ? 'above' : 'below'} the Top 10% ${intel.groupLabel} benchmark of ${Math.round(s.top10)}${!up ? (s.v < Math.round(s.avg) ? `, and below the average of ${Math.round(s.avg)}` : s.v > Math.round(s.avg) + 2 ? `, though above the average of ${Math.round(s.avg)}` : '') : ''}.`}</span></div>`;
+            }).join('') : `<div class="text-[11px] text-gray-400"><i class="fa-solid fa-minus text-[9px] me-1"></i>${isAr ? `كل الخصائص الأساسية ضمن ±${PI_SIGNAL_GAP} من عتبة أفضل 10%.` : `Every key attribute is within ±${PI_SIGNAL_GAP} of the Top 10% benchmark.`}</div>`;
+            const muHtml = intel.matchups.length ? intel.matchups.map(m => `
+                <div class="space-y-1.5 ${intel.matchups.length > 1 ? 'pb-2 border-b border-fc-border/50 last:border-0 last:pb-0' : ''}">
+                    <div class="text-[11px] font-black text-white">${isAr ? 'أمام' : 'vs'} ${isAr ? MI_GROUPS[m.oppGroup].ar : MI_GROUPS[m.oppGroup].en}</div>
+                    ${m.metrics.map(x => piMatchupLine(intel, m, x, isAr)).join('')}
+                </div>`).join('') : '';
+            const ps = intel.psContext;
+            const psHtml = ps ? `
+                <div class="space-y-1">
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'أنماط اللعب مقابل أفضل 10%' : 'PlayStyles vs the Top 10%'}</div>
+                    ${ps.have.map(r => `<div class="text-[11px] text-purple-200"><i class="fa-solid fa-check text-[9px] me-1 text-emerald-400"></i><b>${r.name}${r.plus ? '+' : ''}</b> — <bdi>${isAr ? `لدى ${Math.round(r.allPct)}% من الكل، و${Math.round(r.elitePct)}% من أفضل 10%` : `${Math.round(r.allPct)}% of all cards, ${Math.round(r.elitePct)}% of the Top 10%`}</bdi></div>`).join('')}
+                    ${ps.missing.map(r => `<div class="text-[11px] text-gray-400"><i class="fa-solid fa-xmark text-[9px] me-1 text-gray-500"></i>${isAr ? 'ليس لديه' : 'Not on this card'}: <b>${r.name}</b> — <bdi>${Math.round(r.allPct)}% → ${Math.round(r.elitePct)}% ${isAr ? 'في أفضل 10%' : 'in the Top 10%'}</bdi></div>`).join('')}
+                    <p class="text-[9px] text-gray-500">${isAr ? 'ارتباط بين الأنماط وأعلى ملاءمة موقعية، لا دليل على أن النمط يجعل البطاقة أفضل.' : 'Association with top positional fit, not proof that a PlayStyle makes a card better.'}</p>
+                </div>` : '';
+            const alt = intel.altContext;
+            const altHtml = alt && !alt.quiet ? `
+                <div class="space-y-1">
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'مركز بديل' : 'Alternative position'}</div>
+                    <p class="text-[11px] text-gray-300"><bdi>${isAr ? `ملف ${intel.groupLabel} البديل مقابل الأساسي` : `Alternative ${intel.groupLabel} profile vs primary`}: ${alt.diffs.map(d => `${L(d.key)} ${d.diff > 0 ? '+' : '−'}${Math.abs(d.diff)}`).join(' · ')}</bdi></p>
+                    ${alt.beats.map(b => `<p class="text-[11px] text-emerald-300"><bdi>${isAr ? `هذه البطاقة: ${L(b.key)} ${b.v} — عند متوسط ${intel.groupLabel} الأساسي (${b.primaryAvg}) أو أعلى، رغم أن البدلاء عادةً أقل بـ ${Math.abs(b.diff)}.` : `This card: ${L(b.key)} ${b.v} — at or above the primary ${intel.groupLabel} average (${b.primaryAvg}), although alternative-position cards are usually ${Math.abs(b.diff)} lower.`}</bdi></p>`).join('')}
+                </div>` : '';
+            return `
+                <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-purple-500/30 space-y-3">
+                    ${head}
+                    ${standingHtml}
+                    ${attrRows ? `<div class="space-y-1.5">${attrRows}</div>` : ''}
+                    <div class="space-y-1">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'ما يبرز' : 'What stands out'}</div>
+                        ${outHtml}
+                    </div>
+                    ${muHtml ? `<div class="space-y-1.5"><div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'سياق المواجهات' : 'Matchup context'}</div>${muHtml}</div>` : ''}
+                    ${psHtml}
+                    ${altHtml}
+                    <p class="text-[11px] text-gray-200 leading-snug border-t border-fc-border/60 pt-2">${piConclusion(intel, isAr)}</p>
+                    <p class="text-[9px] text-gray-500">${isAr ? `مقارنة إحصائية مع ${popDesc} بتقييم 74+ (يتبع اختيار «مجتمع المركز» في إحصائيات القاعدة) — ليست نتائج مباريات.` : `Statistical comparison with ${popDesc} rated 74+ (follows the Position Population choice in Database Stats) — not match results.`}</p>
+                </div>`;
         }
 
         function renderGeneralStatsPanel() {
@@ -16360,6 +16649,11 @@
                     : ' No meta rating data for this card, so this read is based on raw attributes/OVR instead.')
                 : '';
             const whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries) + noMetaNote;
+            // Position Intelligence: database context for this player at
+            // effectivePos (slot position, or natural position standalone).
+            let positionIntelHtml = '';
+            try { positionIntelHtml = renderPositionIntelHtml(player, effectivePos); }
+            catch (err) { console.error('[Player modal] position intelligence failed:', err); }
             const metaLine = hasMeta
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
@@ -16843,6 +17137,8 @@
                             <span class="text-xs font-bold text-red-400 uppercase tracking-wider">${vulnTitle}</span>
                             <div id="vulnerability-report" class="space-y-1.5">${initialVulnHtml}</div>
                         </div>
+
+                        ${positionIntelHtml}
 
                         <div id="analyst-panel"></div>
                     </div>
