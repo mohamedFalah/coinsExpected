@@ -7321,9 +7321,9 @@
                 </div>`;
         }
 
-        function renderPositionIntelHtml(player, pos) {
+        function renderPositionIntelHtml(player, pos, precomputed) {
             const isAr = currentLanguage === 'ar';
-            const intel = computePlayerPositionIntel(player, pos);
+            const intel = precomputed || computePlayerPositionIntel(player, pos);
             if (!intel) return '';
             const L = k => clubLikeAttr(k, isAr);
             const relChip = `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${intel.rel === 'primary' ? 'text-fc-accent border-fc-accent/40' : intel.rel === 'alt' ? 'text-blue-300 border-blue-500/40' : 'text-orange-300 border-orange-500/40'}" style="unicode-bidi:isolate;">${positionRelationLabel(intel.rel, pos, isAr)}</span>`;
@@ -16493,154 +16493,208 @@
             const styleClauseAr = buildPlaystyleClause(psPlus, psBase);
             const styleClauseEn = styleClauseAr;
 
-            // "Why This Pick" — a real per-player evaluation instead of a
-            // fixed template. Built from three actual signals: how far
-            // ahead of the next-best alternative for this exact slot they
-            // are, which specific attribute stands out for the role they're
-            // currently filling, and how their price stacks up against the
-            // total budget — so two different players read completely
-            // differently instead of the same boilerplate sentence with
-            // just the name swapped.
-            // Order: A) why this player (strongest attribute vs the typical
-            // player at the position) → B) why this role (the attributes the
-            // role's own score weights, and where this player stands on them)
-            // → C) what that means in play (+ PlayStyle clause) → D) what is
-            // given up → E) how the alternatives compare, then budget and
-            // chemistry context. Every clause is built from existing data.
-            function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries) {
+            // "Why This Pick" — the DECISION layer. Position Intelligence
+            // (below it) shows the evidence; this interprets it for THIS
+            // player at THIS effectivePos / role / slot. No new scoring:
+            // it reads computePlayerPositionIntel (Database Stats pool,
+            // Power Curve, Top 10% fit, PlayStyle signal, matchup
+            // definitions), the existing role assignment + ROLE_DRIVER_ATTRS,
+            // computeMetaPercentile, and the existing alternatives /
+            // budget / chemistry reasoning. Five short parts:
+            //   1 Why it fits · 2 What separates him · 3 The trade-off
+            //   4 Matchup implication (only when informative) · 5 Bottom line
+            function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries, intel) {
                 const isAr = currentLanguage === 'ar';
-                const sentences = [];
-                const posStats = getPositionBaseline(effectivePos) && getPositionBaseline(effectivePos).stats;
-                const avgOf = key => (posStats && posStats[key] ? posStats[key].avg : null);
+                const T = (en, ar) => (isAr ? ar : en);
                 const labelOf = key => ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
-                const signed = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d);
+                const lower = s => (isAr ? s : s.toLowerCase());
+                const pos = effectivePos;
+                const grp = intel && intel.groupLabel ? intel.groupLabel : pos;
+                const rel = getPositionRelation(evalPlayer, pos);
+                const attrs = intel && !intel.empty ? intel.attrs : [];
+                const st = intel && !intel.empty ? intel.standing : null;
+                const byKey = Object.fromEntries(attrs.map(a => [a.key, a]));
+                const parts = [];
+                const part = (en, ar, text) => { if (text) parts.push(`<p><span class="text-[10px] font-bold uppercase tracking-wider text-gray-500 me-1">${T(en, ar)}</span>${text}</p>`); };
 
-                // A. Why this player
-                const entries = (evalAttrEntries || [])
-                    .map(([key, val]) => ({ key, val, avg: avgOf(key) }))
-                    .filter(e => typeof e.val === 'number');
-                const haveAvgs = entries.length && entries.every(e => e.avg != null);
-                let bestAbove = null;
-                if (haveAvgs) {
-                    const best = entries.reduce((x, y) => ((y.val - y.avg) > (x.val - x.avg) ? y : x));
-                    const d = Math.round(best.val - best.avg);
-                    if (d >= 2) {
-                        bestAbove = best;
-                        sentences.push(isAr
-                            ? `أقوى خاصية رئيسية له في هذا المركز: ${labelOf(best.key)} ${best.val}، أعلى بـ${d} من متوسط ${effectivePos}.`
-                            : `Strongest key attribute for this position: ${labelOf(best.key)} ${best.val}, ${d} above the ${effectivePos} average.`);
-                    } else if (d > -2) {
-                        sentences.push(isAr
-                            ? `أقوى خاصية رئيسية له في هذا المركز: ${labelOf(best.key)} ${best.val}، في مستوى متوسط ${effectivePos}.`
-                            : `Strongest key attribute for this position: ${labelOf(best.key)} ${best.val}, in line with the ${effectivePos} average.`);
-                    } else {
-                        sentences.push(isAr
-                            ? `كل خصائصه الرئيسية لهذا المركز أقل من متوسط ${effectivePos} (أفضلها ${labelOf(best.key)} ${best.val}، −${Math.abs(d)}).`
-                            : `All key attributes for this position are below the ${effectivePos} average (best: ${labelOf(best.key)} ${best.val}, −${Math.abs(d)}).`);
-                    }
-                } else if (entries.length) {
-                    const best = entries.reduce((x, y) => (y.val > x.val ? y : x));
-                    sentences.push(isAr
-                        ? `أقوى خاصية رئيسية له في هذا المركز: ${labelOf(best.key)} ${best.val}.`
-                        : `Strongest key attribute for this position: ${labelOf(best.key)} ${best.val}.`);
+                // ---------- shared reads ----------
+                const roleNow = (!standalone && typeof evalSlotIdx === 'number' && squadState.teamRoles && squadState.teamRoles[evalSlotIdx]) || getRoleSuggestion(evalPlayer, pos);
+                const drivers = (roleNow && ROLE_DRIVER_ATTRS[roleNow.role] || []).filter(k => evalPlayer.att && typeof evalPlayer.att[k] === 'number');
+                const fitTop = st ? st.topPct : null;
+                const fitWord = fitTop == null ? null
+                    : st.inTop10 ? T('top-10%', 'ضمن أفضل 10%')
+                    : fitTop <= 25 ? T('strong', 'قوية')
+                    : fitTop <= 50 ? T('above-median', 'فوق الوسيط')
+                    : T('below-median', 'دون الوسيط');
+                // Standing vs the Top 10% benchmark for each key attribute.
+                const ranked = attrs.map(a => ({ ...a, dAvg: a.v - a.avg, dTop: a.top10 != null ? a.v - a.top10 : null }));
+                const strengths = ranked.filter(a => a.dAvg >= 3).sort((a, b) => ((b.dTop != null && b.dTop >= 0) - (a.dTop != null && a.dTop >= 0)) || (b.dAvg - a.dAvg));
+                const limits = ranked.filter(a => a.dTop != null && a.dTop <= -PI_SIGNAL_GAP)
+                    .sort((a, b) => (drivers.includes(b.key) - drivers.includes(a.key)) || (a.dTop - b.dTop));
+                const levelOf = a => a.dTop != null && a.dTop >= 0 ? T('above the Top 10% benchmark', 'فوق عتبة أفضل 10%')
+                    : a.top25 != null && a.v >= a.top25 ? T('in the upper quartile', 'ضمن الربع الأعلى')
+                    : null;
+
+                // ---------- 1. WHY IT FITS ----------
+                const relTxt = rel === 'primary'
+                    ? T(`${pos} is his natural position`, `${pos} هو مركزه الأساسي`)
+                    : rel === 'alt'
+                        ? T(`${pos} is an alternative position for him (natural ${evalPlayer.pos}), so he is judged here against ${pos} cards, not ${evalPlayer.pos} cards`, `${pos} مركز بديل له (الأساسي ${evalPlayer.pos})، لذا يُقيَّم هنا مقابل بطاقات ${pos} لا ${evalPlayer.pos}`)
+                        : T(`He is out of position at ${pos} (natural ${evalPlayer.pos})`, `يلعب خارج مركزه في ${pos} (الأساسي ${evalPlayer.pos})`);
+                const fitTxt = fitWord ? T(`, with ${fitWord} positional fit for ${grp}`, `، بملاءمة موقعية ${fitWord} لمركز ${grp}`) : '';
+                let roleTxt = '';
+                if (roleNow && drivers.length) {
+                    const avgOf = k => (byKey[k] ? byKey[k].avg : (getPositionBaseline(pos) && getPositionBaseline(pos).stats[k] ? getPositionBaseline(pos).stats[k].avg : null));
+                    const ups = drivers.filter(k => avgOf(k) != null && evalPlayer.att[k] - avgOf(k) >= 2);
+                    const downs = drivers.filter(k => avgOf(k) != null && evalPlayer.att[k] - avgOf(k) <= -2);
+                    const how = roleNow.manual ? T(' you chose', ' الذي اخترته') : roleNow.adjusted ? T(' (assigned for team shape)', ' (المعيّن لشكل الفريق)') : '';
+                    const drv = drivers.map(labelOf).join(T(' and ', ' و'));
+                    roleTxt = ups.length === drivers.length
+                        ? T(` The ${roleNow.role} role${how} leans on ${lower(drv)}, and he is above the ${pos} average on ${drivers.length > 1 ? 'both' : 'it'}.`, ` دور ${roleNow.role}${how} يعتمد على ${drv}، وهو فوق متوسط ${pos} فيها.`)
+                        : downs.length === drivers.length
+                            ? T(` The ${roleNow.role} role${how} leans on ${lower(drv)}, where he is below the ${pos} average — the role is a compromise for this profile.`, ` دور ${roleNow.role}${how} يعتمد على ${drv}، وهو دون متوسط ${pos} فيها — الدور حل وسط لهذا الملف.`)
+                            : T(` The ${roleNow.role} role${how} leans on ${lower(drv)}; he is above the ${pos} average on ${lower(ups.map(labelOf).join(' and ')) || 'neither'}${downs.length ? ` and below it on ${lower(downs.map(labelOf).join(' and '))}` : ''}.`,
+                                ` دور ${roleNow.role}${how} يعتمد على ${drv}؛ هو فوق متوسط ${pos} في ${ups.map(labelOf).join(' و') || 'لا شيء منها'}${downs.length ? ` ودونه في ${downs.map(labelOf).join(' و')}` : ''}.`);
                 }
-
-                // B. Why this role — the role's own score drivers
-                const roleNow = (!standalone && typeof evalSlotIdx === 'number' && squadState.teamRoles && squadState.teamRoles[evalSlotIdx]) || getRoleSuggestion(evalPlayer, effectivePos);
-                const drivers = roleNow && ROLE_DRIVER_ATTRS[roleNow.role];
-                if (drivers && evalPlayer.att && drivers.every(k => typeof evalPlayer.att[k] === 'number')) {
-                    const parts = drivers.map(k => {
-                        const avg = avgOf(k);
-                        return avg != null
-                            ? `${labelOf(k)} ${evalPlayer.att[k]} (${signed(Math.round(evalPlayer.att[k] - avg))})`
-                            : `${labelOf(k)} ${evalPlayer.att[k]}`;
-                    });
-                    const how = roleNow.manual ? (isAr ? ' الذي اخترته' : ' you chose') : roleNow.adjusted ? (isAr ? ' (المعيّن لشكل الفريق)' : ' (assigned for team shape)') : '';
-                    sentences.push(isAr
-                        ? `دور ${roleNow.role}${how} يعتمد أساساً على ${parts.join(' و')}، مقارنة بمتوسط ${effectivePos}.`
-                        : `The ${roleNow.role} role${how} relies mainly on ${parts.join(' and ')}, relative to the ${effectivePos} average.`);
-                }
-
-                // C. What it means in play
-                if (bestAbove && ATTR_IN_PLAY[bestAbove.key]) {
-                    sentences.push(isAr
-                        ? `عملياً، يميل إلى أن ${ATTR_IN_PLAY[bestAbove.key].ar}.`
-                        : `In play, this player tends to ${ATTR_IN_PLAY[bestAbove.key].en}.`);
-                }
-                if (styleClauseEn) sentences.push(styleClauseEn.trim());
-
-                // D. What is given up
-                if (haveAvgs && entries.length >= 2) {
-                    const worst = entries.reduce((x, y) => ((y.val - y.avg) < (x.val - x.avg) ? y : x));
-                    const d = Math.round(worst.avg - worst.val);
-                    if (d >= 3 && (!bestAbove || worst.key !== bestAbove.key)) {
-                        sentences.push(isAr
-                            ? `ما يتنازل عنه: ${labelOf(worst.key)} ${worst.val}، أقل بـ${d} من متوسط ${effectivePos} (انظر نقاط الضعف).`
-                            : `What this player gives up: ${labelOf(worst.key)} ${worst.val}, ${d} below the ${effectivePos} average (see Vulnerabilities).`);
-                    }
-                }
-
-                // E. How the alternatives compare (never the headline)
-                const unitEn = typeof evalPlayer.meta === 'number' ? 'Meta' : 'OVR';
-                const unitAr = typeof evalPlayer.meta === 'number' ? 'ميتا' : 'تقييم';
+                // Selection context from the existing alternatives logic.
+                let selTxt = '';
+                const unit = typeof evalPlayer.meta === 'number' ? T('Meta', 'ميتا') : T('OVR', 'تقييم');
                 const alts = (!standalone && typeof evalSlotIdx === 'number' && squadState.alternatives) ? (squadState.alternatives[evalSlotIdx] || []) : [];
                 if (!standalone) {
-                    if (alts.length > 0) {
+                    if (alts.length) {
                         const nextBest = alts[0];
                         const gap = getMetaValue(evalPlayer) - getMetaValue(nextBest);
                         const nb = `<span class="text-white font-semibold">${nextBest.name}</span>`;
                         const priceDiff = effectivePrice(evalPlayer) - effectivePrice(nextBest);
-                        let clause;
-                        if (gap >= 3) {
-                            clause = isAr ? `يتفوّق بوضوح على أقرب بديل ضمن الميزانية (${nb}) بفارق ${gap.toFixed(1)} ${unitAr}` : `Clearly ahead of the closest affordable alternative (${nb}) by ${gap.toFixed(1)} ${unitEn}`;
-                        } else if (gap > 0.3) {
-                            clause = isAr ? `يتقدّم بفارق ضئيل عن أقرب بديل (${nb}، +${gap.toFixed(1)} ${unitAr})` : `Only a thin margin ahead of the closest alternative (${nb}, +${gap.toFixed(1)} ${unitEn})`;
-                        } else {
-                            clause = isAr ? `الفارق مع البدائل المتاحة محدود جداً — ${nb} كان سيؤدي بشكل مشابه تقريباً` : `Barely separated from the alternatives — ${nb} would perform almost as well here`;
-                        }
-                        // Price context only where it changes the reading: a
-                        // small quality edge bought with a much bigger spend.
-                        if (gap < 3 && priceDiff > 0 && priceDiff >= 0.2 * effectivePrice(evalPlayer)) {
-                            clause += isAr ? `، ويكلّف ${priceDiff.toLocaleString()} عملة أكثر منه — أي أن الإنفاق الإضافي يشتري فارقاً صغيراً.` : `, and costs ${priceDiff.toLocaleString()} more coins — so the extra spend buys a small margin.`;
-                        } else if (priceDiff < 0 && gap >= 0) {
-                            clause += isAr ? `، ويكلّف ${Math.abs(priceDiff).toLocaleString()} عملة أقل منه.` : `, while costing ${Math.abs(priceDiff).toLocaleString()} fewer coins.`;
-                        } else clause += '.';
-                        sentences.push(clause);
+                        selTxt = gap >= 3 ? T(` Chosen clearly ahead of the closest affordable alternative (${nb}, +${gap.toFixed(1)} ${unit})`, ` اختير بفارق واضح عن أقرب بديل ضمن الميزانية (${nb}، +${gap.toFixed(1)} ${unit})`)
+                            : gap > 0.3 ? T(` Only a thin margin ahead of the closest alternative (${nb}, +${gap.toFixed(1)} ${unit})`, ` يتقدّم بفارق ضئيل عن أقرب بديل (${nb}، +${gap.toFixed(1)} ${unit})`)
+                            : T(` Barely separated from the alternatives — ${nb} would rate about the same`, ` الفارق مع البدائل محدود جداً — ${nb} بتقييم مشابه تقريباً`);
+                        if (gap < 3 && priceDiff > 0 && priceDiff >= 0.2 * effectivePrice(evalPlayer)) selTxt += T(`, while costing ${priceDiff.toLocaleString()} more coins.`, `، ويكلّف ${priceDiff.toLocaleString()} عملة أكثر.`);
+                        else if (priceDiff < 0 && gap >= 0) selTxt += T(`, while costing ${Math.abs(priceDiff).toLocaleString()} fewer coins.`, `، ويكلّف ${Math.abs(priceDiff).toLocaleString()} عملة أقل.`);
+                        else selTxt += '.';
                     } else {
                         const leftForSlot = Math.max(0, squadState.budget - (squadState.totalCost - effectivePrice(evalPlayer)));
-                        const slotPos = (formationSlots[squadState.formation][evalSlotIdx] || {}).pos || effectivePos;
-                        sentences.push(isAr
-                            ? `لا يوجد لاعب ${slotPos} آخر ضمن ${leftForSlot.toLocaleString()} عملة المتبقية بعد بقية التشكيلة — الميزانية، لا الجودة وحدها، حسمت هذا المركز.`
-                            : `No other ${slotPos} fits the ${leftForSlot.toLocaleString()} coins left after the rest of the XI — budget, not just quality, decided this slot.`);
+                        selTxt = T(` No other ${pos} fits the ${leftForSlot.toLocaleString()} coins left after the rest of the XI — budget, not only quality, decided this slot.`, ` لا يوجد لاعب ${pos} آخر ضمن ${leftForSlot.toLocaleString()} عملة المتبقية — الميزانية، لا الجودة وحدها، حسمت هذا المركز.`);
                     }
+                    const budgetShare = squadState.budget > 0 ? (effectivePrice(evalPlayer) / squadState.budget) * 100 : 0;
+                    if (budgetShare >= 15) {
+                        const priciest = Math.max(...Object.values(squadState.selectedXI || {}).filter(Boolean).map(p => effectivePrice(p)));
+                        const isPriciest = effectivePrice(evalPlayer) > 0 && effectivePrice(evalPlayer) === priciest;
+                        selTxt += T(` Takes about ${budgetShare.toFixed(0)}% of the budget${isPriciest ? ' — the biggest single spend in the XI' : ''}.`, ` يستهلك نحو ${budgetShare.toFixed(0)}% من الميزانية${isPriciest ? ' — أكبر إنفاق فردي في التشكيلة' : ''}.`);
+                    }
+                }
+                part('Why it fits', 'لماذا يناسب', `${relTxt}${fitTxt}.${roleTxt}${selTxt}`);
+
+                // ---------- 2. WHAT SEPARATES HIM ----------
+                let sepTxt = '';
+                const topStr = strengths.slice(0, 2);
+                if (topStr.length) {
+                    const first = topStr[0];
+                    const l1 = levelOf(first);
+                    sepTxt = T(`${labelOf(first.key)} is the strongest evidence for this slot — ${Math.round(first.dAvg)} points above the ${pos} average${l1 ? ` and ${l1}` : ''}.`,
+                        `${labelOf(first.key)} أقوى دليل لهذا المركز — أعلى بـ ${Math.round(first.dAvg)} نقاط من متوسط ${pos}${l1 ? `، و${l1}` : ''}.`);
+                    if (topStr[1]) { const l2 = levelOf(topStr[1]); sepTxt += T(` ${labelOf(topStr[1].key)} is also ${l2 || `above the ${pos} average`}.`, ` و${labelOf(topStr[1].key)} أيضاً ${l2 || `فوق متوسط ${pos}`}.`); }
+                } else if (attrs.length) {
+                    sepTxt = T(`None of his key attributes is clearly above the ${pos} average; the case for him rests on the rest of the card (Meta Rating, role, selection context) rather than positional attributes.`,
+                        `لا توجد خاصية أساسية فوق متوسط ${pos} بوضوح؛ الحجة لاختياره تقوم على بقية البطاقة (الميتا، الدور، سياق الاختيار) لا على الخصائص الموقعية.`);
+                }
+                // PlayStyle — only when it is both relevant to the position
+                // and over-represented among top-fit cards.
+                const ps = intel && intel.psContext;
+                const relevantPs = getRelevantPlaystylesForPosition(pos);
+                const psHit = ps && ps.have.find(r => relevantPs.includes(r.name));
+                if (psHit) {
+                    const ex = PLAYSTYLE_EXPLAIN[psHit.name];
+                    sepTxt += T(` ${psHit.name}${psHit.plus ? '+' : ''} is a ${pos}-relevant trait that is more common among top-fit ${grp} cards${ex ? ` (${ex.en.replace(/\.$/, '')})` : ''}.`,
+                        ` ${psHit.name}${psHit.plus ? '+' : ''} نمط مرتبط بمركز ${pos} وأكثر شيوعاً لدى أعلى بطاقات ${grp} ملاءمة${ex ? ` (${ex.ar.replace(/\.$/, '')})` : ''}.`);
+                }
+                part('What separates him', 'ما يميّزه', sepTxt);
+
+                // ---------- 3. THE TRADE-OFF ----------
+                const trade = [];
+                if (limits.length) {
+                    const w = limits[0];
+                    const isRole = drivers.includes(w.key);
+                    trade.push(w.v < Math.round(w.avg) - 1
+                        ? T(`${labelOf(w.key)} is below the ${pos} average — the clearest weakness for this slot${isRole ? `, and one the ${roleNow.role} role relies on` : ''}.`,
+                            `${labelOf(w.key)} دون متوسط ${pos} — أوضح نقطة ضعف لهذا المركز${isRole ? `، ودور ${roleNow.role} يعتمد عليها` : ''}.`)
+                        : T(`${labelOf(w.key)} is the main limitation relative to elite ${grp} profiles, although it is ${w.v > Math.round(w.avg) + 1 ? 'above' : 'around'} the database average${isRole ? ` — and the ${roleNow.role} role relies on it` : ''}.`,
+                            `${labelOf(w.key)} هي القيد الأساسي مقارنة بملفات ${grp} النخبوية، مع أنها ${w.v > Math.round(w.avg) + 1 ? 'فوق' : 'قرب'} متوسط قاعدة البيانات${isRole ? ` — ودور ${roleNow.role} يعتمد عليها` : ''}.`));
+                }
+                // Meta Rating vs positional fit — the selection trade-off.
+                const mp = typeof computeMetaPercentile === 'function' ? computeMetaPercentile(evalPlayer, pos) : null;
+                if (mp && fitTop != null) {
+                    const metaTop = Math.max(1, 100 - mp.percentile);
+                    if (metaTop <= 25 && fitTop > 50) trade.push(T(`His Meta Rating ranks high among ${pos} options, but his positional key-attribute fit is below the median — the rating is carried by more than these attributes (e.g. PlayStyles, role, finer attributes).`,
+                        `تقييم الميتا له مرتفع بين خيارات ${pos}، لكن ملاءمته الموقعية دون الوسيط — التقييم مدعوم بأكثر من هذه الخصائص (أنماط اللعب، الدور، الخصائص الدقيقة).`));
+                    else if (fitTop <= 25 && metaTop > 50) trade.push(T(`His positional fit is strong, but his Meta Rating is below the median for ${pos} options — the attributes suit the position better than the overall meta score suggests.`,
+                        `ملاءمته الموقعية قوية، لكن تقييم الميتا دون الوسيط لخيارات ${pos} — الخصائص تناسب المركز أكثر مما يوحي به تقييم الميتا.`));
+                }
+                // Alternative position: where this card still trails primary cards.
+                if (rel === 'alt' && intel && intel.summary && intel.summary.insight && intel.summary.insight.statDiffs) {
+                    const trail = intel.summary.insight.statDiffs.filter(d => d.diff < 0 && typeof evalPlayer.att[d.key] === 'number' && evalPlayer.att[d.key] < d.primaryAvg - 1);
+                    if (trail.length) trade.push(T(`As an alternative-position ${pos}, his ${lower(labelOf(trail[0].key))} trails the primary ${pos} average — the same gap alternative-position cards usually show.`,
+                        `كلاعب ${pos} بديل، ${labelOf(trail[0].key)} أقل من متوسط ${pos} الأساسي — وهو الفارق نفسه الذي تُظهره البطاقات البديلة عادةً.`));
+                    else if (intel.altContext && intel.altContext.beats && intel.altContext.beats.length) trade.push(T(`Being an alternative-position ${pos} is not a statistical drawback here: his ${lower(labelOf(intel.altContext.beats[0].key))} matches primary ${pos} cards.`,
+                        `كونه ${pos} بديلاً ليس عيباً إحصائياً هنا: ${labelOf(intel.altContext.beats[0].key)} عنده بمستوى بطاقات ${pos} الأساسية.`));
+                }
+                // Chemistry in this slot (existing check).
+                if (!standalone && typeof evalSlotIdx === 'number' && squadState.chemistry && squadState.chemistry.perSlot) {
+                    const chemInfo = squadState.chemistry.perSlot[evalSlotIdx];
+                    if (chemInfo && squadState.selectedXI[evalSlotIdx] && squadState.selectedXI[evalSlotIdx].id === evalPlayer.id) {
+                        if (!chemInfo.inPosition) trade.push(T('Out of his listed positions here, so chemistry is 0/3.', 'خارج مراكزه المسجّلة هنا، لذا كيميائه 0/3.'));
+                        else if (chemInfo.points <= 1) trade.push(T(`Only ${chemInfo.points}/3 chemistry in this slot — few club, league or nation links.`, `كيميائه ${chemInfo.points}/3 فقط هنا — روابط قليلة بالنادي أو الدوري أو الدولة.`));
+                    }
+                }
+                if (!trade.length && attrs.length) trade.push(T(`No key attribute sits clearly below the Top 10% ${grp} benchmark — no obvious statistical trade-off for this position.`,
+                    `لا توجد خاصية أساسية دون عتبة أفضل 10% لمركز ${grp} بوضوح — لا مقايضة إحصائية واضحة لهذا المركز.`));
+                part('The trade-off', 'المقايضة', trade.slice(0, 2).join(' '));
+
+                // ---------- 4. MATCHUP IMPLICATION (one sentence) ----------
+                let mu = null;
+                (intel && intel.matchups || []).forEach(m => m.metrics.forEach(x => {
+                    const shift = Math.abs(Math.round(x.playerGap) - Math.round(x.typicalGap));
+                    if (shift < 2) return;
+                    const score = (x.cross ? 0 : 1000) + shift;
+                    if (!mu || score > mu.score) mu = { m, x, score };
+                }));
+                if (mu) {
+                    const { m, x } = mu;
+                    const opp = isAr ? MI_GROUPS[m.oppGroup].ar : MI_GROUPS[m.oppGroup].en;
+                    const pg = Math.round(x.playerGap), tg = Math.round(x.typicalGap);
+                    const his = labelOf(x.myKey), oppAttr = labelOf(x.oppKey);
+                    const subj = x.cross ? T(`his ${his}, measured against their ${oppAttr},`, `${his} لديه مقارنة بـ${oppAttr} لديهم`) : T(`his ${his}`, `${his} لديه`);
+                    let s;
+                    if (tg < 0) s = pg >= 0
+                        ? (x.cross ? T(`Against ${opp}, his ${his} (${x.myVal}) is level with or above their average ${oppAttr}, whereas the typical ${pos} is ${Math.abs(tg)} points behind.`, `أمام ${opp}، ${his} لديه (${x.myVal}) عند متوسط ${oppAttr} لديهم أو أعلى، بينما البطاقة المعتادة في ${pos} أقل بـ ${Math.abs(tg)}.`)
+                                   : T(`Against ${opp}, his ${x.myVal} ${his} is level with or above their average, whereas the typical ${pos} is ${Math.abs(tg)} points behind.`, `أمام ${opp}، ${his} لديه (${x.myVal}) عند متوسطهم أو أعلى، بينما البطاقة المعتادة في ${pos} أقل بـ ${Math.abs(tg)}.`))
+                        : pg > tg ? T(`Against ${opp}, ${subj} narrows the typical ${pos} gap from ${Math.abs(tg)} points to ${Math.abs(pg)}.`, `أمام ${opp}، ${subj} يُضيّق الفارق المعتاد لـ ${pos} من ${Math.abs(tg)} إلى ${Math.abs(pg)}.`)
+                        : T(`Against ${opp}, ${subj} leaves a wider gap (${Math.abs(pg)}) than the typical ${pos} (${Math.abs(tg)}).`, `أمام ${opp}، ${subj} يترك فارقاً أوسع (${Math.abs(pg)}) من المعتاد لـ ${pos} (${Math.abs(tg)}).`);
+                    else s = pg > tg ? T(`Against ${opp}, ${subj} gives a larger margin (+${pg}) than the typical ${pos} (+${tg}).`, `أمام ${opp}، ${subj} يمنح هامشاً أكبر (+${pg}) من المعتاد لـ ${pos} (+${tg}).`)
+                        : pg > 0 ? T(`Against ${opp}, ${subj} gives a smaller margin (+${pg}) than the typical ${pos} (+${tg}).`, `أمام ${opp}، ${subj} يمنح هامشاً أصغر (+${pg}) من المعتاد لـ ${pos} (+${tg}).`)
+                        : T(`Against ${opp}, ${subj} does not exceed their average, unlike the typical ${pos} (+${tg}).`, `أمام ${opp}، ${subj} لا يتجاوز متوسطهم، على عكس المعتاد لـ ${pos} (+${tg}).`);
+                    if (x.cross) s += T(' (Different attributes: rating levels, not duel outcomes.)', ' (خاصيتان مختلفتان: مستويات تقييم، لا نتائج مواجهات.)');
+                    part('Matchup implication', 'دلالة المواجهة', s);
                 }
 
-                // Budget share + chemistry in this slot (context)
-                if (!standalone) {
-                    const budgetShare = squadState.budget > 0 ? (effectivePrice(evalPlayer) / squadState.budget) * 100 : 0;
-                    const priciest = Math.max(...Object.values(squadState.selectedXI || {}).filter(Boolean).map(p => effectivePrice(p)));
-                    const isPriciest = effectivePrice(evalPlayer) > 0 && effectivePrice(evalPlayer) === priciest;
-                    if (budgetShare >= 15) {
-                        sentences.push(isAr
-                            ? `يستهلك نحو ${budgetShare.toFixed(0)}% من الميزانية${isPriciest ? ' — أكبر إنفاق فردي في التشكيلة' : ''}.`
-                            : `Takes about ${budgetShare.toFixed(0)}% of the budget${isPriciest ? ' — the biggest single spend in the XI' : ''}.`);
-                    } else if (budgetShare <= 1) {
-                        sentences.push(isAr ? `يكلّف أقل من 1% من الميزانية.` : `Costs under 1% of the budget.`);
-                    }
-                    if (typeof evalSlotIdx === 'number' && squadState.chemistry && squadState.chemistry.perSlot) {
-                        const chemInfo = squadState.chemistry.perSlot[evalSlotIdx];
-                        if (chemInfo && squadState.selectedXI[evalSlotIdx] && squadState.selectedXI[evalSlotIdx].id === evalPlayer.id) {
-                            if (!chemInfo.inPosition) {
-                                sentences.push(isAr ? `يلعب خارج مركزه الأساسي هنا، لذا كيميائه 0/3.` : `This player is out of their natural position here, so chemistry is 0/3.`);
-                            } else if (chemInfo.points <= 1) {
-                                sentences.push(isAr
-                                    ? `كيميائه ${chemInfo.points}/3 فقط في هذا المركز — روابط قليلة مع زملائه في النادي أو الدوري أو الدولة.`
-                                    : `Only ${chemInfo.points}/3 chemistry in this slot — few club, league or nation links with teammates.`);
-                            }
-                        }
-                    }
-                }
-                return sentences.join(' ');
+                // ---------- 5. BOTTOM LINE ----------
+                const DESC = { pac: T('pace-based', 'يعتمد على السرعة'), sho: T('shooting-led', 'يقوده التسديد'), pas: T('passing-oriented', 'يميل للتمرير'),
+                    dri: T('dribbling-led', 'تقوده المراوغة'), def: T('defence-oriented', 'يميل للدفاع'), phy: T('physical', 'بدني'),
+                    ref: T('reflex-based', 'يعتمد على ردود الفعل'), div: T('diving-led', 'يقوده الارتماء'), han: T('handling-led', 'تقوده الإمساك'),
+                    kic: T('distribution-led', 'يقوده التوزيع'), spe: T('mobile', 'سريع الحركة'), pos: T('positioning-led', 'يقوده التمركز') };
+                const posTag = rel === 'alt' ? T(' (alternative position)', ' (مركز بديل)') : rel === 'primary' ? '' : T(' (out of position)', ' (خارج مركزه)');
+                const s1 = topStr[0], w1 = limits[0];
+                let bottom;
+                if (s1 && w1 && s1.key !== w1.key) bottom = T(`A ${DESC[s1.key] || ''} ${pos}${posTag}${fitWord ? ` with ${fitWord} positional fit` : ''}, trading some ${lower(labelOf(w1.key))} for ${lower(labelOf(s1.key))}.`,
+                    `لاعب ${pos}${posTag} ${DESC[s1.key] || ''}${fitWord ? ` بملاءمة موقعية ${fitWord}` : ''}، يقايض بعض ${labelOf(w1.key)} مقابل ${labelOf(s1.key)}.`);
+                else if (s1) bottom = T(`A ${DESC[s1.key] || ''} ${pos}${posTag}${fitWord ? ` with ${fitWord} positional fit` : ''} and no key attribute clearly short of the elite benchmark.`,
+                    `لاعب ${pos}${posTag} ${DESC[s1.key] || ''}${fitWord ? ` بملاءمة موقعية ${fitWord}` : ''} دون خاصية أساسية بعيدة بوضوح عن عتبة النخبة.`);
+                else if (w1) bottom = T(`${fitWord ? `${fitWord.charAt(0).toUpperCase() + fitWord.slice(1)} positional fit` : 'Positional fit'} at ${pos}${posTag}; ${lower(labelOf(w1.key))} is the part of the profile furthest from the elite benchmark.`,
+                    `ملاءمة موقعية ${fitWord || ''} في ${pos}${posTag}؛ و${labelOf(w1.key)} أبعد جزء في الملف عن عتبة النخبة.`);
+                else if (attrs.length) bottom = T(`A ${pos} profile close to the database norm across its key attributes${posTag}.`, `ملف ${pos} قريب من معيار قاعدة البيانات في خصائصه الأساسية${posTag}.`);
+                part('Bottom line', 'الخلاصة', bottom ? `<span class="text-white">${bottom.replace(/\s{2,}/g, ' ')}</span>` : '');
+
+                return parts.join('');
             }
 
             const noMetaNote = !hasMeta
@@ -16648,12 +16702,17 @@
                     ? ' لا تتوفر بيانات ميتا لهذه البطاقة، فاعتمد هذا التقييم على الإحصائيات والتقييم العام بدلاً منها.'
                     : ' No meta rating data for this card, so this read is based on raw attributes/OVR instead.')
                 : '';
-            const whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries) + noMetaNote;
-            // Position Intelligence: database context for this player at
-            // effectivePos (slot position, or natural position standalone).
-            let positionIntelHtml = '';
-            try { positionIntelHtml = renderPositionIntelHtml(player, effectivePos); }
+            // Position Intelligence (evidence) is computed once and shared
+            // with Why This Pick (interpretation).
+            let posIntel = null;
+            try { posIntel = computePlayerPositionIntel(player, effectivePos); }
             catch (err) { console.error('[Player modal] position intelligence failed:', err); }
+            let whyDesc = '';
+            try { whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries, posIntel) + (noMetaNote ? `<p class="text-gray-500">${noMetaNote.trim()}</p>` : ''); }
+            catch (err) { console.error('[Player modal] why this pick failed:', err); }
+            let positionIntelHtml = '';
+            try { positionIntelHtml = renderPositionIntelHtml(player, effectivePos, posIntel); }
+            catch (err) { console.error('[Player modal] position intelligence render failed:', err); }
             const metaLine = hasMeta
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
                 : '';
@@ -17127,7 +17186,7 @@
 
                         <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
                             <span class="text-xs font-bold text-fc-accent uppercase tracking-wider">${whyText}</span>
-                            <p class="text-xs text-gray-300">${whyDesc}</p>
+                            <div class="text-xs text-gray-300 space-y-1.5">${whyDesc}</div>
                             <div id="bodytype-whypick-note" class="text-xs text-gray-300"></div>
                             <p id="passing-whypick-note" class="text-xs text-gray-500 italic animate-pulse">${currentLanguage === 'ar' ? 'جارٍ التحقق من قدرات التمرير الحقيقية...' : 'Checking real passing data...'}</p>
                             ${focusProfileHtml}
