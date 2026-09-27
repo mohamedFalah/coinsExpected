@@ -5985,6 +5985,214 @@
                 };
             });
             GENERAL_PLAYER_STATS = perPosition;
+            computePopulationPlayerStats();
+        }
+
+        // ===================================================================
+        // POSITION POPULATIONS — primary vs alternative position
+        // ===================================================================
+        // Every mapped player already carries exactly ONE primary position
+        // and zero or more alternatives, straight from EasySBC (see
+        // mapEasySbcPlayer): p.pos = EasySBC's own preferredPosition, and
+        // p.alt = the rest of its positions[] list with the primary removed.
+        // Nothing here infers a position from attributes, meta, OVR or role.
+        //
+        // Three populations per position (or per display group like LB/RB):
+        //   'primary' — the card's primary position is in the group
+        //   'alt'     — not primary there, but it's in p.alt (alternative only)
+        //   'all'     — either of the above ("all capable")
+        // Every pool is de-duplicated by card id, so a "LB, RB" card counts
+        // ONCE in the LB/RB card and a "CB, LB" card never twice inside CB.
+        //
+        // GENERAL_PLAYER_STATS above is deliberately left exactly as it was
+        // (all-capable, per position) because the squad optimizer, squad
+        // identity/analysis, and the Players-tab "above average" filter read
+        // it. This layer only feeds Database Stats and the player-modal /
+        // analyst benchmarks, which label the population they use.
+        const DB_STATS_POPULATION_STORAGE_KEY = 'fc27_dbstats_population';
+        // 'all' = the pre-existing Database Stats behaviour, so it stays the
+        // default; the difference is that it's now named on screen.
+        let DB_STATS_POPULATION = 'all';
+        try {
+            const savedPop = localStorage.getItem(DB_STATS_POPULATION_STORAGE_KEY);
+            if (savedPop === 'primary' || savedPop === 'all') DB_STATS_POPULATION = savedPop;
+        } catch (e) { /* storage unavailable (e.g. file:// quirks) — keep default */ }
+        let GENERAL_PLAYER_STATS_BY_POP = { primary: {}, alt: {}, all: {} };
+
+        // 'primary' | 'alt' | null for one exact position code.
+        function getPositionRelation(player, pos) {
+            if (!player) return null;
+            if (player.pos === pos) return 'primary';
+            if (Array.isArray(player.alt) && player.alt.includes(pos)) return 'alt';
+            return null;
+        }
+        // Same, for a display group (e.g. ['LB','RB']): primary wins if the
+        // card's primary is ANY of the group's codes.
+        function getGroupRelation(player, positions) {
+            let rel = null;
+            for (const pos of positions) {
+                const r = getPositionRelation(player, pos);
+                if (r === 'primary') return 'primary';
+                if (r === 'alt') rel = 'alt';
+            }
+            return rel;
+        }
+        function playerHasRecordedPlaystyles(p) {
+            return (Array.isArray(p.playstyles) && p.playstyles.length > 0) ||
+                (Array.isArray(p.playstylesPlus) && p.playstylesPlus.length > 0);
+        }
+        // Rated-74+ cards in the given population for the given position
+        // code(s), each card at most once.
+        function getPositionPopulationPool(positions, population, opts) {
+            const requireAtt = !!(opts && opts.requireAtt);
+            const minRating = (opts && typeof opts.minRating === 'number') ? opts.minRating : GENERAL_STATS_MIN_RATING;
+            const seen = new Set();
+            const out = [];
+            getActiveDatabase({ requirePriced: false, ignorePool: true }).forEach(p => {
+                if (!p || !(p.rating >= minRating)) return;
+                if (requireAtt && !p.att) return;
+                const rel = getGroupRelation(p, positions);
+                if (!rel) return;
+                if (population === 'primary' && rel !== 'primary') return;
+                if (population === 'alt' && rel !== 'alt') return;
+                const key = p.id || playerIdentityKey(p);
+                if (seen.has(key)) return;
+                seen.add(key);
+                out.push(p);
+            });
+            return out;
+        }
+        function meanOf(vals) { return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null; }
+        // Same entry shape as GENERAL_PLAYER_STATS[pos], so the modal code
+        // can read either one.
+        function buildPositionBaselineEntry(pool, statKeys) {
+            const stats = {};
+            statKeys.forEach(key => {
+                const vals = pool.map(p => p.att && p.att[key]).filter(v => typeof v === 'number');
+                if (vals.length === 0) { stats[key] = null; return; }
+                const avg = meanOf(vals);
+                const variance = vals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / vals.length;
+                stats[key] = { avg, stdDev: Math.sqrt(variance), count: vals.length };
+            });
+            return {
+                count: pool.length,
+                ratingAvg: meanOf(pool.map(p => p.rating)),
+                stats,
+                playstyles: computePositionPlaystyleBaseline(pool)
+            };
+        }
+        function computePopulationPlayerStats() {
+            const byPop = { primary: {}, alt: {}, all: {} };
+            GENERAL_STATS_POSITIONS.forEach(pos => {
+                ['primary', 'alt', 'all'].forEach(pop => {
+                    const pool = getPositionPopulationPool([pos], pop, { requireAtt: true });
+                    byPop[pop][pos] = buildPositionBaselineEntry(pool, statKeysForPosition(pos));
+                });
+            });
+            GENERAL_PLAYER_STATS_BY_POP = byPop;
+        }
+        // The benchmark entry for one position in the currently selected
+        // Database Stats population (or an explicit one).
+        function getPositionBaseline(pos, population) {
+            const pop = population || DB_STATS_POPULATION;
+            const table = GENERAL_PLAYER_STATS_BY_POP[pop] || {};
+            return table[pos] || null;
+        }
+        function positionPopulationDesc(pop, posLabel, isAr) {
+            if (pop === 'primary') return isAr ? `لاعبي ${posLabel} الأساسيين` : `primary ${posLabel} cards`;
+            if (pop === 'alt') return isAr ? `من يلعب ${posLabel} كمركز بديل فقط` : `alternative-only ${posLabel} cards`;
+            return isAr ? `كل من يستطيع اللعب ${posLabel} (أساسي أو بديل)` : `all ${posLabel}-capable cards (primary + alternative)`;
+        }
+        function positionRelationLabel(rel, pos, isAr) {
+            if (rel === 'primary') return isAr ? `${pos} — المركز الأساسي` : `${pos} — Primary Position`;
+            if (rel === 'alt') return isAr ? `${pos} — مركز بديل` : `${pos} — Alternative Position`;
+            return isAr ? `${pos} — خارج مركزه` : `${pos} — Out of Position`;
+        }
+        window.setDbStatsPopulation = function(pop) {
+            if (pop !== 'primary' && pop !== 'all') return;
+            DB_STATS_POPULATION = pop;
+            try { localStorage.setItem(DB_STATS_POPULATION_STORAGE_KEY, pop); } catch (e) { /* ignore */ }
+            renderGeneralStatsPanel();
+        };
+
+        // "Primary CB profile vs alternative CB profile" — only produced
+        // when BOTH groups have enough cards, and only differences that
+        // actually clear a threshold are returned. Nothing is assumed.
+        const DB_STATS_POP_INSIGHT_MIN_SAMPLE = 15;
+        const DB_STATS_POP_INSIGHT_STAT_GAP = 3;
+        function computePrimaryVsAltInsight(keys, allPool) {
+            const prim = allPool.filter(p => getGroupRelation(p, keys) === 'primary');
+            const alt = allPool.filter(p => getGroupRelation(p, keys) === 'alt');
+            const res = { primaryN: prim.length, altN: alt.length, statDiffs: [], psDiffs: [] };
+            if (prim.length < DB_STATS_POP_INSIGHT_MIN_SAMPLE || alt.length < DB_STATS_POP_INSIGHT_MIN_SAMPLE) return res;
+            statKeysForPosition(keys[0]).forEach(k => {
+                const pa = meanOf(prim.map(p => p.att && p.att[k]).filter(v => typeof v === 'number'));
+                const aa = meanOf(alt.map(p => p.att && p.att[k]).filter(v => typeof v === 'number'));
+                if (pa == null || aa == null) return;
+                const diff = Math.round(aa - pa);
+                if (Math.abs(diff) >= DB_STATS_POP_INSIGHT_STAT_GAP) res.statDiffs.push({ key: k, primaryAvg: Math.round(pa), altAvg: Math.round(aa), diff });
+            });
+            res.statDiffs.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+            res.statDiffs = res.statDiffs.slice(0, 3);
+            const primPs = prim.filter(playerHasRecordedPlaystyles);
+            const altPs = alt.filter(playerHasRecordedPlaystyles);
+            res.psPrimaryN = primPs.length;
+            res.psAltN = altPs.length;
+            if (primPs.length >= DB_STATS_POP_INSIGHT_MIN_SAMPLE && altPs.length >= DB_STATS_POP_INSIGHT_MIN_SAMPLE) {
+                const pb = computePositionPlaystyleBaseline(primPs);
+                const ab = computePositionPlaystyleBaseline(altPs);
+                const names = new Set([...Object.keys(pb.freq), ...Object.keys(ab.freq)]);
+                names.forEach(n => {
+                    const pp = pb.freq[n] ? pb.freq[n].anyPct : 0;
+                    const ap = ab.freq[n] ? ab.freq[n].anyPct : 0;
+                    const gap = Math.round(ap - pp);
+                    if (Math.abs(gap) >= GENERAL_STATS_PLAYSTYLE_MATCHUP_THRESHOLD) res.psDiffs.push({ name: n, primaryPct: Math.round(pp), altPct: Math.round(ap), gap });
+                });
+                res.psDiffs.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+                res.psDiffs = res.psDiffs.slice(0, 2);
+            }
+            return res;
+        }
+
+        // Database Stats card summary for one display group, computed
+        // directly from the selected population's de-duplicated pool:
+        // averages, the stdDev-ranked "prioritize" chain, the PlayStyle
+        // rarity chain, the primary/alternative counts, and the insight.
+        function computeDisplayPopulationSummary(keys, population) {
+            const statKeys = statKeysForPosition(keys[0]);
+            const allPool = getPositionPopulationPool(keys, 'all', { requireAtt: true });
+            const pool = population === 'all' ? allPool : allPool.filter(p => getGroupRelation(p, keys) === population);
+            const entry = buildPositionBaselineEntry(pool, statKeys);
+            const priorityChain = getKeyAttributesForPosition(keys[0])
+                .filter(k => statKeys.includes(k))
+                .map(k => entry.stats[k] ? { key: k, ...entry.stats[k] } : null)
+                .filter(Boolean)
+                .sort((a, b) => b.stdDev - a.stdDev);
+            const relevant = [...new Set(keys.flatMap(k => getRelevantPlaystylesForPosition(k)))];
+            const withData = pool.filter(playerHasRecordedPlaystyles);
+            const chain = withData.length === 0 ? [] : relevant.map(name => {
+                const count = withData.filter(p =>
+                    (p.playstylesPlus && p.playstylesPlus.includes(name)) || (p.playstyles && p.playstyles.includes(name))
+                ).length;
+                return { name, count, pct: count / withData.length };
+            }).filter(e => e.count > 0).sort((a, b) => a.pct - b.pct);
+            const primaryCount = allPool.filter(p => getGroupRelation(p, keys) === 'primary').length;
+            return {
+                population,
+                sampleSize: pool.length,
+                stats: entry.stats,
+                priorityChain,
+                playstyleInfo: { totalSample: pool.length, dataSample: withData.length, chain },
+                counts: { primary: primaryCount, alt: allPool.length - primaryCount, total: allPool.length },
+                insight: computePrimaryVsAltInsight(keys, allPool)
+            };
+        }
+
+        // Population-aware, de-duplicated line average for the matchups
+        // (combinedLineStatAvg is kept unchanged for squad analysis).
+        function lineStatAvgForPopulation(positions, statKey, population) {
+            const pool = getPositionPopulationPool(positions, population, { requireAtt: true });
+            return meanOf(pool.map(p => p.att[statKey]).filter(v => typeof v === 'number'));
         }
 
         // Pools multiple positions' pre-computed per-key averages into one
@@ -6021,20 +6229,16 @@
         // only players with AT LEAST ONE recorded PlayStyle count, so a
         // low percentage means "genuinely uncommon", not "EasySBC didn't
         // record this card's traits".
-        function getPlaystylePrevalence(positions, playstyleName) {
-            let dataSample = 0, count = 0;
-            positions.forEach(pos => {
-                const pool = getActiveDatabase({ requirePriced: false, ignorePool: true }).filter(p =>
-                    (p.pos === pos || (p.alt && p.alt.includes(pos))) && p.rating >= GENERAL_STATS_MIN_RATING
-                );
-                const withData = pool.filter(p =>
-                    (Array.isArray(p.playstyles) && p.playstyles.length > 0) || (Array.isArray(p.playstylesPlus) && p.playstylesPlus.length > 0)
-                );
-                dataSample += withData.length;
-                count += withData.filter(p =>
-                    (p.playstylesPlus && p.playstylesPlus.includes(playstyleName)) || (p.playstyles && p.playstyles.includes(playstyleName))
-                ).length;
-            });
+        function getPlaystylePrevalence(positions, playstyleName, population) {
+            // One de-duplicated pool across all the positions, in the
+            // selected population — a card listed at two of these
+            // positions counts once.
+            const pool = getPositionPopulationPool(positions, population || DB_STATS_POPULATION);
+            const withData = pool.filter(playerHasRecordedPlaystyles);
+            const count = withData.filter(p =>
+                (p.playstylesPlus && p.playstylesPlus.includes(playstyleName)) || (p.playstyles && p.playstyles.includes(playstyleName))
+            ).length;
+            const dataSample = withData.length;
             return { dataSample, count, pct: dataSample > 0 ? count / dataSample : 0 };
         }
 
@@ -6055,8 +6259,8 @@
                 // requiring all of them to — a card can be worth showing
                 // for just its pace row even if its second row is a wash.
                 const metricResults = m.metrics.map(metric => {
-                    const subjAvg = combinedLineStatAvg(m.subject, metric.subjectKey);
-                    const threatAvg = combinedLineStatAvg(m.threat, metric.threatKey);
+                    const subjAvg = lineStatAvgForPopulation(m.subject, metric.subjectKey, DB_STATS_POPULATION);
+                    const threatAvg = lineStatAvgForPopulation(m.threat, metric.threatKey, DB_STATS_POPULATION);
                     if (subjAvg == null || threatAvg == null) return null;
                     const gap = Math.round(Math.abs(threatAvg - subjAvg));
                     return { ...metric, subjAvg: Math.round(subjAvg), threatAvg: Math.round(threatAvg), gap };
@@ -6282,6 +6486,73 @@
             `;
         }
 
+        // --- Database Stats: population UI pieces ----------------------
+        function dbStatsPopulationShort(pop, isAr) {
+            return pop === 'primary' ? (isAr ? 'أساسي' : 'Primary') : (isAr ? 'كل القادرين' : 'All Capable');
+        }
+        function dbStatsPopulationToggleHtml(isAr) {
+            const btn = (pop) => {
+                const active = DB_STATS_POPULATION === pop;
+                return `<button type="button" onclick="window.setDbStatsPopulation('${pop}')" aria-pressed="${active}"
+                    class="px-3 py-1 rounded-lg text-xs font-black transition-colors ${active ? 'bg-fc-accent text-fc-dark' : 'text-gray-400 hover:text-white'}">${dbStatsPopulationShort(pop, isAr)}</button>`;
+            };
+            const explain = DB_STATS_POPULATION === 'primary'
+                ? (isAr ? 'كل الأرقام أدناه من اللاعبين الذين هذا مركزهم الأساسي فقط.' : 'Every number below comes only from cards whose PRIMARY position is that position.')
+                : (isAr ? 'كل الأرقام أدناه من كل بطاقة تستطيع اللعب في المركز — مركزها الأساسي أو أحد مراكزها البديلة.' : 'Every number below comes from every card that can play that position — as its primary OR one of its alternative positions.');
+            return `
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <span class="text-xs font-bold text-gray-400">${isAr ? 'مجتمع المركز:' : 'Position Population:'}</span>
+                    <div class="inline-flex items-center gap-1 bg-fc-dark border border-fc-border rounded-xl p-1">${btn('primary')}${btn('all')}</div>
+                    <span class="text-[10px] text-gray-500 basis-full">${explain}</span>
+                </div>
+            `;
+        }
+        function dbStatsPopulationCountsHtml(summary, label, isAr) {
+            const c = summary.counts;
+            if (!c || c.total === 0) return '';
+            const pop = summary.population;
+            const seg = (text, on) => `<span class="${on ? 'text-white font-black' : 'text-gray-500'}">${text}</span>`;
+            const sep = `<span class="text-gray-600">·</span>`;
+            return `
+                <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px]">
+                    ${seg(isAr ? `${label} أساسي: ${c.primary}` : `Primary ${label}: ${c.primary}`, pop === 'primary')}
+                    ${sep}
+                    ${seg(isAr ? `يلعبه كمركز بديل: ${c.alt}` : `Also playable at ${label}: ${c.alt}`, false)}
+                    ${sep}
+                    ${seg(isAr ? `إجمالي القادرين: ${c.total}` : `Total capable: ${c.total}`, pop === 'all')}
+                </div>
+            `;
+        }
+        function dbStatsPopulationInsightHtml(ins, label, isAr) {
+            if (!ins || (ins.statDiffs.length === 0 && ins.psDiffs.length === 0)) return '';
+            const attrLabel = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+            const signed = d => (d > 0 ? '+' : '−') + Math.abs(d);
+            const statLines = ins.statDiffs.map(d => `
+                <div class="flex items-center justify-between gap-2 text-[10px]">
+                    <span class="text-gray-300 font-bold">${attrLabel(d.key)}</span>
+                    <span class="text-gray-400"><bdi>${isAr ? `أساسي ${d.primaryAvg} · بديل ${d.altAvg}` : `primary ${d.primaryAvg} · alternative ${d.altAvg}`}</bdi>
+                        <span class="font-black ${d.diff > 0 ? 'text-green-400' : 'text-orange-400'} ms-1"><bdi>${signed(d.diff)}</bdi></span></span>
+                </div>`).join('');
+            const psLines = ins.psDiffs.map(d => `
+                <div class="flex items-center justify-between gap-2 text-[10px]">
+                    <span class="text-purple-200 font-bold">${d.name}</span>
+                    <span class="text-gray-400"><bdi>${isAr ? `أساسي ${d.primaryPct}% · بديل ${d.altPct}%` : `primary ${d.primaryPct}% · alternative ${d.altPct}%`}</bdi></span>
+                </div>`).join('');
+            const note = isAr
+                ? `مقارنة ${ins.primaryN} لاعب ${label} أساسي بـ ${ins.altN} لاعب يلعبه كمركز بديل (74+). تظهر فقط الفروق من ${DB_STATS_POP_INSIGHT_STAT_GAP}+ نقاط${psLines ? ` أو ${GENERAL_STATS_PLAYSTYLE_MATCHUP_THRESHOLD}+ نقاط مئوية في أنماط اللعب (من لديهم بيانات: ${ins.psPrimaryN} / ${ins.psAltN})` : ''}.`
+                : `${ins.primaryN} primary ${label} cards vs ${ins.altN} alternative-position ${label} cards (74+). Only gaps of ${DB_STATS_POP_INSIGHT_STAT_GAP}+ points are shown${psLines ? `, or ${GENERAL_STATS_PLAYSTYLE_MATCHUP_THRESHOLD}+ percentage points for PlayStyles (cards with PlayStyle data: ${ins.psPrimaryN} / ${ins.psAltN})` : ''}.`;
+            return `
+                <div class="mt-3 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/30 space-y-1">
+                    <div class="flex items-center gap-1.5 mb-0.5">
+                        <i class="fa-solid fa-code-compare text-blue-400 text-xs shrink-0"></i>
+                        <span class="text-xs font-black text-blue-300">${isAr ? `ملف ${label} الأساسي مقابل البديل` : `Primary vs alternative ${label} profile`}</span>
+                    </div>
+                    ${statLines}${psLines}
+                    <p class="text-[9px] text-gray-500 leading-tight pt-0.5">${note}</p>
+                </div>
+            `;
+        }
+
         function renderGeneralStatsPanel() {
             const container = document.getElementById('db-stats-content');
             if (!container) return;
@@ -6291,7 +6562,8 @@
             const cards = DB_STATS_DISPLAY_POSITIONS.map(dp => {
                 const label = isAr ? dp.labelAr : dp.labelEn;
                 const icon = DB_STATS_POSITION_ICON[dp.labelEn] || 'fa-user';
-                const summary = computeDisplayPositionSummary(dp.keys);
+                const summary = computeDisplayPopulationSummary(dp.keys, DB_STATS_POPULATION);
+                const popHtml = dbStatsPopulationCountsHtml(summary, label, isAr);
                 if (summary.sampleSize === 0) {
                     return `
                         <div class="bg-fc-dark border border-fc-border rounded-2xl p-5">
@@ -6299,7 +6571,10 @@
                                 <i class="fa-solid ${icon} text-gray-500"></i>
                                 <div class="text-lg font-black text-white">${label}</div>
                             </div>
-                            <p class="text-xs text-gray-500 italic">${t.dbStatsNoData}</p>
+                            ${popHtml}
+                            <p class="text-xs text-gray-500 italic mt-2">${summary.population === 'primary' && summary.counts.total > 0
+                                ? (isAr ? `لا يوجد لاعب ${label} أساسي بتقييم 74+ — جرّب «كل القادرين».` : `No primary ${label} cards rated 74+ — try "All Capable".`)
+                                : t.dbStatsNoData}</p>
                         </div>
                     `;
                 }
@@ -6323,6 +6598,7 @@
                         <div class="min-w-0">
                             <div class="flex items-center flex-wrap gap-1.5">
                                 <span class="text-xs font-black text-fc-accent">${t.dbStatsPriorityLabel}</span>
+                                <span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(summary.population, isAr)}</span>
                                 ${summary.priorityChain.map((p, i) => {
                                     const pLabel = ATTRIBUTE_LABELS[p.key] ? (isAr ? ATTRIBUTE_LABELS[p.key].ar : ATTRIBUTE_LABELS[p.key].en) : p.key;
                                     const opacity = i === 0 ? '' : (i === 1 ? 'opacity-80' : 'opacity-60');
@@ -6351,6 +6627,7 @@
                             <div class="flex items-center gap-1.5 mb-1.5">
                                 <i class="fa-solid fa-wand-sparkles text-purple-400 text-xs shrink-0"></i>
                                 <span class="text-xs font-black text-purple-300">${t.dbStatsPlaystylesTitle}</span>
+                                <span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(summary.population, isAr)}</span>
                             </div>
                             <div class="flex flex-wrap gap-1.5">
                                 ${topChain.map((p, i) => {
@@ -6385,9 +6662,11 @@
                             </div>
                             <div class="text-[11px] font-bold text-gray-500 bg-black/20 px-2 py-1 rounded-lg">${summary.sampleSize} ${t.dbStatsSampleSize}</div>
                         </div>
-                        <div class="space-y-2">${statRows}</div>
+                        ${popHtml}
+                        <div class="space-y-2 mt-3">${statRows}</div>
                         ${priorityHtml}
                         ${playstylesHtml}
+                        ${dbStatsPopulationInsightHtml(summary.insight, label, isAr)}
                     </div>
                 `;
             }).join('');
@@ -6450,12 +6729,16 @@
                 : `<p class="text-xs text-gray-500 italic">${t.dbStatsNoMatchups}</p>`;
 
             container.innerHTML = `
+                ${dbStatsPopulationToggleHtml(isAr)}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards}</div>
                 <div>
-                    <div class="text-sm font-black text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <div class="text-sm font-black text-white uppercase tracking-wider mb-1 flex items-center gap-2">
                         <i class="fa-solid fa-bolt text-orange-400"></i>
                         ${t.dbStatsMatchupsTitle}
                     </div>
+                    <p class="text-[10px] text-gray-500 mb-3">${isAr
+                        ? `محسوبة من: ${DB_STATS_POPULATION === 'primary' ? 'المراكز الأساسية فقط' : 'كل من يستطيع اللعب في المركز (أساسي أو بديل)'} — كل بطاقة تُحتسب مرة واحدة في كل جهة.`
+                        : `Calculated from: ${DB_STATS_POPULATION === 'primary' ? 'primary positions only' : 'every card that can play the position (primary + alternative)'} — each card counts once per side.`}</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${matchupsHtml}</div>
                 </div>
             `;
@@ -13024,7 +13307,7 @@
             // self-relative rule only when no baseline is loaded.
             const keys = getKeyAttributesForPosition(pos);
             if (keys.length && player.att) {
-                const posStats = GENERAL_PLAYER_STATS[pos] && GENERAL_PLAYER_STATS[pos].stats;
+                const posStats = getPositionBaseline(pos) && getPositionBaseline(pos).stats;
                 const vals = keys.map(k => ({ k, v: player.att[k], avg: posStats && posStats[k] ? posStats[k].avg : null })).filter(o => typeof o.v === 'number');
                 const labelOf = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
                 if (vals.length && vals.every(o => o.avg != null)) {
@@ -14283,7 +14566,10 @@
         // of a bare floating number like "85.5" that means nothing on its
         // own to someone unfamiliar with the scale.
         function computeMetaPercentile(player, pos) {
-            const pool = getActiveDatabase({ ignorePool: true }).filter(p => p.pos === pos || (p.alt && p.alt.includes(pos)));
+            // Follows the Database Stats "Position Population" choice:
+            // primary-only, or every card that can play the position.
+            const pool = getActiveDatabase({ ignorePool: true }).filter(p =>
+                DB_STATS_POPULATION === 'primary' ? p.pos === pos : (p.pos === pos || (p.alt && p.alt.includes(pos))));
             if (pool.length === 0) return null;
             const myScore = getMetaValue(player);
             const better = pool.filter(p => getMetaValue(p) > myScore).length;
@@ -14400,8 +14686,8 @@
                                     <div class="h-full bg-fc-accent rounded-full" style="width:${standing.percentile}%"></div>
                                 </div>
                                 <p class="text-[10px] text-gray-500">${isAr
-                                    ? `أفضل من ${standing.percentile}% من لاعبي مركز ${slot.pos} في قاعدة البيانات المحمّلة (${standing.poolSize} لاعب).`
-                                    : `Better than ${standing.percentile}% of ${slot.pos} options in the loaded pool (${standing.poolSize} players).`}</p>
+                                    ? `${positionRelationLabel(getPositionRelation(evalPlayer, slot.pos), slot.pos, true)} · أفضل من ${standing.percentile}% من ${positionPopulationDesc(DB_STATS_POPULATION, slot.pos, true)} في قاعدة البيانات المحمّلة (${standing.poolSize} بطاقة).`
+                                    : `${positionRelationLabel(getPositionRelation(evalPlayer, slot.pos), slot.pos, false)} · Better than ${standing.percentile}% of ${positionPopulationDesc(DB_STATS_POPULATION, slot.pos, false)} in the loaded pool (${standing.poolSize} cards).`}</p>
                             </div>
                         ` : ''}
                         ${gapNote ? `<p class="text-[10px] text-gray-500">${gapNote}</p>` : ''}
@@ -14582,7 +14868,7 @@
             function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries) {
                 const isAr = currentLanguage === 'ar';
                 const sentences = [];
-                const posStats = GENERAL_PLAYER_STATS[effectivePos] && GENERAL_PLAYER_STATS[effectivePos].stats;
+                const posStats = getPositionBaseline(effectivePos) && getPositionBaseline(effectivePos).stats;
                 const avgOf = key => (posStats && posStats[key] ? posStats[key].avg : null);
                 const labelOf = key => ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
                 const signed = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d);
@@ -14804,7 +15090,8 @@
             // most common PlayStyles for the position that this player
             // lacks.
             const isArPs = currentLanguage === 'ar';
-            const psPosStats = GENERAL_PLAYER_STATS[effectivePos] && GENERAL_PLAYER_STATS[effectivePos].playstyles;
+            const psPosStats = getPositionBaseline(effectivePos) && getPositionBaseline(effectivePos).playstyles;
+            const psPopDesc = positionPopulationDesc(DB_STATS_POPULATION, effectivePos, isArPs);
             const psHasBaseline = !!(psPosStats && psPosStats.sample >= PLAYSTYLE_BASELINE_MIN_SAMPLE);
             const psNamesPlus = psPlus.map(formatPlaystyleEntry);
             const psNamesBase = psBase.map(formatPlaystyleEntry);
@@ -14827,8 +15114,8 @@
                 const rounded = Math.round(pct);
                 const cls = pct < 10 ? 'text-green-400' : (pct >= 50 ? 'text-gray-500' : 'text-gray-400');
                 const tip = isArPs
-                    ? `${rounded}% من لاعبي ${effectivePos} لديهم ${name}${isPlus ? '+' : ''}`
-                    : `${rounded}% of ${effectivePos}s have ${name}${isPlus ? '+' : ''}`;
+                    ? `${rounded}% من ${psPopDesc} لديهم ${name}${isPlus ? '+' : ''}`
+                    : `${rounded}% of ${psPopDesc} have ${name}${isPlus ? '+' : ''}`;
                 return `<span class="text-[9px] font-bold ${cls} ms-1" title="${tip}"><bdi>${rounded}%</bdi></span>`;
             };
             const psOwned = new Set([...psNamesPlus, ...psNamesBase]);
@@ -14845,12 +15132,12 @@
                 </div>
                 ${psMissingCommon.length ? `
                     <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="text-[10px] text-orange-400 font-bold">${isArPs ? `شائع لدى ${effectivePos} ولا يملكه:` : `Common for ${effectivePos}, missing here:`}</span>
+                        <span class="text-[10px] text-orange-400 font-bold">${isArPs ? `شائع لدى ${psPopDesc} ولا يملكه:` : `Common among ${psPopDesc}, missing here:`}</span>
                         ${psMissingCommon.map(n => `<span class="text-[10px] text-gray-400 border border-dashed border-gray-600 rounded-lg px-1.5 py-0.5">${n} <bdi class="text-gray-500">${Math.round(psPosStats.freq[n].anyPct)}%</bdi></span>`).join('')}
                     </div>` : ''}
                 <p class="text-[10px] text-gray-500 italic">${isArPs
-                    ? `مقارنة بمتوسط قاعدة البيانات لمركز ${effectivePos} (لاعبون بتقييم 74+ لديهم بيانات أنماط لعب، ${psPosStats.sample} بطاقة). النسبة بجانب كل نمط = كم من لاعبي هذا المركز يملكونه — الأقل شيوعاً يميّز اللاعب أكثر.`
-                    : `Compared with the database average for ${effectivePos} (rated 74+ cards with PlayStyle data, ${psPosStats.sample} cards). The % on each PlayStyle is how many players at this position have it — the rarer, the more it sets this player apart.`}</p>
+                    ? `${positionRelationLabel(getPositionRelation(player, effectivePos), effectivePos, true)}. مقارنة بمتوسط ${psPopDesc} (بتقييم 74+ ولديهم بيانات أنماط لعب، ${psPosStats.sample} بطاقة). النسبة بجانب كل نمط = كم منهم يملكه — الأقل شيوعاً يميّز اللاعب أكثر.`
+                    : `${positionRelationLabel(getPositionRelation(player, effectivePos), effectivePos, false)}. Compared with the average of ${psPopDesc} (rated 74+ with PlayStyle data, ${psPosStats.sample} cards). The % on each PlayStyle is how many of them have it — the rarer, the more it sets this player apart.`}</p>
             ` : '';
             const playstylesSection = hasPlaystyles ? `
                 <div class="space-y-2">
@@ -15098,7 +15385,10 @@
                         </div>
 
                         <div class="space-y-3">
-                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
+                            <div class="flex items-center justify-between gap-2 flex-wrap">
+                                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${currentLanguage === 'ar' ? 'الخصائص الرئيسية' : 'Key Attributes'}</span>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-lg border ${getPositionRelation(player, effectivePos) === 'primary' ? 'text-fc-accent border-fc-accent/40 bg-fc-accent/10' : (getPositionRelation(player, effectivePos) === 'alt' ? 'text-blue-300 border-blue-500/40 bg-blue-500/10' : 'text-orange-300 border-orange-500/40 bg-orange-500/10')}" style="unicode-bidi:isolate;">${positionRelationLabel(getPositionRelation(player, effectivePos), effectivePos, currentLanguage === 'ar')}</span>
+                            </div>
                             <div class="grid grid-cols-3 gap-2 text-center text-xs">
                                 ${attrEntries.map(([k, v]) => {
                                     const label = ATTRIBUTE_LABELS[k] ? (currentLanguage === 'ar' ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
@@ -15108,7 +15398,7 @@
                                     // market-wide yardstick for this one
                                     // attribute, not a claim about the
                                     // player's overall quality.
-                                    const posStats = GENERAL_PLAYER_STATS[effectivePos];
+                                    const posStats = getPositionBaseline(effectivePos);
                                     const avgEntry = posStats && posStats.stats[k];
                                     let vsAvgHtml = '';
                                     if (avgEntry && avgEntry.count > 0) {
@@ -15129,7 +15419,9 @@
                                     `;
                                 }).join('')}
                             </div>
-                            <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}${GENERAL_PLAYER_STATS[effectivePos] ? (currentLanguage === 'ar' ? ' الرقم الصغير تحت كل قيمة هو الفارق عن متوسط قاعدة البيانات لهذا المركز (لاعبون بتقييم 74+).' : ' The small number under each value is the gap from the database average for this position (players rated 74+).') : ''}</p>
+                            <p class="text-[10px] text-gray-500 italic">${keyAttrLegend}${(getPositionBaseline(effectivePos) && getPositionBaseline(effectivePos).count > 0) ? (currentLanguage === 'ar'
+    ? ` الرقم الصغير تحت كل قيمة هو الفارق عن متوسط ${positionPopulationDesc(DB_STATS_POPULATION, effectivePos, true)} بتقييم 74+ (${getPositionBaseline(effectivePos).count} بطاقة) — يتبع اختيار «مجتمع المركز» في إحصائيات القاعدة.`
+    : ` The small number under each value is the gap from the average of ${positionPopulationDesc(DB_STATS_POPULATION, effectivePos, false)} rated 74+ (${getPositionBaseline(effectivePos).count} cards) — follows the Position Population choice in Database Stats.`) : ''}</p>
                         </div>
 
                         <div class="space-y-2">
