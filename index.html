@@ -6328,7 +6328,12 @@
             }).filter(e => e.count > 0).sort((a, b) => a.pct - b.pct);
             const primaryCount = allPool.filter(p => getGroupRelation(p, keys) === 'primary').length;
             let elitePlaystyles = null;
-            try { elitePlaystyles = computeElitePlaystyleSignal(pool, keys[0]); }
+            try {
+                elitePlaystyles = computeElitePlaystyleSignal(pool, keys[0]);
+                // Display label for the whole group ("LB / RB", "ST / CF").
+                // Wording only — the score above is unchanged.
+                if (elitePlaystyles) elitePlaystyles.rankLabel = keys.join(' / ');
+            }
             catch (err) { console.error('[Database Stats] elite PlayStyle signal failed:', keys, err); }
             let powerCurve = null;
             try { powerCurve = computePowerCurve(pool, statKeys); }
@@ -6791,13 +6796,20 @@
             const e = summary.elitePlaystyles;
             if (!e) return '';
             const popDesc = positionPopulationDesc(summary.population, label, isAr);
+            const infoText = isAr
+                ? 'أفضل 10% تمثّل البطاقات ذات أعلى ملاءمة للخصائص الأساسية للمركز. تستخدم الدرجة خصائص المركز الأساسية الثلاث بأوزان 3× و2× و1×، ولا تستخدم التقييم العام ولا تقييم الميتا.'
+                : "Top 10% represents cards with the highest positional key-attribute fit. The score uses the position's three key attributes weighted 3×, 2× and 1×. It does not use OVR or Meta Rating.";
             const shell = inner => `
-                <div class="mt-3 px-3 py-2 rounded-xl bg-purple-500/5 border border-purple-500/25 space-y-1.5">
+                <div data-elite-ps class="mt-3 px-3 py-2 rounded-xl bg-purple-500/5 border border-purple-500/25 space-y-1.5">
                     <div class="flex items-center gap-1.5 flex-wrap">
                         <i class="fa-solid fa-crown text-purple-300 text-xs shrink-0"></i>
                         <span class="text-xs font-black text-purple-200">${isAr ? 'أنماط لعب شائعة لدى النخبة' : 'PlayStyles over-represented in the Top 10%'}</span>
+                        <button type="button" onclick="this.closest('[data-elite-ps]').querySelector('[data-elite-info]').classList.toggle('hidden')"
+                            title="${infoText}" aria-label="${isAr ? 'كيف تُحدَّد أفضل 10%' : 'How the Top 10% is defined'}"
+                            class="text-gray-500 hover:text-purple-200 leading-none"><i class="fa-solid fa-circle-info text-[11px]"></i></button>
                         <span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(summary.population, isAr)}</span>
                     </div>
+                    <p data-elite-info class="hidden text-[10px] text-purple-100/80 leading-snug bg-black/20 rounded-lg px-2 py-1.5">${infoText}</p>
                     ${inner}
                 </div>`;
             if (e.status === 'tooFew') return shell(`<p class="text-[10px] text-gray-500 italic">${isAr ? 'عدد البطاقات أقل من أن يُحدَّد منه أفضل 10%.' : 'Too few cards to define a Top 10%.'}</p>`);
@@ -6827,8 +6839,8 @@
                 ? `لا يوجد نمط لعب أكثر شيوعاً بوضوح (${ELITE_PS_MIN_GAP_PP}+ نقاط مئوية) لدى أفضل 10%.`
                 : `No PlayStyle is clearly (${ELITE_PS_MIN_GAP_PP}+ points) more common in the Top 10%.`}</p>`;
             const note = isAr
-                ? `أفضل 10% = بطاقات ${popDesc} بتقييم 74+ ذات أعلى ملاءمة للخصائص الأساسية في ${e.rankPos} (${e.eliteN} من ${e.rankedN}). النسب من البطاقات ذات بيانات أنماط لعب مسجّلة: الكل ${e.allData}، النخبة ${e.eliteData}. هذا ارتباط وليس دليلاً على أن النمط يصنع لاعباً أفضل.`
-                : `Top 10% = the ${popDesc} rated 74+ with the highest key-attribute fit at ${e.rankPos} (${e.eliteN} of ${e.rankedN}). Percentages use cards with recorded PlayStyle data: All ${e.allData}, Top 10% ${e.eliteData}. This is an association, not proof that the PlayStyle makes a card better.`;
+                ? `أفضل 10% = بطاقات ${popDesc} بتقييم 74+ ذات أعلى ملاءمة للخصائص الأساسية لمركز ${e.rankLabel || e.rankPos} (${e.eliteN} من ${e.rankedN}). النسب من البطاقات ذات بيانات أنماط لعب مسجّلة: الكل ${e.allData}، النخبة ${e.eliteData}. هذا ارتباط وليس دليلاً على أن النمط يصنع لاعباً أفضل.`
+                : `Top 10% = the ${popDesc} rated 74+ with the highest key-attribute fit for ${e.rankLabel || e.rankPos} (${e.eliteN} of ${e.rankedN}). Percentages use cards with recorded PlayStyle data: All ${e.allData}, Top 10% ${e.eliteData}. This is an association, not proof that the PlayStyle makes a card better.`;
             return shell(`${rows}<p class="text-[9px] ${e.lowConfidence ? 'text-orange-400' : 'text-gray-500'} leading-tight pt-0.5">${note}${e.lowConfidence ? (isAr ? ' — عيّنة صغيرة، تعامل معها بحذر' : ' — small sample, treat with caution') : ''}</p>`);
         }
 
