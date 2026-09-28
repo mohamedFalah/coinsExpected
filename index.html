@@ -2025,6 +2025,10 @@
             // previous occupant of this slot never silently reapplies to
             // whoever's here now.
             manualRoleOverrides: {},
+            // User edits to the suggested tactics ({ buildUp, approach,
+            // lineHeight }) — null = follow the suggestion. See
+            // effectiveSquadTactics / window.editSquadTactic.
+            tacticsOverride: null,
             // Alternative full squads from the most recent Optimize run,
             // spanning the quality/chemistry trade-off (see
             // runSquadOptimizerImpl) — [] means none built yet, or the
@@ -4702,11 +4706,9 @@
             const roles = {};
             slots.forEach((s, i) => { const r = squadState.teamRoles && squadState.teamRoles[i]; if (r) roles[i] = { role: r.role, focus: r.focus }; });
             if (!Object.keys(roles).length) return null;
-            const identity = typeof computeSquadIdentity === 'function' ? computeSquadIdentity() : null;
-            const tac = identity ? suggestSquadTactics(identity) : null;
-            const buildUp = tac ? (tac.buildUp === 'possession' ? 'short' : tac.buildUp) : 'balanced';
-            const approach = tac && DEF_APPROACHES[tac.approach] ? tac.approach : 'balanced';
-            return { formation, buildUp, approach, lineHeight: tac && tac.lineHeight ? tac.lineHeight : DEF_APPROACHES[approach].line, roles };
+            // Suggested tactics, or the user's edits to them.
+            const eff = effectiveSquadTactics();
+            return { formation, buildUp: eff.buildUp, approach: eff.approach, lineHeight: eff.lineHeight, roles };
         }
         window.labTestCurrentSquad = function() {
             const setup = currentSquadTacticSetup();
@@ -7410,6 +7412,260 @@
                 </div>`;
         }
 
+        // ===================================================================
+        // CHEMISTRY STYLES — FC 27 face-stat boosts + per-player pick
+        // ===================================================================
+        // Source: FUT.GG "EA FC 27 Chemistry Styles" (face-stat boosts at 3
+        // chemistry), checked 28 Sep 2026. FUT.GG: at 2 chem a 9 becomes 6,
+        // 6→4, 3→2; at 1 chem 3/2/1; 0 chem = nothing; never above 99.
+        // Those are attribute-level steps; for face stats we scale by
+        // chem/3, which matches them to within rounding — so boosted face
+        // stats here are close estimates, not EA's exact number.
+        const CHEM_STYLE_SOURCE = 'FUT.GG, FC 27 (checked 28 Sep 2026)';
+        const CHEM_STYLES_OUTFIELD = {
+            Anchor:     { ab: 'ANC', b: { pac: 3, def: 4.2, phy: 3.9 } },
+            Architect:  { ab: 'ARC', b: { pas: 5.3, phy: 6.6 } },
+            Artist:     { ab: 'ART', b: { pas: 4.2, dri: 2.7 } },
+            Backbone:   { ab: 'BCK', b: { pas: 2.6, def: 4.2, phy: 4.2 } },
+            Basic:      { ab: 'BAS', b: { pac: 1.7, sho: 0.9, pas: 2.2, dri: 2.7, def: 2.1, phy: 1.5 } },
+            Catalyst:   { ab: 'CTL', b: { pac: 6, pas: 5.1 } },
+            Deadeye:    { ab: 'EYE', b: { sho: 4.2, pas: 4.5 } },
+            Engine:     { ab: 'ENG', b: { pac: 3, pas: 3.6, dri: 3.3 } },
+            Finisher:   { ab: 'FIN', b: { sho: 5.3, dri: 5 } },
+            Gladiator:  { ab: 'GLA', b: { sho: 2, dri: 2.7, def: 3.3 } },
+            Guardian:   { ab: 'GRD', b: { dri: 4.5, def: 5.7 } },
+            Hawk:       { ab: 'HWK', b: { pac: 3, sho: 4.1, phy: 3 } },
+            Hunter:     { ab: 'HUN', b: { pac: 6, sho: 2.9 } },
+            Maestro:    { ab: 'MAE', b: { sho: 2, pas: 2.8, dri: 3.5 } },
+            Marksman:   { ab: 'MRK', b: { sho: 4.7, dri: 3.6, phy: 3.2 } },
+            Powerhouse: { ab: 'PWR', b: { pas: 4.9, def: 5.1 } },
+            Sentinel:   { ab: 'SEN', b: { def: 5.7, phy: 3.2 } },
+            Shadow:     { ab: 'SHA', b: { pac: 6, def: 3.9 } },
+            Sniper:     { ab: 'SNI', b: { sho: 3.9, phy: 6.6 } }
+        };
+        const CHEM_STYLES_GK = {
+            'GK Basic': { ab: 'GKB', b: { div: 3, han: 3, kic: 3, ref: 3, spe: 1.8, pos: 3 } },
+            Cat:        { ab: 'CAT', b: { ref: 6, spe: 1.8, pos: 9 } },
+            Glove:      { ab: 'GLO', b: { div: 6, han: 9, pos: 3 } },
+            Shield:     { ab: 'SHI', b: { kic: 6, ref: 9, spe: 1.2 } },
+            Wall:       { ab: 'WAL', b: { div: 9, han: 3, kic: 6 } }
+        };
+        // How much a boost ABOVE the Top 10% benchmark still counts, vs a
+        // boost that closes a gap to it (1.0).
+        const CHEM_SURPLUS_WEIGHT = 0.35;
+        const CHEM_STYLE_OVERRIDE_KEY = 'fc27_chemstyle_overrides_v1';
+        let chemStyleOverrides = {};
+        try { chemStyleOverrides = JSON.parse(localStorage.getItem(CHEM_STYLE_OVERRIDE_KEY) || '{}') || {}; } catch (e) { chemStyleOverrides = {}; }
+        function persistChemStyleOverrides() {
+            try { localStorage.setItem(CHEM_STYLE_OVERRIDE_KEY, JSON.stringify(chemStyleOverrides)); } catch (e) { /* ignore */ }
+        }
+        function chemStylesFor(pos) { return pos === 'GK' ? CHEM_STYLES_GK : CHEM_STYLES_OUTFIELD; }
+
+        // Power Curve for the slot's Database Stats group, cached per
+        // population + database size (same call Database Stats makes).
+        const chemPowerCurveCache = {};
+        function chemPowerCurveFor(pos) {
+            const keys = piDisplayKeysFor(pos);
+            const pop = DB_STATS_POPULATION === 'primary' ? 'primary' : 'all';
+            const k = `${pop}|${keys.join('/')}|${fc27Database.length}`;
+            if (!(k in chemPowerCurveCache)) {
+                try { chemPowerCurveCache[k] = (computeDisplayPopulationSummary(keys, pop) || {}).powerCurve || null; }
+                catch (e) { chemPowerCurveCache[k] = null; }
+            }
+            return chemPowerCurveCache[k];
+        }
+
+        // Boosted face stats for one style at a chemistry level.
+        function chemBoostedStats(player, styleName, pos, chem) {
+            const style = chemStylesFor(pos)[styleName];
+            const f = Math.max(0, Math.min(3, chem || 0)) / 3;
+            const out = {};
+            statKeysForPosition(pos).forEach(k => {
+                const base = player.att ? player.att[k] : undefined;
+                if (typeof base !== 'number') return;
+                const raw = style && style.b[k] ? style.b[k] * f : 0;
+                const boosted = Math.min(99, base + raw);
+                out[k] = { base, boosted, gain: boosted - base, full: style && style.b[k] ? Math.min(99, base + style.b[k]) - base : 0 };
+            });
+            return out;
+        }
+
+        // Rank styles for THIS player at THIS position: the position's key
+        // attributes (weights 3/2/1, same as positional fit) and, for each,
+        // how far he is below the Top 10% benchmark of the Power Curve —
+        // boost that closes that gap counts fully, boost beyond it counts
+        // CHEM_SURPLUS_WEIGHT. Ranked at 3 chem (the choice doesn't depend
+        // on chem apart from the 99 cap); shown at his actual chem.
+        function rankChemStyles(player, pos) {
+            if (!player || !player.att) return [];
+            const keys = getKeyAttributesForPosition(pos);
+            const weights = [3, 2, 1];
+            const pc = chemPowerCurveFor(pos);
+            return Object.keys(chemStylesFor(pos)).map(name => {
+                const st = chemBoostedStats(player, name, pos, 3);
+                let score = 0, raw = 0;
+                const closes = [];
+                keys.forEach((k, i) => {
+                    const s = st[k];
+                    if (!s || s.gain <= 0) return;
+                    const top10 = pc && pc[k] && pc[k].top10 != null ? pc[k].top10 : null;
+                    const need = top10 != null ? Math.max(0, top10 - s.base) : Infinity;
+                    const toward = Math.min(s.gain, need);
+                    score += weights[i] * (toward + CHEM_SURPLUS_WEIGHT * Math.max(0, s.gain - toward));
+                    raw += weights[i] * s.gain;
+                    if (toward > 0.5) closes.push({ key: k, base: s.base, boosted: s.boosted, top10, closed: need !== Infinity && s.boosted >= top10 });
+                });
+                return { name, score, raw, closes };
+            }).sort((a, b) => (b.score - a.score) || (b.raw - a.raw) || a.name.localeCompare(b.name));
+        }
+
+        // The style in effect for a squad slot: the user's choice for this
+        // player if valid for the slot, else the recommendation.
+        function getSlotChemStyle(idx) {
+            const slot = (formationSlots[squadState.formation] || [])[idx];
+            const player = squadState.selectedXI && squadState.selectedXI[idx];
+            if (!slot || !player) return null;
+            const info = squadState.chemistry && squadState.chemistry.perSlot && squadState.chemistry.perSlot[idx];
+            const chem = info ? (info.inPosition ? info.points : 0) : 0;
+            return chemStyleForPlayer(player, slot.pos, chem);
+        }
+        function chemStyleForPlayer(player, pos, chem) {
+            const ranked = rankChemStyles(player, pos);
+            if (!ranked.length) return null;
+            const styles = chemStylesFor(pos);
+            const chosen = chemStyleOverrides[player.id];
+            const manual = !!(chosen && styles[chosen]);
+            const name = manual ? chosen : ranked[0].name;
+            return { name, ab: styles[name].ab, manual, recommended: ranked[0].name, ranked, chem, pos,
+                     stats: chemBoostedStats(player, name, pos, chem) };
+        }
+
+        window.setChemStyleForPlayer = function(playerId, style, slotIdx) {
+            if (style === '__auto') delete chemStyleOverrides[playerId];
+            else chemStyleOverrides[playerId] = style;
+            persistChemStyleOverrides();
+            if (typeof renderFootballPitch === 'function') renderFootballPitch();
+            const player = (typeof slotIdx === 'number' && squadState.selectedXI[slotIdx]) || fc27Database.find(p => p.id === playerId);
+            if (player) {
+                const slot = typeof slotIdx === 'number' ? (formationSlots[squadState.formation] || [])[slotIdx] : null;
+                window.openPlayerModal(player, slot ? slot.label : null, typeof slotIdx === 'number' ? slotIdx : undefined, true, typeof slotIdx !== 'number');
+            }
+        };
+
+        // Small badge next to the chemistry diamonds on the pitch card.
+        function chemStyleBadgeHtml(idx) {
+            let cs = null;
+            try { cs = getSlotChemStyle(idx); } catch (e) { cs = null; }
+            if (!cs) return '';
+            const isAr = currentLanguage === 'ar';
+            const gains = Object.entries(cs.stats).filter(([, s]) => s.gain > 0.05).map(([k, s]) => `+${s.gain.toFixed(1)} ${k.toUpperCase()}`).join(' ');
+            const title = isAr
+                ? `نمط الكيمياء: ${cs.name} (${cs.manual ? 'اختيارك' : 'مقترح'}) — ${cs.chem ? `عند ${cs.chem}/3: ${gains}` : 'لا تعزيز عند 0 كيمياء'}`
+                : `Chemistry style: ${cs.name} (${cs.manual ? 'your choice' : 'recommended'}) — ${cs.chem ? `at ${cs.chem}/3 chem: ${gains}` : 'no boost at 0 chemistry'}`;
+            return `<span class="ms-1 text-[7px] font-black leading-none px-0.5 rounded ${cs.manual ? 'text-fc-gold bg-fc-gold/15' : 'text-purple-300 bg-purple-500/20'} ${cs.chem ? '' : 'opacity-50'}" title="${title}">${cs.ab}</span>`;
+        }
+
+        // Player-modal block.
+        function renderChemStyleModalHtml(player, pos, slotIdx, standalone) {
+            if (!player || !player.att) return '';
+            const isAr = currentLanguage === 'ar';
+            const inSlot = !standalone && typeof slotIdx === 'number' && squadState.selectedXI && squadState.selectedXI[slotIdx] && squadState.selectedXI[slotIdx].id === player.id;
+            let chem = 3;
+            if (inSlot) {
+                const info = squadState.chemistry && squadState.chemistry.perSlot && squadState.chemistry.perSlot[slotIdx];
+                chem = info ? (info.inPosition ? info.points : 0) : 0;
+            }
+            const cs = chemStyleForPlayer(player, pos, chem);
+            if (!cs) return '';
+            const styles = chemStylesFor(pos);
+            const L = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+            const keys = getKeyAttributesForPosition(pos);
+            const opts = [`<option value="__auto" ${cs.manual ? '' : 'selected'}>${isAr ? `تلقائي (مقترح: ${cs.recommended})` : `Auto (recommended: ${cs.recommended})`}</option>`]
+                .concat(cs.ranked.map((r, i) => `<option value="${r.name}" ${cs.manual && cs.name === r.name ? 'selected' : ''}>${i === 0 ? '★ ' : ''}${r.name} — ${Object.entries(styles[r.name].b).map(([k, v]) => `+${v} ${k.toUpperCase()}`).join(' ')}</option>`)).join('');
+            const rows = statKeysForPosition(pos).filter(k => cs.stats[k]).map(k => {
+                const s = cs.stats[k];
+                const isKey = keys.includes(k);
+                const g = s.gain;
+                return `<div class="flex items-center gap-2 text-[11px] ${isKey ? '' : 'opacity-60'}">
+                    <span class="w-20 shrink-0 ${isKey ? 'text-white font-bold' : 'text-gray-400'}">${isKey ? '★ ' : ''}${L(k)}</span>
+                    <span class="text-gray-400"><bdi>${s.base}</bdi></span>
+                    ${g > 0.05 ? `<i class="fa-solid fa-arrow-right text-[8px] text-gray-500"></i><span class="font-black text-emerald-400"><bdi>${Math.round(s.boosted)}</bdi></span><span class="text-[10px] text-emerald-300/80"><bdi>+${g.toFixed(1)}</bdi></span>` : ''}
+                    ${chem < 3 && s.full > g + 0.05 ? `<span class="ms-auto text-[10px] text-gray-500"><bdi>${isAr ? `عند 3: +${s.full.toFixed(1)}` : `at 3 chem: +${s.full.toFixed(1)}`}</bdi></span>` : ''}
+                </div>`;
+            }).join('');
+            const best = cs.ranked.find(r => r.name === cs.name) || cs.ranked[0];
+            const why = best.closes.length
+                ? (isAr
+                    ? `يرفع خصائص ${pos} الأساسية التي هو فيها دون عتبة أفضل 10%: ${best.closes.map(c => `${L(c.key)} ${c.base}→${Math.round(c.boosted)}${c.top10 != null ? ` (العتبة ${Math.round(c.top10)}${c.closed ? '، يبلغها' : ''})` : ''}`).join('، ')} — عند 3 كيمياء.`
+                    : `Targets the ${pos} key attributes where he is below the Top 10% benchmark: ${best.closes.map(c => `${L(c.key)} ${c.base}→${Math.round(c.boosted)}${c.top10 != null ? ` (benchmark ${Math.round(c.top10)}${c.closed ? ', reaches it' : ''})` : ''}`).join(', ')} — at 3 chem.`)
+                : (isAr ? `خصائص ${pos} الأساسية لديه فوق عتبة أفضل 10% بالفعل؛ هذا النمط يضيف أكثر إليها.` : `His ${pos} key attributes are already at or above the Top 10% benchmark; this style adds the most on top of them.`);
+            const chemLine = chem === 0
+                ? (isAr ? '0 كيمياء — لا يعطي أي نمط تعزيزاً حتى يحصل على كيمياء.' : '0 chemistry — no style gives any boost until he has chemistry.')
+                : chem < 3
+                    ? (isAr ? `كيمياء ${chem}/3 — يحصل على ${chem === 2 ? 'ثلثي' : 'ثلث'} التعزيز الكامل تقريباً.` : `Chemistry ${chem}/3 — gets about ${chem === 2 ? 'two-thirds' : 'one-third'} of the full boost.`)
+                    : (isAr ? (inSlot ? 'كيمياء 3/3 — التعزيز الكامل.' : 'معروض عند 3 كيمياء (خارج تشكيلة).') : (inSlot ? 'Chemistry 3/3 — full boost.' : 'Shown at 3 chemistry (not in a squad slot).'));
+            return `
+                <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-purple-500/30 space-y-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs font-bold text-purple-300 uppercase tracking-wider">${isAr ? 'نمط الكيمياء' : 'Chemistry Style'}</span>
+                        <span class="text-sm font-black text-white">${cs.name}</span>
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${cs.manual ? 'text-fc-gold bg-fc-gold/15' : 'text-purple-200 bg-purple-500/20'}">${cs.manual ? (isAr ? 'اختيارك' : 'your choice') : (isAr ? 'مقترح' : 'recommended')}</span>
+                    </div>
+                    <select onchange="window.setChemStyleForPlayer('${player.id}', this.value, ${typeof slotIdx === 'number' && inSlot ? slotIdx : 'undefined'})"
+                        class="w-full bg-fc-dark border border-fc-border rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400">${opts}</select>
+                    <p class="text-[10px] text-gray-400">${chemLine}</p>
+                    <div class="space-y-1">${rows}</div>
+                    <p class="text-[11px] text-gray-300 leading-snug">${cs.manual && cs.name !== cs.recommended ? (isAr ? `المقترح كان ${cs.recommended}. ` : `The recommendation was ${cs.recommended}. `) : ''}${why}</p>
+                    <p class="text-[9px] text-gray-500">${isAr
+                        ? `قيم تعزيز الوجه من ${CHEM_STYLE_SOURCE}، وتُقاس عند كيمياء أقل بنسبة الكيمياء/3 — تقديرات قريبة. الترشيح يوازن خصائص المركز الأساسية (3×/2×/1×) مع المسافة إلى عتبة أفضل 10%. بقية الأقسام تستخدم إحصائيات البطاقة الأساسية.`
+                        : `Face-stat boosts from ${CHEM_STYLE_SOURCE}, scaled by chem/3 below 3 chemistry — close estimates. The pick weighs the position's key attributes (3×/2×/1×) by the distance to the Top 10% benchmark. Other sections use base card stats.`}</p>
+                </div>`;
+        }
+
+        // ===================================================================
+        // EDITABLE SQUAD TACTICS
+        // ===================================================================
+        // The app still suggests (suggestSquadTactics); the user can change
+        // Build-Up, Defensive Approach and line height. The edit is kept in
+        // squadState.tacticsOverride (saved with the squad) and used by the
+        // squad builder display and the Tactics Lab "my squad" setup.
+        const TACTIC_BUILDUP_FROM_SUGGEST = { possession: 'short', balanced: 'balanced', counter: 'counter' };
+        function effectiveSquadTactics() {
+            const identity = typeof computeSquadIdentity === 'function' ? computeSquadIdentity() : null;
+            const sug = identity ? suggestSquadTactics(identity) : null;
+            const suggested = sug ? {
+                buildUp: TACTIC_BUILDUP_FROM_SUGGEST[sug.buildUp] || 'balanced',
+                approach: DEF_APPROACHES[sug.approach] ? sug.approach : 'balanced',
+                lineHeight: sug.lineHeight || DEF_APPROACHES.balanced.line
+            } : null;
+            const o = squadState.tacticsOverride || {};
+            const eff = {
+                buildUp: BUILD_UP_STYLES[o.buildUp] ? o.buildUp : (suggested ? suggested.buildUp : 'balanced'),
+                approach: DEF_APPROACHES[o.approach] ? o.approach : (suggested ? suggested.approach : 'balanced'),
+                lineHeight: typeof o.lineHeight === 'number' ? o.lineHeight : (suggested ? suggested.lineHeight : DEF_APPROACHES.balanced.line)
+            };
+            const edited = {
+                buildUp: !!suggested && eff.buildUp !== suggested.buildUp,
+                approach: !!suggested && eff.approach !== suggested.approach,
+                lineHeight: !!suggested && eff.lineHeight !== suggested.lineHeight
+            };
+            return { ...eff, suggested, suggestion: sug, edited, anyEdited: edited.buildUp || edited.approach || edited.lineHeight };
+        }
+        window.editSquadTactic = function(field, value) {
+            const cur = effectiveSquadTactics();
+            const o = { buildUp: cur.buildUp, approach: cur.approach, lineHeight: cur.lineHeight };
+            if (field === 'buildUp' && BUILD_UP_STYLES[value]) o.buildUp = value;
+            else if (field === 'approach' && DEF_APPROACHES[value]) { o.approach = value; o.lineHeight = DEF_APPROACHES[value].line; }
+            else if (field === 'lineHeight') o.lineHeight = Math.max(1, Math.min(100, parseInt(value, 10) || cur.lineHeight));
+            else return;
+            squadState.tacticsOverride = o;
+            renderTacticsSummary();
+        };
+        window.resetSquadTactics = function() {
+            squadState.tacticsOverride = null;
+            renderTacticsSummary();
+        };
+
         function renderGeneralStatsPanel() {
             const container = document.getElementById('db-stats-content');
             if (!container) return;
@@ -8464,6 +8720,7 @@
                 // restoring reads them back the same way (object property
                 // access doesn't care whether the key looks numeric).
                 selectedXI: squadState.selectedXI,
+                tacticsOverride: squadState.tacticsOverride || null,
                 playerCount: filledCount,
                 savedAt: new Date().toISOString()
             };
@@ -8506,6 +8763,7 @@
             squadState.avgMeta = saved.avgMeta;
             squadState.manager = { nationId: saved.manager?.nationId ?? null, leagueId: saved.manager?.leagueId ?? null };
             squadState.selectedXI = saved.selectedXI || {};
+            squadState.tacticsOverride = saved.tacticsOverride || null;
             squadState.alternatives = {};
             squadState.explanationLog = [];
             squadState.lockedIds = new Set();
@@ -12414,7 +12672,7 @@
                             ${leagueLogo ? `<img src="${leagueLogo}" alt="" class="absolute top-4 right-1.5 w-2.5 h-2.5 object-contain rounded-full bg-white/90" title="${getLeagueName(player.leagueId) || ''}" onerror="this.style.display='none'">` : ''}
                             <img src="${player.photo}" alt="${player.name}" class="w-7 h-7 sm:w-9 sm:h-9 rounded-full object-cover mt-3 mb-0.5 border border-fc-accent/40 bg-fc-dark" onerror="this.src='https://placehold.co/120x120/1b4d3e/ffffff?text=Player'">
                             <div class="font-bold text-[10px] sm:text-[11px] text-white truncate w-full leading-tight">${player.name}</div>
-                            <div class="flex items-center justify-center gap-0.5 mt-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</div>
+                            <div class="flex items-center justify-center gap-0.5 mt-0.5"><span class="flex items-center gap-0.5" title="${chemInPos ? `Chemistry: ${chemPoints}/3` : 'Out of position — 0 chemistry'}">${diamonds}</span>${chemStyleBadgeHtml(idx)}</div>
                             <div class="text-[9px] font-semibold leading-tight ${isOwned ? 'text-green-400' : 'text-fc-gold'}" title="${isOwned ? (currentLanguage === 'ar' ? 'مملوك بالفعل — لا يُحتسب من الميزانية' : 'Already owned — not counted against budget') : ''}">${isOwned ? (currentLanguage === 'ar' ? 'مملوك' : 'Owned') : `${player.price.toLocaleString()}${coinLabel}`}</div>
                             ${isOwned ? `<i class="fa-solid fa-circle-check absolute top-1 left-1/2 -translate-x-1/2 text-green-400 text-[8px]" title="${currentLanguage === 'ar' ? 'مملوك بالفعل' : 'Already owned'}"></i>` : ''}
                             <button onclick="event.stopPropagation(); window.toggleLockPlayer(${idx})" title="${lockTitle}" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-all ${isLocked ? 'bg-fc-gold text-fc-dark opacity-100' : 'bg-fc-dark/70 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-fc-gold'}">
@@ -12787,25 +13045,36 @@
         function renderTacticsSummary() {
             const container = document.getElementById('tactics-content');
             if (!container) return;
-            const identity = computeSquadIdentity();
-            const tactics = suggestSquadTactics(identity);
-            if (!tactics) { container.innerHTML = ''; return; }
-
+            const t = effectiveSquadTactics();
+            if (!t.suggestion) { container.innerHTML = ''; return; }
             const isAr = currentLanguage === 'ar';
-            const pill = (label, value) => `
-                <div class="flex items-center gap-1.5 shrink-0 ${isAr ? 'flex-row-reverse' : ''}">
+            const lab = (en, ar) => (isAr ? ar : en);
+            const selCls = f => `bg-fc-dark border ${t.edited[f] ? 'border-fc-gold/70 text-fc-gold' : 'border-fc-border text-white'} rounded-lg px-2 py-1 text-sm font-black focus:outline-none focus:border-fc-accent`;
+            const buOpts = Object.keys(BUILD_UP_STYLES).map(k => `<option value="${k}" ${k === t.buildUp ? 'selected' : ''}>${lab(BUILD_UP_STYLES[k].en, BUILD_UP_STYLES[k].ar)}${t.suggested && k === t.suggested.buildUp ? ' ★' : ''}</option>`).join('');
+            const daOpts = Object.keys(DEF_APPROACHES).map(k => `<option value="${k}" ${k === t.approach ? 'selected' : ''}>${lab(DEF_APPROACHES[k].en, DEF_APPROACHES[k].ar)}${t.suggested && k === t.suggested.approach ? ' ★' : ''}</option>`).join('');
+            const field = (label, control) => `
+                <label class="flex items-center gap-1.5 shrink-0">
                     <span class="text-[11px] text-gray-400">${label}</span>
-                    <span class="text-sm font-black text-white">${value}</span>
-                </div>
-            `;
-
+                    ${control}
+                </label>`;
+            const s = t.suggested;
+            const editedNote = t.anyEdited && s
+                ? `<p class="text-[11px] text-fc-gold/90 leading-snug basis-full">${lab(
+                    `Edited by you. Suggested: ${BUILD_UP_STYLES[s.buildUp].en} · ${DEF_APPROACHES[s.approach].en} · line ${s.lineHeight}.`,
+                    `عدّلته أنت. المقترح: ${BUILD_UP_STYLES[s.buildUp].ar} · ${DEF_APPROACHES[s.approach].ar} · الخط ${s.lineHeight}.`)}
+                    <button onclick="window.resetSquadTactics()" class="ms-1 underline font-bold hover:text-white">${lab('Reset to suggestion', 'العودة للمقترح')}</button></p>`
+                : '';
             container.innerHTML = `
-                ${pill(isAr ? 'التشكيلة' : 'Formation', squadState.formation)}
-                <div class="hidden sm:block w-px h-4 bg-fc-border shrink-0"></div>
-                ${pill(isAr ? 'أسلوب البناء' : 'Build-Up', tactics.buildUpLabel)}
-                <div class="hidden sm:block w-px h-4 bg-fc-border shrink-0"></div>
-                ${pill(isAr ? 'الدفاع' : 'Defense', `${tactics.approachLabel} · ${tactics.lineHeight}`)}
-                <p class="text-[11px] text-gray-500 leading-snug basis-full mt-0.5">${tactics.buildUpWhy} ${tactics.approachWhy}</p>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-[11px] text-gray-400">${lab('Formation', 'التشكيلة')}</span>
+                    <span class="text-sm font-black text-white">${squadState.formation}</span>
+                </div>
+                ${field(lab('Build-Up', 'أسلوب البناء'), `<select onchange="window.editSquadTactic('buildUp', this.value)" class="${selCls('buildUp')}">${buOpts}</select>`)}
+                ${field(lab('Defense', 'الدفاع'), `<select onchange="window.editSquadTactic('approach', this.value)" class="${selCls('approach')}">${daOpts}</select>`)}
+                ${field(lab('Line', 'الخط'), `<input type="number" min="1" max="100" value="${t.lineHeight}" onchange="window.editSquadTactic('lineHeight', this.value)" class="${selCls('lineHeight')} w-16">`)}
+                ${editedNote}
+                <p class="text-[11px] text-gray-500 leading-snug basis-full mt-0.5">${t.anyEdited ? lab('Why the app suggested its setup: ', 'لماذا اقترح التطبيق إعداده: ') : ''}${t.suggestion.buildUpWhy} ${t.suggestion.approachWhy}</p>
+                <p class="text-[10px] text-gray-600 basis-full">${lab('★ = suggested. Changing the Defensive Approach sets its default line; you can then fine-tune the line.', '★ = المقترح. تغيير النهج الدفاعي يضبط خطه الافتراضي، ثم يمكنك تعديل الخط.')}</p>
             `;
         }
 
@@ -16710,6 +16979,9 @@
             let whyDesc = '';
             try { whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries, posIntel) + (noMetaNote ? `<p class="text-gray-500">${noMetaNote.trim()}</p>` : ''); }
             catch (err) { console.error('[Player modal] why this pick failed:', err); }
+            let chemStyleHtml = '';
+            try { chemStyleHtml = renderChemStyleModalHtml(player, effectivePos, slotIdx, standalone); }
+            catch (err) { console.error('[Player modal] chemistry style failed:', err); }
             let positionIntelHtml = '';
             try { positionIntelHtml = renderPositionIntelHtml(player, effectivePos, posIntel); }
             catch (err) { console.error('[Player modal] position intelligence render failed:', err); }
@@ -17183,6 +17455,8 @@
                         ${alternativesSection}
 
                         ${playstylesSection}
+
+                        ${chemStyleHtml}
 
                         <div class="bg-fc-dark/80 p-3.5 rounded-xl border border-fc-border space-y-1">
                             <span class="text-xs font-bold text-fc-accent uppercase tracking-wider">${whyText}</span>
