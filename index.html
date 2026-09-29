@@ -7323,7 +7323,7 @@
                 </div>`;
         }
 
-        function renderPositionIntelHtml(player, pos, precomputed) {
+        function renderPositionIntelHtml(player, pos, precomputed, defProfile) {
             const isAr = currentLanguage === 'ar';
             const intel = precomputed || computePlayerPositionIntel(player, pos);
             if (!intel) return '';
@@ -7404,6 +7404,7 @@
                         <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'ما يبرز' : 'What stands out'}</div>
                         ${outHtml}
                     </div>
+                    ${defProfile ? renderDefensiveProfileHtml(defProfile, isAr) : ''}
                     ${muHtml ? `<div class="space-y-1.5"><div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'سياق المواجهات' : 'Matchup context'}</div>${muHtml}</div>` : ''}
                     ${psHtml}
                     ${altHtml}
@@ -7665,6 +7666,213 @@
             squadState.tacticsOverride = null;
             renderTacticsSummary();
         };
+
+        // ===================================================================
+        // DEFENSIVE INTELLIGENCE — "what defensive problem does this
+        // position + role + setup need solved, and how does THIS player
+        // address it?"  (interpretation layer — no scoring changes)
+        // ===================================================================
+        // Data honesty:
+        //   • The bulk database only has the six face stats + PlayStyles,
+        //     so benchmarks use face-stat proxies: Recovery → PAC,
+        //     Positioning / lanes → DEF, Physical → PHY, Outlet → PAS,
+        //     1v1 containment → PAC and DEF together.
+        //   • Granular attributes (Acceleration, Sprint Speed, Defensive
+        //     Awareness, Interceptions, Standing Tackle, Strength…) only
+        //     exist per player once the modal's detail fetch returns; they
+        //     are shown then, without benchmarks (no population data).
+        //   • PlayStyles are supporting evidence tied to a job, never a
+        //     score bonus. Requirement levels (primary / secondary /
+        //     minor) are qualitative — no invented numerical effects.
+        //   • Context: line height from the squad's tactics (your edit or
+        //     the suggestion; DEF_APPROACHES bands: 61+ = higher line,
+        //     ≤30 = deep), and how many CDMs the formation has.
+        const DEF_JOBS = {
+            recovery: { en: 'Recovery / space', ar: 'الاسترداد / المساحة', face: ['pac'], granular: ['acceleration', 'sprintSpeed'], ps: [] },
+            lanes:    { en: 'Positioning / lane control', ar: 'التمركز / إغلاق الممرات', face: ['def'], granular: ['defensiveAwareness', 'interceptions'], ps: ['Intercept', 'Anticipate', 'Block'] },
+            contain:  { en: '1v1 containment', ar: 'الاحتواء الفردي', face: ['pac', 'def'], granular: ['acceleration', 'standingTackles', 'agility'], ps: ['Jockey', 'Anticipate'] },
+            physical: { en: 'Physical duels', ar: 'الالتحامات البدنية', face: ['phy'], granular: ['strength', 'jumping', 'aggression'], ps: ['Bruiser', 'Aerial Fortress'] },
+            outlet:   { en: 'Passing outlet', ar: 'منفذ التمرير', face: ['pas'], granular: ['shortPassing', 'longPassing'], ps: ['Pinged Pass', 'Tiki Taka', 'Incisive Pass'] }
+        };
+        const DEF_LEVEL_ORDER = { primary: 0, secondary: 1, minor: 2 };
+
+        function defensiveContext(slotIdx, standalone) {
+            let lineHeight = null, lineSource = null, pivots = null;
+            if (!standalone && typeof slotIdx === 'number') {
+                try {
+                    const t = effectiveSquadTactics();
+                    if (t && typeof t.lineHeight === 'number') { lineHeight = t.lineHeight; lineSource = t.edited && t.edited.lineHeight ? 'user' : 'suggested'; }
+                } catch (e) { /* no tactics available */ }
+                const slots = formationSlots[squadState.formation] || [];
+                pivots = slots.filter(s => s.pos === 'CDM').length;
+            }
+            const band = lineHeight == null ? null : lineHeight >= DEF_APPROACHES.high.min ? 'high' : lineHeight <= DEF_APPROACHES.deep.max ? 'deep' : 'mid';
+            return { lineHeight, lineSource, band, pivots, formation: !standalone ? squadState.formation : null };
+        }
+
+        // Which jobs this position + role + context asks for.
+        function defensiveRequirements(pos, roleName, ctx) {
+            const high = ctx.band === 'high', deep = ctx.band === 'deep';
+            const r = roleName || '';
+            const req = {};
+            if (pos === 'CB') {
+                req.lanes = 'primary';
+                req.recovery = (high || ['Ball-Playing Defender', 'Wide Back'].includes(r)) ? 'primary' : 'secondary';
+                req.physical = (deep || ['Stopper', 'Defender'].includes(r)) ? 'primary' : 'secondary';
+                req.contain = (high || r === 'Wide Back') ? 'secondary' : 'minor';
+                req.outlet = r === 'Ball-Playing Defender' ? 'secondary' : 'minor';
+            } else if (['LB', 'RB', 'LWB', 'RWB'].includes(pos)) {
+                req.recovery = 'primary';
+                req.contain = 'primary';
+                req.lanes = 'secondary';
+                req.physical = 'minor';
+                req.outlet = ['Inverted Wingback', 'Falseback'].includes(r) ? 'secondary' : 'minor';
+            } else if (pos === 'CDM' || (pos === 'CM' && r === 'Holding')) {
+                const single = ctx.pivots != null && ctx.pivots <= 1;
+                req.lanes = 'primary';
+                req.outlet = r === 'Deep-Lying Playmaker' ? 'primary' : r === 'Centre Half' ? 'minor' : 'secondary';
+                req.physical = ['Centre Half', 'Holding'].includes(r) ? 'primary' : 'secondary';
+                req.recovery = (single || high) ? 'secondary' : 'minor';
+                req.contain = single ? 'secondary' : 'minor';
+                if (r === 'Box Crasher') { req.lanes = 'secondary'; req.physical = 'secondary'; }
+            } else return null;
+            return req;
+        }
+
+        function defTier(v, pc) {
+            if (!pc || typeof v !== 'number') return null;
+            if (pc.top10 != null && v >= pc.top10) return 'elite';
+            if (pc.top25 != null && v >= pc.top25) return 'strong';
+            if (v >= Math.round(pc.avg) - 2) return 'ok';
+            return 'weak';
+        }
+        const DEF_TIER_RANK = { weak: 0, ok: 1, strong: 2, elite: 3 };
+
+        function computeDefensiveProfile(player, pos, roleName, intel, ctx) {
+            const req = defensiveRequirements(pos, roleName, ctx);
+            if (!req || !player || !player.att) return null;
+            const pc = intel && intel.summary && intel.summary.powerCurve ? intel.summary.powerCurve : {};
+            const owned = typeof playstyleNamesOf === 'function' ? playstyleNamesOf(player) : new Set();
+            const plus = new Set((player.playstylesPlus || []).map(formatPlaystyleEntry));
+            const jobs = Object.keys(req).map(id => {
+                const def = DEF_JOBS[id];
+                const measures = def.face.map(k => ({ key: k, v: player.att[k], pc: pc[k] || null, tier: defTier(player.att[k], pc[k]) }));
+                // Job status = the weakest of its measures (containment
+                // needs both the pace to close and the defending to act).
+                const tiers = measures.map(m => m.tier).filter(Boolean);
+                const tier = tiers.length ? tiers.reduce((a, b) => (DEF_TIER_RANK[a] <= DEF_TIER_RANK[b] ? a : b)) : null;
+                const ps = def.ps.filter(n => owned.has(n)).map(n => n + (plus.has(n) ? '+' : ''));
+                return { id, level: req[id], measures, tier, ps };
+            }).sort((a, b) => DEF_LEVEL_ORDER[a.level] - DEF_LEVEL_ORDER[b.level]);
+            return { pos, role: roleName, ctx, jobs, group: intel && intel.groupLabel ? intel.groupLabel : pos };
+        }
+
+        function defJobName(id, isAr) { return isAr ? DEF_JOBS[id].ar : DEF_JOBS[id].en; }
+        function defSetupLabel(dp, isAr) {
+            const c = dp.ctx;
+            const bandTxt = c.band === 'high' ? (isAr ? 'خط مرتفع' : 'higher line') : c.band === 'deep' ? (isAr ? 'خط منخفض' : 'deep line') : c.band === 'mid' ? (isAr ? 'خط متوسط' : 'mid-height line') : null;
+            const parts = [];
+            if (bandTxt) parts.push(`${bandTxt} (${c.lineHeight}${c.lineSource === 'user' ? (isAr ? '، من تعديلك' : ', your edit') : ''})`);
+            if (dp.pos === 'CDM' && c.pivots != null) parts.push(c.pivots <= 1 ? (isAr ? 'لاعب ارتكاز وحيد' : 'single pivot') : (isAr ? `${c.pivots} لاعبي ارتكاز` : `${c.pivots} CDMs`));
+            return parts.join(' · ');
+        }
+
+        // Evidence block for Position Intelligence.
+        function renderDefensiveProfileHtml(dp, isAr) {
+            if (!dp) return '';
+            const L = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+            const tierCol = { elite: '#4ade80', strong: '#86efac', ok: '#e5e7eb', weak: '#fb923c' };
+            const tierTxt = t => ({ elite: isAr ? 'فوق عتبة أفضل 10%' : 'at/above Top 10%', strong: isAr ? 'الربع الأعلى' : 'upper quartile', ok: isAr ? 'حول المتوسط أو فوقه' : 'around/above average', weak: isAr ? 'دون المتوسط' : 'below average' }[t] || '');
+            const lvl = l => ({ primary: isAr ? 'أساسي' : 'primary', secondary: isAr ? 'ثانوي' : 'secondary', minor: isAr ? 'ثانوي جداً' : 'minor' }[l]);
+            const rows = dp.jobs.filter(j => j.level !== 'minor').map(j => `
+                <div class="flex items-start gap-2 text-[11px]">
+                    <span class="w-2 h-2 rounded-full mt-1 shrink-0" style="background:${tierCol[j.tier] || '#6b7280'}"></span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="font-bold text-gray-200">${defJobName(j.id, isAr)}</span>
+                            <span class="text-[9px] font-bold uppercase px-1 rounded ${j.level === 'primary' ? 'text-fc-accent bg-fc-accent/10' : 'text-gray-400 bg-black/30'}">${lvl(j.level)}</span>
+                            ${j.tier ? `<span class="text-[10px]" style="color:${tierCol[j.tier]}">${tierTxt(j.tier)}</span>` : ''}
+                        </div>
+                        <div class="text-[10px] text-gray-500"><bdi>${j.measures.map(m => `${L(m.key)} ${m.v}${m.pc ? ` (${isAr ? 'متوسط' : 'avg'} ${Math.round(m.pc.avg)}${m.pc.top10 != null ? ` · ${isAr ? 'أفضل 10%' : 'Top 10%'} ${Math.round(m.pc.top10)}` : ''})` : ''}`).join(' · ')}${j.ps.length ? ` · <span class="text-purple-300">${j.ps.join(', ')}</span>` : ''}</bdi></div>
+                    </div>
+                </div>`).join('');
+            const setup = defSetupLabel(dp, isAr);
+            return `
+                <div class="space-y-1.5">
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">${isAr ? 'المهمة الدفاعية' : 'Defensive job'}${dp.role ? ` · <span class="normal-case text-gray-300">${dp.role}</span>` : ''}${setup ? ` · <span class="normal-case text-gray-400">${setup}</span>` : ''}</div>
+                    ${rows}
+                    <div id="pi-def-granular" class="text-[10px] text-gray-500"></div>
+                    <p class="text-[9px] text-gray-500">${isAr
+                        ? 'المتطلبات تتغير حسب المركز والدور وارتفاع الخط. القياس بإحصائيات الوجه مقابل قاعدة البيانات؛ أنماط اللعب دليل داعم. أنت من يتحكم بالمدافع — هذه ملاءمة إحصائية، لا نتيجة مضمونة.'
+                        : 'Requirements change with position, role and line height. Measured with face stats against the database; PlayStyles are supporting evidence. You control the defender — this is statistical fit, not a guaranteed outcome.'}</p>
+                </div>`;
+        }
+
+        // Granular values once the modal's detail fetch returns (no
+        // population benchmarks exist for these).
+        function renderDefensiveGranularHtml(dp, detail, isAr) {
+            if (!dp || !detail || !detail.inGameAttributes) return '';
+            const want = [...new Set(dp.jobs.filter(j => j.level !== 'minor').flatMap(j => DEF_JOBS[j.id].granular))];
+            const vals = want.map(k => {
+                const d = GRANULAR_ATTR_DEFS[k];
+                const v = d ? getGranularValue(detail, d.candidates, d.en) : null;
+                return typeof v === 'number' ? `${isAr ? d.ar : d.en} <b class="text-gray-300">${v}</b>` : null;
+            }).filter(Boolean);
+            if (!vals.length) return '';
+            return `<i class="fa-solid fa-magnifying-glass-chart me-1"></i>${isAr ? 'الخصائص الدقيقة لهذه المهام' : 'Detailed attributes for these jobs'}: <bdi>${vals.join(' · ')}</bdi> <span class="text-gray-600">(${isAr ? 'بلا معيار سكاني' : 'no population benchmark'})</span>`;
+        }
+
+        // One interpretation paragraph for Why This Pick.
+        function defensiveWhyText(dp, isAr) {
+            if (!dp) return '';
+            const L = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+            const prim = dp.jobs.filter(j => j.level === 'primary');
+            const sec = dp.jobs.filter(j => j.level === 'secondary');
+            const bandAdj = dp.ctx.band === 'high' ? (isAr ? 'بخط مرتفع ' : 'higher-line ') : dp.ctx.band === 'deep' ? (isAr ? 'بخط منخفض ' : 'deep-line ') : '';
+            const roleTxt = dp.role ? (isAr ? ` (${dp.role})` : ` ${dp.role}`) : '';
+            const list = js => {
+                const n = js.map(j => (isAr ? DEF_JOBS[j.id].ar : DEF_JOBS[j.id].en.toLowerCase()));
+                if (n.length < 2) return n.join('');
+                return isAr ? n.slice(0, -1).join('، ') + ' و' + n[n.length - 1] : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
+            };
+            let s = isAr
+                ? `لمركز ${dp.pos}${roleTxt} ${bandAdj}، المهام الأساسية: ${list(prim)}${sec.length ? `، ثم ${list(sec)}` : ''}.`
+                : `For this ${bandAdj}${dp.pos}${roleTxt} role, the primary defensive jobs are ${list(prim)}${sec.length ? `, then ${list(sec)}` : ''}.`;
+            const phrase = (j) => {
+                const m = j.measures;
+                const vals = m.map(x => `${L(x.key)} ${x.v}`).join(isAr ? ' و' : ' and ');
+                if (j.id === 'recovery') return j.tier === 'weak'
+                    ? (isAr ? `${vals} دون متوسط ${dp.group} — هامش استرداد أقل مما يتطلبه هذا الإعداد` : `${vals} is below the ${dp.group} average — less recovery margin than this setup asks for`)
+                    : j.tier === 'elite' || j.tier === 'strong' ? (isAr ? `${vals} يمنح هامش استرداد أكبر خلف الخط` : `${vals} provides more recovery margin behind the line`)
+                    : (() => {
+                        const pcv = m[0].pc;
+                        const bench = pcv && pcv.top10 != null ? Math.round(pcv.top10) : null;
+                        const hi = dp.ctx.band === 'high';
+                        return isAr
+                            ? `${vals} حول متوسط ${dp.group} أو فوقه${bench != null ? ` لكنه دون عتبة أفضل 10% (${bench})` : ''} — هامش استرداد معتاد${hi ? '، أقل مما يطلبه ملف الخط المرتفع عادةً' : ''}`
+                            : `${vals} is around or above the ${dp.group} average${bench != null ? ` but below the Top 10% benchmark (${bench})` : ''} — a typical recovery margin${hi ? ', less than a higher-line profile ideally asks for' : ''}`;
+                    })();
+                if (j.id === 'lanes') return j.tier === 'weak'
+                    ? (isAr ? `${vals} دون المتوسط لإغلاق الممرات والتمركز` : `${vals} is below average for positioning and lane coverage`)
+                    : (isAr ? `${vals} يدعم التمركز وإغلاق ممرات التمرير` : `${vals} supports positioning and passing-lane coverage`) + (j.ps.length ? (isAr ? `، مع ${j.ps.join(' و')}` : `, with ${j.ps.join(' and ')}`) : '');
+                if (j.id === 'contain') return j.tier === 'weak'
+                    ? (isAr ? `${vals}: أحدهما دون المتوسط، فالاحتواء الفردي يعتمد أكثر على تحكّمك وتوقيتك` : `${vals}: one is below average, so 1v1 containment leans more on your own jockeying and timing`)
+                    : (isAr ? `${vals} يدعمان الاحتواء الفردي (إغلاق المسافة ثم التحكم)` : `${vals} support 1v1 containment (close the space, then control)`) + (j.ps.some(p => p.startsWith('Jockey')) ? (isAr ? '، ويدعمه Jockey' : ', with Jockey supporting the controlled phase') : '');
+                if (j.id === 'physical') return j.tier === 'weak'
+                    ? (isAr ? `${vals} دون المتوسط في الالتحامات البدنية` : `${vals} is below average for physical duels`)
+                    : (isAr ? `${vals} يدعم الالتحامات البدنية` : `${vals} supports physical duels`) + (j.ps.length ? (isAr ? ` (${j.ps.join('، ')})` : ` (${j.ps.join(', ')})`) : '');
+                if (j.id === 'outlet') return j.tier === 'weak'
+                    ? (isAr ? `${vals} دون المتوسط كمنفذ تمرير` : `${vals} is below average as a passing outlet`)
+                    : (isAr ? `${vals} يوفر منفذ تمرير بعد استعادة الكرة` : `${vals} gives a passing outlet after winning the ball`);
+                return '';
+            };
+            const primTxt = prim.map(phrase).filter(Boolean);
+            if (primTxt.length) s += ' ' + (isAr ? primTxt.join('؛ ') + '.' : primTxt.map((t, i) => i === 0 ? t.charAt(0).toUpperCase() + t.slice(1) : t).join('; ') + '.');
+            const weakSec = sec.find(j => j.tier === 'weak');
+            if (weakSec) s += ' ' + (isAr ? `المهمة الثانوية الأضعف: ${phrase(weakSec)}.` : `Weakest secondary job: ${phrase(weakSec)}.`);
+            if (!dp.ctx.band && dp.pos !== 'CDM') s += isAr ? ' (لا يوجد ارتفاع خط معروف هنا — المتطلبات لخط متوسط.)' : ' (No line height known here — requirements shown for a mid-height line.)';
+            return s;
+        }
 
         function renderGeneralStatsPanel() {
             const container = document.getElementById('db-stats-content');
@@ -15480,6 +15688,8 @@
             // legitimately be null for GKs) — the granular attribute
             // breakdown should still render whenever we have detail.
             renderGranularAttrs(effectivePos, detail);
+            const defGranEl = document.getElementById('pi-def-granular');
+            if (defGranEl) { try { defGranEl.innerHTML = renderDefensiveGranularHtml(window.__modalDefProfile, detail, isAr); } catch (e) { /* optional */ } }
             // Same reasoning for the vulnerability report — it should
             // pick up the detail-dependent points (granular attrs,
             // real height, body type) regardless of what happens with
@@ -16772,7 +16982,7 @@
             // budget / chemistry reasoning. Five short parts:
             //   1 Why it fits · 2 What separates him · 3 The trade-off
             //   4 Matchup implication (only when informative) · 5 Bottom line
-            function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries, intel) {
+            function buildWhyEvaluation(evalPlayer, evalSlotIdx, evalAttrEntries, intel, defProfile) {
                 const isAr = currentLanguage === 'ar';
                 const T = (en, ar) => (isAr ? ar : en);
                 const labelOf = key => ATTRIBUTE_LABELS[key] ? (isAr ? ATTRIBUTE_LABELS[key].ar : ATTRIBUTE_LABELS[key].en) : key.toUpperCase();
@@ -16853,6 +17063,7 @@
                     }
                 }
                 part('Why it fits', 'لماذا يناسب', `${relTxt}${fitTxt}.${roleTxt}${selTxt}`);
+                if (defProfile) part('Defensive job', 'المهمة الدفاعية', defensiveWhyText(defProfile, isAr));
 
                 // ---------- 2. WHAT SEPARATES HIM ----------
                 let sepTxt = '';
@@ -16976,14 +17187,24 @@
             let posIntel = null;
             try { posIntel = computePlayerPositionIntel(player, effectivePos); }
             catch (err) { console.error('[Player modal] position intelligence failed:', err); }
+            // Defensive intelligence (CB / full-backs / CDM / holding CM):
+            // what this position + role + line height asks for, and how
+            // this player addresses it. Shared by Position Intelligence
+            // (evidence) and Why This Pick (interpretation).
+            let defProfile = null;
+            try {
+                const defRole = (!standalone && typeof slotIdx === 'number' && squadState.teamRoles && squadState.teamRoles[slotIdx]) || getRoleSuggestion(player, effectivePos);
+                defProfile = computeDefensiveProfile(player, effectivePos, defRole && defRole.role, posIntel, defensiveContext(slotIdx, standalone));
+            } catch (err) { console.error('[Player modal] defensive profile failed:', err); }
+            window.__modalDefProfile = defProfile;
             let whyDesc = '';
-            try { whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries, posIntel) + (noMetaNote ? `<p class="text-gray-500">${noMetaNote.trim()}</p>` : ''); }
+            try { whyDesc = buildWhyEvaluation(player, slotIdx, attrEntries, posIntel, defProfile) + (noMetaNote ? `<p class="text-gray-500">${noMetaNote.trim()}</p>` : ''); }
             catch (err) { console.error('[Player modal] why this pick failed:', err); }
             let chemStyleHtml = '';
             try { chemStyleHtml = renderChemStyleModalHtml(player, effectivePos, slotIdx, standalone); }
             catch (err) { console.error('[Player modal] chemistry style failed:', err); }
             let positionIntelHtml = '';
-            try { positionIntelHtml = renderPositionIntelHtml(player, effectivePos, posIntel); }
+            try { positionIntelHtml = renderPositionIntelHtml(player, effectivePos, posIntel, defProfile); }
             catch (err) { console.error('[Player modal] position intelligence render failed:', err); }
             const metaLine = hasMeta
                 ? ` | ${currentLanguage === 'ar' ? 'ميتا' : 'Meta'}: <span class="text-fc-accent font-bold">${player.meta.toFixed(1)}</span>`
