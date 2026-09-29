@@ -4174,7 +4174,7 @@
             const lab = loadTacticsLab();
             const cal = {};
             TACTIC_AXES.forEach(ax => {
-                const pts = Object.values(lab.reports).filter(r => r.axes && typeof r.axes[ax] === 'number').map(r => [estimateTacticAxesRaw(r)[ax], r.axes[ax]]);
+                const pts = labLearningReports().filter(r => r.axes && typeof r.axes[ax] === 'number').map(r => [estimateTacticAxesRaw(r)[ax], r.axes[ax]]);
                 if (pts.length < 4) { cal[ax] = { n: pts.length, a: 0, b: 1, active: false }; return; }
                 const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
                 const sxx = pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0), sxy = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0);
@@ -4206,61 +4206,228 @@
             'warning|Light at Defensive Roles': 'def', 'warning|Endurance Athletes Only': 'end',
             'warning|Unimaginative Build-Up Play': 'bld'
         };
-        // Every other sentence: within one report the game's three
-        // strengths are three DIFFERENT axes (same for warnings), so each
-        // unknown sentence votes for the strongest axis not already taken in
-        // that report — highest for strengths, lowest for warnings — using
-        // the reported graph if entered, else the estimate. The axis with the
-        // most votes across reports wins.
+        // Reports that may TRAIN the estimate: everything except
+        // predictions that haven't been confirmed in game yet.
+        function labLearningReports() {
+            return Object.values(loadTacticsLab().reports).filter(r => r && r.source !== 'predicted');
+        }
+        function labSentenceKey(text) { return String(text || '').toLowerCase().replace(/[^a-z]/g, ''); }
+
+        // What the reports show about the game's summary (checked on 60+
+        // reports): the three STRENGTHS are the three highest graph axes
+        // and the three WARNINGS the three lowest, and each axis has
+        // several sentences for different levels (e.g. DEF 2.5 →
+        // "Defence Easy To Overload", DEF ≤ 2 → "Minimal Defensive
+        // Coverage"). So each sentence is linked to the axis that is in
+        // its report's top-3 (strengths) / bottom-3 (warnings) most often,
+        // and remembers the axis values it appeared at.
         function learnSentenceAxes() {
-            const lab = loadTacticsLab();
-            const acc = {};
-            Object.values(lab.reports).forEach(r => {
-                const axes = r.axes && TACTIC_AXES.every(a => typeof r.axes[a] === 'number') ? r.axes : estimateTacticAxesRaw(r);
-                [['strength', r.strengths, 1], ['warning', r.warnings, -1]].forEach(([type, list, dir]) => {
-                    const items = (list || []).filter(Boolean);
-                    const taken = new Set(items.map(t => SENTENCE_AXIS_BY_WORDING[type + '|' + t]).filter(Boolean));
-                    const free = TACTIC_AXES.filter(a => !taken.has(a)).sort((x, y) => (axes[y] - axes[x]) * dir);
-                    items.forEach(text => {
-                        const k = type + '|' + text;
-                        acc[k] = acc[k] || { type, text, n: 0, votes: {} };
-                        acc[k].n++;
-                        const axis = SENTENCE_AXIS_BY_WORDING[k] || free.shift();
-                        if (axis) acc[k].votes[axis] = (acc[k].votes[axis] || 0) + 1;
-                    });
+            // 1. Collect, per report, its strengths/warnings and the axes
+            //    they must map onto (top-3 / bottom-3).
+            const items = [];
+            labLearningReports().forEach(r => {
+                const full = r.axes && TACTIC_AXES.every(a => typeof r.axes[a] === 'number');
+                const axes = full ? r.axes : estimateTacticAxesRaw(r);
+                const ranked = TACTIC_AXES.slice().sort((x, y) => axes[y] - axes[x]);
+                [['strength', r.strengths, ranked.slice(0, 3)], ['warning', r.warnings, ranked.slice(3)]].forEach(([type, list, cand]) => {
+                    const texts = (list || []).filter(Boolean);
+                    if (texts.length) items.push({ type, texts, cand, axes, w: full ? 1 : 0.5 });
                 });
             });
-            return Object.values(acc).map(e => {
-                const fixed = SENTENCE_AXIS_BY_WORDING[e.type + '|' + e.text];
-                const axis = fixed || Object.keys(e.votes).sort((x, y) => e.votes[y] - e.votes[x])[0] || 'atk';
-                return { ...e, axis, byWording: !!fixed };
+            const stems = {};
+            items.forEach(it => it.texts.forEach(t => { stems[labSentenceKey(t)] = true; }));
+            // Typo variants (a stray trailing letter) share one key.
+            const keyOf = t => { const k = labSentenceKey(t); return (k.length > 8 && stems[k.slice(0, -1)]) ? k.slice(0, -1) : k; };
+            // 2. Each report's sentences map ONE-TO-ONE onto its three axes.
+            //    Start from how often each sentence sits with each axis,
+            //    then repeatedly pick every report's most likely one-to-one
+            //    assignment and recount — so a sentence that always shares
+            //    an axis with a more consistent sentence moves to the axis
+            //    it actually tracks.
+            const perms = arr => arr.length <= 1 ? [arr] : arr.flatMap((x, i) => perms(arr.slice(0, i).concat(arr.slice(i + 1))).map(p => [x, ...p]));
+            let score = {};
+            items.forEach(it => it.texts.forEach(t => {
+                const k = it.type + '|' + keyOf(t);
+                score[k] = score[k] || {};
+                it.cand.forEach(ax => { score[k][ax] = (score[k][ax] || 0) + it.w; });
+            }));
+            let assign = [];
+            for (let iter = 0; iter < 6; iter++) {
+                const next = {};
+                assign = items.map(it => {
+                    const keys = it.texts.map(t => it.type + '|' + keyOf(t));
+                    let best = null, bestS = -Infinity;
+                    perms(it.cand).forEach(p => {
+                        let sc = 0, ok = true;
+                        keys.forEach((k, i) => {
+                            const fixed = SENTENCE_AXIS_BY_WORDING[it.type + '|' + it.texts[i]];
+                            if (fixed && fixed !== p[i]) ok = false;
+                            sc += Math.log(((score[k] || {})[p[i]] || 0) + 0.25);
+                        });
+                        if (ok && sc > bestS) { bestS = sc; best = p; }
+                    });
+                    best = best || it.cand;
+                    keys.forEach((k, i) => { next[k] = next[k] || {}; next[k][best[i]] = (next[k][best[i]] || 0) + it.w; });
+                    return { it, keys, axesFor: best };
+                });
+                score = next;
+            }
+            // 3. Per sentence: its axis (most assignments) and the levels of
+            //    that axis where it appeared.
+            const acc = {};
+            assign.forEach(({ it, keys, axesFor }) => keys.forEach((k, i) => {
+                const e = acc[k] = acc[k] || { type: it.type, texts: {}, n: 0, vals: {} };
+                e.texts[it.texts[i]] = (e.texts[it.texts[i]] || 0) + 1;
+                e.n++;
+                (e.vals[axesFor[i]] = e.vals[axesFor[i]] || []).push(it.axes[axesFor[i]]);
+            }));
+            return Object.entries(acc).map(([k, e]) => {
+                const text = Object.keys(e.texts).sort((x, y) => e.texts[y] - e.texts[x])[0];
+                const fixed = SENTENCE_AXIS_BY_WORDING[e.type + '|' + text];
+                const axis = fixed || Object.keys(e.vals).sort((x, y) => e.vals[y].length - e.vals[x].length)[0] || 'atk';
+                const vals = e.vals[axis] || [];
+                const mean = vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : 5;
+                return { type: e.type, text, n: e.n, axis, byWording: !!fixed, mean, vals, min: vals.length ? Math.min(...vals) : null, max: vals.length ? Math.max(...vals) : null };
             });
         }
 
-        // Calibrated estimate + 3 strengths / 3 warnings.
+        // ---- Empirical estimate: your reports, change by change ----------
+        // If the formation's baseline was reported, start from that graph
+        // and add the MEASURED shift of every setting / role that differs
+        // from the baseline (each measured once, in any formation, by a
+        // one-change test; left/right mirrors share a measurement). Only
+        // changes nobody has measured yet fall back to the model, scaled by
+        // how the model's shifts compared with your measured ones. Changes
+        // are assumed to add up — a first-order model, checked in game by
+        // your future reports.
+        let labEmpiricalCache = null;
+        function labEmpiricalIndex() {
+            const reps = labLearningReports();
+            const stamp = reps.length + '|' + reps.map(r => r.reportedAt || '').sort().pop();
+            if (labEmpiricalCache && labEmpiricalCache.stamp === stamp) return labEmpiricalCache;
+            const full = r => r && r.axes && TACTIC_AXES.every(a => typeof r.axes[a] === 'number');
+            const plan = buildTacticsLabPlan();
+            const bySig = {};
+            Object.values(plan).forEach(list => list.forEach(t => { bySig[t.signature] = t; }));
+            const repBySig = {};
+            reps.forEach(r => { repBySig[r.signature] = r; });
+            const bases = {};
+            Object.entries(plan).forEach(([f, list]) => {
+                const b = list.find(t => t.kind === 'base');
+                if (b && full(repBySig[b.signature])) bases[f] = { axes: repBySig[b.signature].axes, setup: b.setup };
+            });
+            const acc = {};
+            reps.forEach(r => {
+                const t = bySig[r.signature];
+                if (!t || !full(r) || !bases[t.setup.formation] || (t.kind !== 'role' && t.kind !== 'setting')) return;
+                const key = t.kind === 'setting' ? `set|${t.change.setting}|${t.change.value}` : `role|${LAB_MIRROR[t.change.pos] || t.change.pos}|${t.change.role}|${t.change.focus}`;
+                const base = bases[t.setup.formation].axes;
+                const rawD = (() => { const a = estimateTacticAxesRaw(t.setup), b0 = estimateTacticAxesRaw(bases[t.setup.formation].setup); return Object.fromEntries(TACTIC_AXES.map(ax => [ax, a[ax] - b0[ax]])); })();
+                (acc[key] = acc[key] || []).push({ d: Object.fromEntries(TACTIC_AXES.map(ax => [ax, r.axes[ax] - base[ax]])), raw: rawD, formation: t.setup.formation, strengths: r.strengths, warnings: r.warnings });
+            });
+            const deltas = {};
+            Object.entries(acc).forEach(([k, list]) => { deltas[k] = Object.fromEntries(TACTIC_AXES.map(ax => [ax, list.reduce((s, x) => s + x.d[ax], 0) / list.length])); });
+            // Model → measured scale per axis (through the origin), for the
+            // changes nobody has measured yet.
+            const all = Object.values(acc).flat();
+            const slope = {};
+            TACTIC_AXES.forEach(ax => {
+                const sxy = all.reduce((s, x) => s + x.raw[ax] * x.d[ax], 0), sxx = all.reduce((s, x) => s + x.raw[ax] * x.raw[ax], 0);
+                slope[ax] = sxx > 1e-6 ? Math.max(0, Math.min(6, sxy / sxx)) : 1;
+            });
+            labEmpiricalCache = { stamp, bases, deltas, slope, examples: acc, measuredCount: Object.keys(deltas).length };
+            return labEmpiricalCache;
+        }
+        function estimateTacticAxesEmpirical(setup) {
+            if (!setup || !formationSlots[setup.formation]) return null;
+            const idx = labEmpiricalIndex();
+            const base = idx.bases[setup.formation];
+            if (!base) return null;
+            const axes = { ...base.axes };
+            const add = d => TACTIC_AXES.forEach(ax => { axes[ax] += d[ax]; });
+            let measured = 0;
+            const keysUsed = [];
+            const unmeasured = { ...base.setup, roles: { ...base.setup.roles } };
+            let modelled = 0;
+            [['buildUp', setup.buildUp], ['approach', setup.approach]].forEach(([k, v]) => {
+                if (!v || v === base.setup[k]) return;
+                const d = idx.deltas[`set|${k}|${v}`];
+                if (d) { add(d); measured++; keysUsed.push(`set|${k}|${v}`); }
+                else { unmeasured[k] = v; if (k === 'approach') unmeasured.lineHeight = setup.lineHeight; modelled++; }
+            });
+            const slots = formationSlots[setup.formation];
+            slots.forEach((slot, i) => {
+                const r = setup.roles && setup.roles[i], b = base.setup.roles[i];
+                if (!r || !b || (r.role === b.role && r.focus === b.focus)) return;
+                const rk = `role|${LAB_MIRROR[slot.pos] || slot.pos}|${r.role}|${r.focus}`;
+                const d = idx.deltas[rk];
+                if (d) { add(d); measured++; keysUsed.push(rk); }
+                else { unmeasured.roles[i] = { role: r.role, focus: r.focus }; modelled++; }
+            });
+            if (modelled) {
+                const a = estimateTacticAxesRaw(unmeasured), b0 = estimateTacticAxesRaw(base.setup);
+                TACTIC_AXES.forEach(ax => { axes[ax] += idx.slope[ax] * (a[ax] - b0[ax]); });
+            }
+            TACTIC_AXES.forEach(ax => { axes[ax] = Math.max(0, Math.min(10, axes[ax])); });
+            // Exactly one measured change in the same formation (e.g. the
+            // mirror slot of a tested role): the game's sentences for it
+            // are already known.
+            let sentences = null;
+            if (measured === 1 && !modelled) {
+                const ex = (idx.examples[keysUsed[0]] || []).find(x => x.formation === setup.formation);
+                if (ex) sentences = { strengths: ex.strengths, warnings: ex.warnings };
+            }
+            return { axes, baseFormation: setup.formation, measured, modelled, sentences };
+        }
+
+        // Estimate + 3 strengths / 3 warnings. Graph: the empirical
+        // estimate when the formation's baseline has been reported, else the
+        // calibrated model. Sentences: for each of the top-3 / bottom-3
+        // axes, the reported sentence for that axis whose usual level is
+        // closest to the estimated value.
         function estimateTacticalSummary(setup) {
-            const raw = estimateTacticAxesRaw(setup);
+            const emp = estimateTacticAxesEmpirical(setup);
             const cal = computeTacticCalibration();
-            const axes = {};
-            TACTIC_AXES.forEach(a => { axes[a] = Math.max(0, Math.min(10, cal[a].active ? cal[a].a + cal[a].b * raw[a] : raw[a])); });
+            let axes;
+            if (emp) axes = emp.axes;
+            else {
+                const raw = estimateTacticAxesRaw(setup);
+                axes = {};
+                // Without a reported baseline for this formation, keep the
+                // calibrated model inside the range your reports have
+                // actually shown for each axis (no extrapolating past it).
+                const seen = labLearningReports().filter(r => r.axes);
+                TACTIC_AXES.forEach(a => {
+                    let v = Math.max(0, Math.min(10, cal[a].active ? cal[a].a + cal[a].b * raw[a] : raw[a]));
+                    const vs = seen.map(r => r.axes[a]).filter(x => typeof x === 'number');
+                    if (vs.length >= 4) v = Math.max(Math.min(...vs), Math.min(Math.max(...vs), v));
+                    axes[a] = v;
+                });
+            }
             const learned = learnSentenceAxes();
             const used = new Set();
+            // Most often reported at (about) this level of the axis; ties →
+            // closest usual level.
+            const support = (l, v) => (l.vals || []).filter(x => Math.abs(x - v) <= 0.5).length;
             const phraseFor = (axis, type) => {
-                const hit = learned.filter(l => l.axis === axis && l.type === type && !used.has(l.text)).sort((x, y) => y.n - x.n)[0];
+                const v = axes[axis];
+                const hit = learned.filter(l => l.axis === axis && l.type === type && !used.has(l.text))
+                    .sort((x, y) => (support(y, v) - support(x, v)) || (Math.abs(x.mean - v) - Math.abs(y.mean - v)) || (y.n - x.n))[0];
                 if (hit) { used.add(hit.text); return { text: hit.text, learned: true }; }
                 const p = APP_AXIS_PHRASES[axis][type === 'strength' ? 'high' : 'low'];
                 return { text: LAB_T(p.en, p.ar), learned: false };
             };
             const order = TACTIC_AXES.slice().sort((a, b) => axes[b] - axes[a]);
+            const known = emp && emp.sentences;
             return {
                 axes,
-                strengths: order.slice(0, 3).map(a => ({ axis: a, ...phraseFor(a, 'strength') })),
-                warnings: order.slice(3).reverse().map(a => ({ axis: a, ...phraseFor(a, 'warning') })),
-                calibrated: TACTIC_AXES.filter(a => cal[a].active).length
+                strengths: known ? known.strengths.map(t => ({ axis: null, text: t, learned: true })) : order.slice(0, 3).map(a => ({ axis: a, ...phraseFor(a, 'strength') })),
+                warnings: known ? known.warnings.map(t => ({ axis: null, text: t, learned: true })) : order.slice(3).reverse().map(a => ({ axis: a, ...phraseFor(a, 'warning') })),
+                calibrated: TACTIC_AXES.filter(a => cal[a].active).length,
+                empirical: emp ? { baseFormation: emp.baseFormation, measured: emp.measured, modelled: emp.modelled } : null
             };
         }
 
-        // --- hexagon drawing (same layout as the game) -------------------------
         function renderTacticHex(axes, opts) {
             const o = Object.assign({ size: 190, compare: null, dashed: false }, opts || {});
             const c = o.size / 2, R = o.size / 2 - 24;
@@ -4795,7 +4962,7 @@
                 </div>
                 <p class="text-[10px] text-gray-500 leading-snug">${rep
                     ? LAB_T(`Your recorded in-game result for this exact setup (${BUILD_UP_STYLES[setup.buildUp].en}, ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}).${rep.axes ? ' Orange dashes = app estimate.' : ''}`, `نتيجتك المسجّلة من اللعبة لهذا الإعداد بالضبط (${BUILD_UP_STYLES[setup.buildUp].ar}، ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}).${rep.axes ? ' الخط البرتقالي = تقدير التطبيق.' : ''}`)
-                    : LAB_T(`Estimated from these roles/focuses and the suggested tactics (${BUILD_UP_STYLES[setup.buildUp].en}, ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}) — not EA's exact calculation.${est.calibrated ? ` ${est.calibrated}/6 axes calibrated from your reports.` : ''} Italic = app wording until the game's sentence is reported.`, `تقدير من الأدوار والتركيزات والتكتيك المقترح (${BUILD_UP_STYLES[setup.buildUp].ar}، ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}) — ليس حساب EA الدقيق.${est.calibrated ? ` ${est.calibrated}/6 محاور معايرة من تقاريرك.` : ''} المائل = صياغة التطبيق حتى يُبلَّغ عن جملة اللعبة.`)}</p>`;
+                    : LAB_T(`Estimated from these roles/focuses and the suggested tactics (${BUILD_UP_STYLES[setup.buildUp].en}, ${DEF_APPROACHES[setup.approach].en} ${setup.lineHeight}) — not EA's exact calculation.${est.empirical ? ` Built from your reported ${est.empirical.baseFormation} baseline + ${est.empirical.measured} measured change(s)${est.empirical.modelled ? ` and ${est.empirical.modelled} not yet measured (modelled)` : ''}.` : (est.calibrated ? ` ${est.calibrated}/6 axes calibrated from your reports.` : '')} Italic = app wording until the game's sentence is reported.`, `تقدير من الأدوار والتركيزات والتكتيك المقترح (${BUILD_UP_STYLES[setup.buildUp].ar}، ${DEF_APPROACHES[setup.approach].ar} ${setup.lineHeight}) — ليس حساب EA الدقيق.${est.empirical ? ` مبني على تقريرك الأساسي لـ ${est.empirical.baseFormation} + ${est.empirical.measured} تغيير مُقاس${est.empirical.modelled ? ` و${est.empirical.modelled} غير مُقاس بعد (تقدير نموذج)` : ''}.` : (est.calibrated ? ` ${est.calibrated}/6 محاور معايرة من تقاريرك.` : '')} المائل = صياغة التطبيق حتى يُبلَّغ عن جملة اللعبة.`)}</p>`;
         }
 
         window.switchTab = function(tabId) {
