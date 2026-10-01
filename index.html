@@ -11088,6 +11088,14 @@
 
         // Shared card markup for both the suggestions list and search
         // results — one "Add" action either way.
+        // Manual searches include cards EasySBC hasn't priced yet (price 0);
+        // the optimizer, Regenerate and suggestions still never pick them.
+        function manualPriceLabel(player, coinLabel, isAr) {
+            return (typeof player.price === 'number' && player.price > 0)
+                ? `${player.price.toLocaleString()}${coinLabel}`
+                : `<span class="text-fc-gold" title="${isAr ? 'لم يُسعَّر بعد في EasySBC — لا يُحتسب في الميزانية' : 'Not priced by EasySBC yet — counts as 0 in the budget'}">${isAr ? 'بلا سعر بعد' : 'no price yet'}</span>`;
+        }
+
         function addPlayerCardHtml(player, chemPoints) {
             const isAr = currentLanguage === 'ar';
             const coinLabel = isAr ? 'ك' : 'c';
@@ -11101,7 +11109,7 @@
                         <img src="${player.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                         <div class="min-w-0">
                             <div class="text-xs font-bold text-white truncate">${player.name}</div>
-                            <div class="text-[10px] text-gray-400">${player.rating} OVR${metaTag} · ${player.price.toLocaleString()}${coinLabel} · ${player.pos}</div>
+                            <div class="text-[10px] text-gray-400">${player.rating} OVR${metaTag} · ${manualPriceLabel(player, coinLabel, isAr)} · ${player.pos}</div>
                         </div>
                     </div>
                     <div class="flex flex-col items-end gap-1 shrink-0">
@@ -11146,7 +11154,8 @@
             if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
 
             const usedIds = new Set(Object.values(squadState.selectedXI).filter(Boolean).map(p => playerIdentityKey(p)));
-            const matches = getActiveDatabase().filter(p => nameMatchesQuery(p.name, q) && !usedIds.has(playerIdentityKey(p))).slice(0, 8);
+            // Manual search: include unpriced (0-value) cards too.
+            const matches = getActiveDatabase({ requirePriced: false }).filter(p => nameMatchesQuery(p.name, q) && !usedIds.has(playerIdentityKey(p))).slice(0, 8);
             if (matches.length === 0) {
                 resultsContainer.innerHTML = `<p class="text-xs text-gray-500 italic">${currentLanguage === 'ar' ? 'لا توجد نتائج مطابقة.' : 'No matching players found.'}</p>`;
                 return;
@@ -12786,7 +12795,8 @@
             const isAr = currentLanguage === 'ar';
             const coinLabel = isAr ? 'ك' : 'c';
 
-            const matches = getActiveDatabase().filter(p =>
+            // Manual search: include unpriced (0-value) cards too.
+            const matches = getActiveDatabase({ requirePriced: false }).filter(p =>
                 nameMatchesQuery(p.name, q) &&
                 (p.pos === effectivePos || (p.alt && p.alt.includes(effectivePos)))
             ).slice(0, 8);
@@ -12798,7 +12808,8 @@
             resultsContainer.innerHTML = matches.map(candidate => {
                 const isSamePlayer = currentPlayer && candidate.id === currentPlayer.id;
                 const metaDelta = getMetaValue(candidate) - getMetaValue(currentPlayer);
-                const priceDelta = candidate.price - effectivePrice(currentPlayer);
+                // An unpriced card isn't "cheaper" — its price is unknown.
+                const priceDelta = (typeof candidate.price === 'number' && candidate.price > 0) ? candidate.price - effectivePrice(currentPlayer) : 0;
                 const candMetaTag = typeof candidate.meta === 'number' ? ` · MR ${candidate.meta.toFixed(1)}` : '';
 
                 let verdictIcon, verdictColor, verdictText;
@@ -12836,7 +12847,7 @@
                                 <img src="${candidate.photo}" class="w-9 h-9 rounded-full object-cover border border-fc-border shrink-0 bg-fc-card" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                                 <div class="min-w-0">
                                     <div class="text-xs font-bold text-white truncate">${candidate.name}</div>
-                                    <div class="text-[10px] text-gray-400">${candidate.rating} OVR${candMetaTag} · ${candidate.price.toLocaleString()}${coinLabel} · ${candidate.pos}</div>
+                                    <div class="text-[10px] text-gray-400">${candidate.rating} OVR${candMetaTag} · ${manualPriceLabel(candidate, coinLabel, isAr)} · ${candidate.pos}</div>
                                 </div>
                             </div>
                             ${swapBtn}
