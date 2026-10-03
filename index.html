@@ -921,11 +921,21 @@
         <!-- ================= VIEW 5: PLAYERS (standalone lookup) ================= -->
         <div id="view-players" class="hidden space-y-6">
             <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-4">
-                <div>
-                    <h2 data-i18n="playersTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Players</h2>
-                    <p data-i18n="playersDesc" class="text-gray-400 text-sm md:text-base">
-                        Look up any player in the database on their own — no squad or slot needed.
-                    </p>
+                <div class="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                        <h2 data-i18n="playersTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Players</h2>
+                        <p data-i18n="playersDesc" class="text-gray-400 text-sm md:text-base">
+                            Look up any player in the database on their own — no squad or slot needed.
+                        </p>
+                    </div>
+                    <!-- Player Comparison entry point (2–3 players). Picks
+                         are added from the ⇄ button on any search result
+                         or from any player modal; see PLAYER COMPARISON. -->
+                    <button onclick="window.openCompareModal()" class="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-200 hover:text-fc-accent hover:border-fc-accent/50 transition-all">
+                        <i class="fa-solid fa-code-compare"></i>
+                        <span data-i18n="cmpOpenBtn">Compare Players</span>
+                        <span id="players-compare-count" class="px-1.5 py-0.5 rounded-md bg-fc-accent/15 text-fc-accent text-[10px] font-black" style="direction:ltr;unicode-bidi:isolate;">0/3</span>
+                    </button>
                 </div>
                 <div class="relative">
                     <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none"></i>
@@ -1188,6 +1198,35 @@
             </button>
             <div id="player-modal-scroll" class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-6 space-y-6">
                 <div id="modal-player-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= PLAYER COMPARISON (2–3 players) =================
+         Tray: floats at the bottom of every tab whenever at least one
+         player is picked, so picks can be collected from the Players
+         tab, the squad pitch, My Club — anywhere the player modal opens.
+         Modal: the side-by-side comparison itself (renderCompareModal). -->
+    <div id="compare-tray" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-[95vw]">
+        <div class="flex items-center gap-2 bg-fc-card/95 backdrop-blur-md border border-fc-accent/40 rounded-2xl shadow-2xl px-3 py-2">
+            <div id="compare-tray-avatars" class="flex items-center gap-1.5"></div>
+            <span id="compare-tray-msg" class="hidden text-[11px] font-bold text-orange-300 px-1"></span>
+            <button id="compare-tray-open" onclick="window.openCompareModal()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-fc-accent text-fc-dark text-xs font-black hover:bg-fc-accentHover disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                <i class="fa-solid fa-code-compare"></i><span id="compare-tray-open-label">Compare</span>
+            </button>
+            <button onclick="window.clearCompareList()" id="compare-tray-clear" class="w-8 h-8 rounded-xl bg-fc-dark border border-fc-border text-gray-400 hover:text-white text-xs transition-all" title="Clear">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="compare-modal" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="window.closeCompareModal()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-5xl w-full max-h-[90vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <button onclick="window.closeCompareModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div id="compare-modal-scroll" class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-5 md:p-6">
+                <div id="compare-modal-content"></div>
             </div>
         </div>
     </div>
@@ -1593,6 +1632,7 @@
                 importSquadInvalid: "That doesn't look like a valid squad share code.",
                 navPlayers: "Players",
                 playersTitle: "Players",
+                cmpOpenBtn: "Compare Players",
                 playersDesc: "Look up any player in the database on their own — no squad or slot needed.",
                 searchPlayerPlaceholder: "Type a player name…",
                 playersSearchOr: "or find the best fit for a specific role",
@@ -1809,6 +1849,7 @@
                 importSquadInvalid: "هذا لا يبدو كوداً صحيحاً لمشاركة تشكيلة.",
                 navPlayers: "اللاعبون",
                 playersTitle: "اللاعبون",
+                cmpOpenBtn: "مقارنة اللاعبين",
                 playersDesc: "ابحث عن أي لاعب في قاعدة البيانات بشكل مستقل — دون الحاجة لتشكيلة أو مركز.",
                 searchPlayerPlaceholder: "اكتب اسم اللاعب…",
                 playersSearchOr: "أو ابحث عن الأنسب لدور معين",
@@ -1929,6 +1970,7 @@
             window.renderPresetPoints();
             window.calculatePackReturns();
             window.updateDatabaseStats();
+            if (typeof window.refreshCompareUi === 'function') window.refreshCompareUi();
 
             // Re-render whatever squad is already on screen in the new
             // language instead of rebuilding it. runSquadOptimizer() is
@@ -4987,6 +5029,7 @@
             if (tabId === 'mysquads' && typeof window.renderSavedSquadsList === 'function') {
                 window.renderSavedSquadsList();
             }
+            if (typeof window.refreshCompareUi === 'function') window.refreshCompareUi();
             if (tabId === 'players' && typeof renderGeneralStatsPanel === 'function') {
                 renderGeneralStatsPanel();
             }
@@ -11225,7 +11268,8 @@
             const coinLabel = isAr ? 'ك' : 'c';
             const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
             return `
-                <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
+                <div class="flex items-stretch gap-1.5">
+                <button onclick="window.openStandalonePlayerModal('${p.id}')" class="min-w-0 flex-1 flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
                     <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-bold text-white truncate">${p.name}</div>
@@ -11233,6 +11277,8 @@
                     </div>
                     <i class="fa-solid fa-chevron-${isAr ? 'left' : 'right'} text-gray-600 text-xs shrink-0"></i>
                 </button>
+                ${compareToggleMiniHtml(p.id)}
+                </div>
             `;
         }
 
@@ -11318,7 +11364,8 @@
             const coinLabel = isAr ? 'ك' : 'c';
             const metaTag = typeof p.meta === 'number' ? ` · MR ${p.meta.toFixed(1)}` : '';
             return `
-                <button onclick="window.openStandalonePlayerModal('${p.id}')" class="w-full flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
+                <div class="flex items-stretch gap-1.5">
+                <button onclick="window.openStandalonePlayerModal('${p.id}')" class="min-w-0 flex-1 flex items-center gap-3 bg-fc-card hover:bg-fc-cardHover border border-fc-border hover:border-fc-accent/50 rounded-xl p-3 text-left rtl:text-right transition-all">
                     <img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border shrink-0 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-bold text-white truncate">${p.name}</div>
@@ -11329,6 +11376,8 @@
                         <div class="text-[10px] font-bold text-gray-500">${(p.price || 0).toLocaleString()}${coinLabel}</div>
                     </div>
                 </button>
+                ${compareToggleMiniHtml(p.id)}
+                </div>
             `;
         }
 
@@ -11408,6 +11457,598 @@
             if (!player) return;
             window.openPlayerModal(player, null, undefined, false, true);
         };
+
+        // ===================================================================
+        // PLAYER COMPARISON — 2 or 3 players side by side.
+        // Picks are collected from anywhere a player can be opened (the ⇄
+        // button on Players-tab results, or "Add to Compare" in any player
+        // modal — squad pitch, My Club, Players tab) into a floating tray,
+        // then compared in #compare-modal. Ids persist in localStorage
+        // (fc27_compare_players) like saved squads do. Everything shown is
+        // the cards' own numbers plus the same key-attribute fit (3–2–1)
+        // and rated-74+ position averages the rest of the app uses — it
+        // describes the numbers only and never claims who wins a match.
+        // ===================================================================
+        const COMPARE_MAX = 3;
+        const COMPARE_STORAGE_KEY = 'fc27_compare_players';
+        const COMPARE_POSITIONS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
+        let compareIds = (() => {
+            try {
+                const v = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]');
+                return Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, COMPARE_MAX) : [];
+            } catch (e) { return []; }
+        })();
+        // Player objects that may not be in the database (share-code
+        // stand-ins opened in a modal) — session only.
+        const compareObjCache = new Map();
+        // id → { status: 'loading' | 'ok' | 'fail', data }
+        const compareDetailState = new Map();
+        let compareSelectedPos = null; // null = auto-pick a position every player can play
+        let compareSearchQuery = '';
+        let compareMsgTimer = null;
+
+        function cmpEsc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function persistCompareIds() {
+            try { localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(compareIds)); } catch (e) { /* ignore */ }
+        }
+        function findComparePlayer(id) {
+            const db = getActiveDatabase({ requirePriced: false, ignorePool: true });
+            return db.find(p => p.id === id)
+                || (Array.isArray(fc27Database) ? fc27Database.find(p => p.id === id) : null)
+                || compareObjCache.get(id) || null;
+        }
+        function getComparePlayers() {
+            return compareIds.map(findComparePlayer).filter(Boolean);
+        }
+        function isInCompare(id) { return compareIds.includes(id); }
+        function compareModalIsOpen() {
+            const m = document.getElementById('compare-modal');
+            return !!m && !m.classList.contains('hidden');
+        }
+
+        function flashCompareMsg(text) {
+            const el = document.getElementById('compare-tray-msg');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.remove('hidden');
+            clearTimeout(compareMsgTimer);
+            compareMsgTimer = setTimeout(() => el.classList.add('hidden'), 2600);
+        }
+
+        window.toggleComparePlayer = function(id) {
+            if (!id) return false;
+            const isAr = currentLanguage === 'ar';
+            if (isInCompare(id)) {
+                compareIds = compareIds.filter(x => x !== id);
+            } else {
+                // Never silently drop an earlier pick — say why instead.
+                if (compareIds.length >= COMPARE_MAX) {
+                    flashCompareMsg(isAr ? 'الحد الأقصى 3 لاعبين — احذف واحداً أولاً' : 'Max 3 players — remove one first');
+                    return false;
+                }
+                compareIds.push(id);
+            }
+            persistCompareIds();
+            window.refreshCompareUi();
+            return true;
+        };
+
+        window.toggleCompareFromModal = function(id) {
+            const p = lastPlayerModalArgs && lastPlayerModalArgs[0];
+            if (p && p.id === id) compareObjCache.set(id, p);
+            window.toggleComparePlayer(id);
+        };
+
+        window.clearCompareList = function() {
+            compareIds = [];
+            compareSelectedPos = null;
+            persistCompareIds();
+            window.refreshCompareUi();
+        };
+
+        // Small square toggle placed beside each Players-tab search result.
+        function compareToggleMiniHtml(id) {
+            const isAr = currentLanguage === 'ar';
+            const inList = isInCompare(id);
+            const full = !inList && compareIds.length >= COMPARE_MAX;
+            const title = inList ? (isAr ? 'إزالة من المقارنة' : 'Remove from comparison')
+                : (full ? (isAr ? 'المقارنة ممتلئة (3/3)' : 'Comparison full (3/3)') : (isAr ? 'أضف للمقارنة' : 'Add to comparison'));
+            const cls = inList
+                ? 'bg-fc-accent/20 text-fc-accent border-fc-accent/50'
+                : 'bg-fc-card text-gray-400 border-fc-border hover:text-fc-accent hover:border-fc-accent/50';
+            return `<button onclick="event.stopPropagation(); window.toggleComparePlayer('${id}')" title="${title}" ${full ? 'disabled' : ''}
+                class="shrink-0 w-11 rounded-xl border flex items-center justify-center text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed ${cls}">
+                <i class="fa-solid ${inList ? 'fa-check' : 'fa-code-compare'}"></i>
+            </button>`;
+        }
+
+        // Button inside the player modal (works from every tab).
+        function modalCompareBtnHtml(player) {
+            const isAr = currentLanguage === 'ar';
+            if (!player || !player.id) return '';
+            const inList = isInCompare(player.id);
+            const full = !inList && compareIds.length >= COMPARE_MAX;
+            const count = `<span style="direction:ltr;unicode-bidi:isolate;">${compareIds.length}/${COMPARE_MAX}</span>`;
+            const label = inList ? (isAr ? 'في المقارنة — إزالة' : 'In Comparison — Remove')
+                : (full ? (isAr ? 'المقارنة ممتلئة' : 'Comparison Full') : (isAr ? 'أضف للمقارنة' : 'Add to Compare'));
+            const cls = inList
+                ? 'bg-fc-accent/20 text-fc-accent border border-fc-accent/40 hover:bg-fc-accent/30'
+                : 'bg-fc-dark text-gray-400 border border-fc-border hover:text-fc-accent hover:border-fc-accent/40';
+            const goBtn = (inList && compareIds.length >= 2) ? `
+                <button onclick="window.openCompareModal()" class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-fc-accent text-fc-dark hover:bg-fc-accentHover transition-all">
+                    <i class="fa-solid fa-arrow-${isAr ? 'left' : 'right'}"></i>${isAr ? 'قارن الآن' : 'Compare Now'}
+                </button>` : '';
+            return `<span id="modal-compare-slot" class="inline-flex items-center gap-2 flex-wrap">
+                <button onclick="window.toggleCompareFromModal('${player.id}')" ${full ? 'disabled' : ''}
+                    class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${cls}">
+                    <i class="fa-solid ${inList ? 'fa-check' : 'fa-code-compare'}"></i>${label} <span class="opacity-70">(${count})</span>
+                </button>${goBtn}
+            </span>`;
+        }
+
+        function renderCompareTray() {
+            const tray = document.getElementById('compare-tray');
+            const avatars = document.getElementById('compare-tray-avatars');
+            if (!tray || !avatars) return;
+            const isAr = currentLanguage === 'ar';
+            const players = getComparePlayers();
+            if (compareIds.length === 0) { tray.classList.add('hidden'); return; }
+            tray.classList.remove('hidden');
+            // Iterate ids (not found players) so a pick whose card isn't in
+            // the loaded database yet still shows — and can be removed —
+            // instead of silently holding one of the 3 slots.
+            let html = compareIds.map(id => ({ id, p: findComparePlayer(id) })).map(({ id, p }) => `
+                <div class="relative">
+                    ${p ? `<img src="${p.photo}" title="${cmpEsc(p.name)}" class="w-9 h-9 rounded-full object-cover border-2 border-fc-accent/60 bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">`
+                        : `<div class="w-9 h-9 rounded-full border-2 border-fc-border bg-fc-dark flex items-center justify-center text-gray-500 text-xs animate-pulse">?</div>`}
+                    <button onclick="window.toggleComparePlayer('${id}')" class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-fc-dark border border-fc-border text-[8px] text-gray-300 hover:text-white flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+                </div>`).join('');
+            for (let i = compareIds.length; i < COMPARE_MAX; i++) {
+                html += `<div class="w-9 h-9 rounded-full border-2 border-dashed border-fc-border flex items-center justify-center text-gray-600 text-[10px]"><i class="fa-solid fa-plus"></i></div>`;
+            }
+            avatars.innerHTML = html;
+            const openBtn = document.getElementById('compare-tray-open');
+            const openLbl = document.getElementById('compare-tray-open-label');
+            if (openBtn) openBtn.disabled = players.length < 2;
+            if (openLbl) openLbl.innerHTML = `${isAr ? 'قارن' : 'Compare'} <span style="direction:ltr;unicode-bidi:isolate;">${players.length}/${COMPARE_MAX}</span>`;
+            const clearBtn = document.getElementById('compare-tray-clear');
+            if (clearBtn) clearBtn.title = isAr ? 'مسح' : 'Clear';
+        }
+
+        window.refreshCompareUi = function() {
+            renderCompareTray();
+            const countEl = document.getElementById('players-compare-count');
+            if (countEl) countEl.textContent = `${compareIds.length}/${COMPARE_MAX}`;
+            if (playerSearchState && Array.isArray(playerSearchState.results) && playerSearchState.results.length && playerSearchState.renderItem) {
+                renderPlayerSearchPage();
+            }
+            const slot = document.getElementById('modal-compare-slot');
+            const modalPlayer = lastPlayerModalArgs && lastPlayerModalArgs[0];
+            if (slot && modalPlayer) slot.outerHTML = modalCompareBtnHtml(modalPlayer);
+            if (compareModalIsOpen()) renderCompareModal();
+        };
+
+        window.openCompareModal = function() {
+            if (typeof window.closePlayerModal === 'function') window.closePlayerModal();
+            const modal = document.getElementById('compare-modal');
+            if (!modal) return;
+            compareSearchQuery = '';
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            renderCompareModal();
+            const scrollWrap = document.getElementById('compare-modal-scroll');
+            if (scrollWrap) requestAnimationFrame(() => { scrollWrap.scrollTop = 0; });
+        };
+        window.closeCompareModal = function() {
+            const modal = document.getElementById('compare-modal');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+        };
+        window.setComparePosition = function(pos) {
+            compareSelectedPos = pos || null;
+            renderCompareModal();
+        };
+        window.openPlayerFromCompare = function(id) {
+            const p = findComparePlayer(id);
+            if (!p) return;
+            window.closeCompareModal();
+            window.openPlayerModal(p, null, undefined, false, true);
+        };
+
+        // Search box inside the comparison modal — add a player without
+        // leaving it. Only the results list re-renders while typing, so
+        // the input keeps focus.
+        window.compareSearch = function(q) {
+            compareSearchQuery = q;
+            const box = document.getElementById('cmp-search-results');
+            if (!box) return;
+            const query = q.trim().toLowerCase();
+            if (query.length < 2) { box.innerHTML = ''; return; }
+            const isAr = currentLanguage === 'ar';
+            const matches = getActiveDatabase({ requirePriced: false, ignorePool: true })
+                .filter(p => nameMatchesQuery(p.name, query) && !isInCompare(p.id))
+                .sort((a, b) => getMetaValue(b) - getMetaValue(a))
+                .slice(0, 8);
+            box.innerHTML = matches.length === 0
+                ? `<div class="text-xs text-gray-500 px-2 py-2">${isAr ? 'لا توجد نتائج' : 'No results'}</div>`
+                : matches.map(p => `
+                    <button onclick="window.addCompareFromSearch('${p.id}')" class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-fc-cardHover text-left rtl:text-right transition-all">
+                        <img src="${p.photo}" class="w-8 h-8 rounded-full object-cover border border-fc-border bg-fc-dark shrink-0" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-xs font-bold text-white truncate">${cmpEsc(p.name)}</span>
+                            <span class="block text-[10px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${p.rating} · ${p.pos} · ${(p.price || 0).toLocaleString()}${isAr ? 'ك' : 'c'}</span>
+                        </span>
+                        <i class="fa-solid fa-plus text-fc-accent text-xs"></i>
+                    </button>`).join('');
+        };
+        window.addCompareFromSearch = function(id) {
+            compareSearchQuery = '';
+            window.toggleComparePlayer(id);
+        };
+
+        function getCompareAutoPos(players) {
+            if (!players.length) return 'CM';
+            const candidates = [players[0].pos, ...(players[0].alt || [])];
+            const shared = candidates.find(pos => players.every(p => getPositionRelation(p, pos)));
+            return shared || players[0].pos;
+        }
+        function getCompareEffectivePos(players) {
+            return compareSelectedPos || getCompareAutoPos(players);
+        }
+
+        function ensureCompareDetails(players) {
+            players.forEach(p => {
+                if (compareDetailState.has(p.id)) return;
+                if (typeof p.id !== 'string' || !p.id.startsWith('easysbc_')) {
+                    compareDetailState.set(p.id, { status: 'fail', data: null });
+                    return;
+                }
+                compareDetailState.set(p.id, { status: 'loading', data: null });
+                getPlayerDetail(p.id.replace('easysbc_', '')).then(res => {
+                    const data = res && res.data ? res.data : null;
+                    compareDetailState.set(p.id, { status: data ? 'ok' : 'fail', data });
+                }).catch(() => {
+                    compareDetailState.set(p.id, { status: 'fail', data: null });
+                }).finally(() => {
+                    if (compareModalIsOpen()) updateCompareAsyncSections();
+                });
+            });
+        }
+
+        // One comparison row: label on top, one cell per player. Highest
+        // value is marked (lowest when higherBetter:false); other cells show
+        // their gap to it. A full tie marks nobody. Optional tally records
+        // which players are highest, for the summary.
+        function cmpRow(label, vals, opts = {}) {
+            const n = vals.length;
+            const nums = vals.filter(v => typeof v === 'number' && !isNaN(v));
+            const dir = opts.higherBetter === false ? -1 : 1;
+            let best = null;
+            if (!opts.noHighlight && nums.length >= 2) {
+                best = dir > 0 ? Math.max(...nums) : Math.min(...nums);
+                if (nums.length === n && nums.every(v => v === best)) best = null;
+            }
+            const fmt = opts.fmt || (v => Math.round(v));
+            const bestCls = opts.bestClass || 'text-green-400';
+            const cells = vals.map((v, i) => {
+                const has = typeof v === 'number' && !isNaN(v);
+                const isBest = has && best !== null && v === best;
+                if (isBest && opts.tally) opts.tally[i] = (opts.tally[i] || 0) + 1;
+                const display = !has ? '<span class="text-gray-600">—</span>' : (opts.display ? opts.display(v, i) : fmt(v));
+                let gap = '';
+                if (has && best !== null && !isBest && !opts.noGap) {
+                    const d = Math.abs(best - v);
+                    gap = `<span class="text-[10px] font-bold text-gray-500" style="direction:ltr;unicode-bidi:isolate;">${dir > 0 ? '−' : '+'}${opts.gapFmt ? opts.gapFmt(d) : fmt(d)}</span>`;
+                }
+                const bar = (opts.bar && has) ? `
+                    <div class="h-1.5 mt-1.5 rounded-full bg-fc-dark overflow-hidden">
+                        <div class="h-full rounded-full" style="width:${Math.max(0, Math.min(100, v / 99 * 100))}%;background:${getAttrBarGradient(v)};"></div>
+                    </div>` : '';
+                return `
+                    <div class="bg-fc-dark/60 rounded-lg px-2 py-1.5 ${isBest ? 'ring-1 ring-green-500/40' : ''}">
+                        <div class="flex items-center justify-center gap-1.5">
+                            <span class="text-sm font-black ${isBest ? bestCls : 'text-white'}" style="direction:ltr;unicode-bidi:isolate;">${display}</span>
+                            ${isBest ? `<i class="fa-solid fa-caret-up text-[10px] ${bestCls}"></i>` : gap}
+                        </div>
+                        ${bar}
+                    </div>`;
+            }).join('');
+            return `
+                <div>
+                    <div class="text-[11px] font-bold text-gray-400 text-center mb-1">${label}</div>
+                    <div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${cells}</div>
+                </div>`;
+        }
+        function cmpTextRow(label, texts) {
+            return `
+                <div>
+                    <div class="text-[11px] font-bold text-gray-400 text-center mb-1">${label}</div>
+                    <div class="grid gap-2" style="grid-template-columns:repeat(${texts.length},minmax(0,1fr));">
+                        ${texts.map(t => `<div class="bg-fc-dark/60 rounded-lg px-2 py-1.5 text-center text-xs font-bold text-white">${t}</div>`).join('')}
+                    </div>
+                </div>`;
+        }
+        function cmpSection(title, icon, body, id) {
+            return `
+                <div class="bg-fc-dark/40 border border-fc-border rounded-2xl p-4 space-y-3" ${id ? `id="${id}"` : ''}>
+                    <div class="flex items-center gap-2 text-sm font-extrabold text-white"><i class="fa-solid ${icon} text-fc-accent"></i>${title}</div>
+                    ${body}
+                </div>`;
+        }
+
+        // Tallies of "highest value" per player, gathered while rendering
+        // the numeric attribute rows, for the written summary.
+        let compareTally = { face: [], detail: [] };
+
+        function buildCompareDetailBody(players, pos) {
+            const isAr = currentLanguage === 'ar';
+            const states = players.map(p => compareDetailState.get(p.id) || { status: 'loading', data: null });
+            if (states.some(s => s.status === 'loading')) {
+                return `<div class="text-xs text-gray-500 italic animate-pulse text-center py-3">${isAr ? 'جارٍ جلب البيانات الفعلية للاعبين…' : 'Fetching real player data…'}</div>`;
+            }
+            const tally = [];
+            const heights = states.map(s => s.data && typeof s.data.height === 'number' ? s.data.height : null);
+            let html = cmpRow(isAr ? 'الطول (سم)' : 'Height (cm)', heights, { noHighlight: true });
+            html += cmpTextRow(isAr ? 'الإحساس الحركي (AcceleRATE)' : 'Movement Feel (AcceleRATE)', players.map((p, i) => {
+                if (p.pos === 'GK') return `<span class="text-gray-500">${isAr ? 'لا ينطبق' : 'N/A'}</span>`;
+                const d = states[i].data;
+                const t = d ? computeVerifiedAccelerateType(d) : null;
+                return t ? `<span style="color:${t.color}">${t.type} ✓</span>` : `<span class="text-gray-500">${isAr ? 'تعذّر التحقق' : "Couldn't verify"}</span>`;
+            }));
+            const keys = getGranularKeys(pos, null).keys;
+            keys.forEach(key => {
+                const def = GRANULAR_ATTR_DEFS[key];
+                if (!def) return;
+                const vals = states.map(s => s.data ? getGranularValue(s.data, def.candidates, key) : null);
+                html += cmpRow(isAr ? def.ar : def.en, vals, { bar: true, tally });
+            });
+            compareTally.detail = tally;
+            const failed = players.filter((p, i) => states[i].status !== 'ok');
+            if (failed.length) {
+                html += `<p class="text-[11px] text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية لـ: ' : "Couldn't verify real data for: "}${failed.map(p => cmpEsc(p.name)).join(', ')}</p>`;
+            }
+            return `<p class="text-[11px] text-gray-500">${isAr ? `الإحصاءات التفصيلية المهمة لمركز ${pos}` : `The in-game sub-stats that matter at ${pos}`}</p><div class="space-y-2.5">${html}</div>`;
+        }
+
+        function buildCompareSummary(players, pos) {
+            const isAr = currentLanguage === 'ar';
+            const fits = players.map(p => computeKeyAttrFitScore(p, pos));
+            const states = players.map(p => compareDetailState.get(p.id));
+            const detailReady = states.every(s => s && s.status !== 'loading');
+            const lines = [];
+            const fitNums = fits.filter(f => f != null);
+            if (fitNums.length >= 2) {
+                const max = Math.max(...fitNums);
+                const top = players.filter((p, i) => fits[i] === max);
+                if (top.length < players.length) {
+                    lines.push(isAr
+                        ? `على الخصائص الرئيسية لمركز ${pos} (وزن 3–2–1)، أعلى ملاءمة هي لـ <b>${top.map(p => cmpEsc(p.name)).join(' و ')}</b> (${max.toFixed(1)}).`
+                        : `On ${pos}'s key attributes (3–2–1 weighted), the highest fit is <b>${top.map(p => cmpEsc(p.name)).join(' & ')}</b> (${max.toFixed(1)}).`);
+                } else {
+                    lines.push(isAr ? `ملاءمة متساوية على الخصائص الرئيسية لمركز ${pos}.` : `Identical fit on ${pos}'s key attributes.`);
+                }
+            }
+            const faceTotal = players.map((p, i) => compareTally.face[i] || 0);
+            const parts = players.map((p, i) => `<b>${cmpEsc(p.name)}</b> ${faceTotal[i]}`);
+            lines.push(isAr
+                ? `الإحصاءات الأساسية الست — عدد مرات الأعلى: ${parts.join('، ')}.`
+                : `Face stats — times highest: ${parts.join(', ')}.`);
+            if (detailReady && states.some(st => st && st.status === 'ok')) {
+                const detParts = players.map((p, i) => `<b>${cmpEsc(p.name)}</b> ${compareTally.detail[i] || 0}`);
+                lines.push(isAr
+                    ? `الإحصاءات التفصيلية لمركز ${pos} — عدد مرات الأعلى: ${detParts.join('، ')}.`
+                    : `${pos} in-game sub-stats — times highest: ${detParts.join(', ')}.`);
+            }
+            const outOfPos = players.filter(p => !getPositionRelation(p, pos));
+            if (outOfPos.length) {
+                lines.push(isAr
+                    ? `${outOfPos.map(p => cmpEsc(p.name)).join(' و ')}: خارج المركز في ${pos} — اختر مركزاً آخر للمقارنة إن أردت.`
+                    : `${outOfPos.map(p => cmpEsc(p.name)).join(' & ')} would be out of position at ${pos} — pick another position above if that's not the comparison you want.`);
+            }
+            const prices = players.map(p => p.price || 0);
+            if (prices.every(v => v > 0)) {
+                const minP = Math.min(...prices);
+                const cheap = players.filter(p => (p.price || 0) === minP);
+                if (cheap.length < players.length) {
+                    const maxP = Math.max(...prices);
+                    lines.push(isAr
+                        ? `الأرخص: <b>${cheap.map(p => cmpEsc(p.name)).join(' و ')}</b> — فرق السعر حتى ${(maxP - minP).toLocaleString()} كوينز.`
+                        : `Cheapest: <b>${cheap.map(p => cmpEsc(p.name)).join(' & ')}</b> — price gap up to ${(maxP - minP).toLocaleString()} coins.`);
+                }
+            }
+            return `
+                <div ${isAr ? 'dir="rtl"' : ''} class="space-y-1.5 text-xs text-gray-300 leading-relaxed">
+                    ${lines.map(l => `<p>${l}</p>`).join('')}
+                    <p class="text-[10px] text-gray-500 italic pt-1">${isAr
+                        ? 'التعادل يُحسب لكل لاعب متعادل. هذه قراءة للأرقام فقط — ولا تتنبأ بمن سيقدّم أداءً أفضل في المباراة.'
+                        : 'Ties count for each tied player. This reads the numbers only — it does not predict who performs better in a match.'}</p>
+                </div>`;
+        }
+
+        function updateCompareAsyncSections() {
+            const players = getComparePlayers();
+            if (players.length < 2) return;
+            const pos = getCompareEffectivePos(players);
+            const detailEl = document.getElementById('cmp-detail-body');
+            if (detailEl) detailEl.innerHTML = buildCompareDetailBody(players, pos);
+            const sumEl = document.getElementById('cmp-summary-body');
+            if (sumEl) sumEl.innerHTML = buildCompareSummary(players, pos);
+        }
+
+        function renderCompareModal() {
+            const content = document.getElementById('compare-modal-content');
+            if (!content) return;
+            const isAr = currentLanguage === 'ar';
+            const players = getComparePlayers();
+            const n = players.length;
+
+            const searchBar = n < COMPARE_MAX ? `
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none"></i>
+                    <input type="text" id="cmp-search-input" value="${cmpEsc(compareSearchQuery)}" oninput="window.compareSearch(this.value)"
+                        placeholder="${isAr ? `أضف لاعباً (${n}/${COMPARE_MAX})…` : `Add a player (${n}/${COMPARE_MAX})…`}"
+                        class="w-full bg-fc-dark border border-fc-border rounded-xl pl-9 pr-4 rtl:pl-4 rtl:pr-9 py-2.5 text-sm text-white focus:outline-none focus:border-fc-accent">
+                    <div id="cmp-search-results" class="mt-1 max-h-64 overflow-y-auto hide-scrollbar"></div>
+                </div>` : '';
+
+            const titleHtml = `
+                <div class="pr-10 rtl:pr-0 rtl:pl-10">
+                    <h3 class="text-lg md:text-xl font-black text-white flex items-center gap-2"><i class="fa-solid fa-code-compare text-fc-accent"></i>${isAr ? 'مقارنة اللاعبين' : 'Player Comparison'}</h3>
+                    <p class="text-xs text-gray-400 mt-1">${isAr ? 'قارن لاعبَين أو ثلاثة جنباً إلى جنب — الأعلى في كل سطر مُعلَّم بالأخضر.' : 'Compare two or three players side by side — the highest in each row is marked green.'}</p>
+                </div>`;
+
+            if (n < 2) {
+                content.innerHTML = `
+                    <div class="space-y-4">
+                        ${titleHtml}
+                        ${searchBar}
+                        <div class="text-center py-8 text-sm text-gray-500">
+                            <i class="fa-solid fa-users text-2xl mb-2 block text-gray-600"></i>
+                            ${n === 0
+                                ? (isAr ? 'اختر لاعبَين على الأقل للمقارنة.' : 'Pick at least two players to compare.')
+                                : (isAr ? `تم اختيار ${cmpEsc(players[0].name)} — أضف لاعباً آخر على الأقل.` : `${cmpEsc(players[0].name)} picked — add at least one more.`)}
+                            <div class="text-[11px] mt-1">${isAr ? 'ابحث هنا، أو استخدم زر ⇄ في نتائج تبويب اللاعبين، أو "أضف للمقارنة" في نافذة أي لاعب.' : 'Search here, use the ⇄ button on Players-tab results, or "Add to Compare" in any player window.'}</div>
+                        </div>
+                    </div>`;
+                if (compareSearchQuery) window.compareSearch(compareSearchQuery);
+                return;
+            }
+
+            ensureCompareDetails(players);
+            const pos = getCompareEffectivePos(players);
+            const isGkPos = pos === 'GK';
+            const cols = `grid-template-columns:repeat(${n},minmax(0,1fr));`;
+
+            // --- Player header cards ---
+            const headers = players.map(p => {
+                const flag = getNationFlag(p.nationId);
+                const logo = getLeagueLogoUrl(p.leagueId);
+                return `
+                    <div class="relative bg-gradient-to-b from-fc-card to-fc-dark border border-fc-border rounded-2xl p-3 text-center">
+                        <button onclick="window.toggleComparePlayer('${p.id}')" title="${isAr ? 'إزالة' : 'Remove'}" class="absolute top-2 right-2 w-6 h-6 rounded-full bg-fc-dark border border-fc-border text-[10px] text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                        <button onclick="window.openPlayerFromCompare('${p.id}')" class="block mx-auto">
+                            <img src="${p.photo}" class="w-14 h-14 md:w-16 md:h-16 rounded-2xl object-cover border-2 border-fc-accent/60 bg-fc-dark mx-auto" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                        </button>
+                        <div class="mt-2 text-sm font-extrabold text-white truncate" title="${cmpEsc(p.name)}">${cmpEsc(p.name)}</div>
+                        <div class="flex items-center justify-center gap-1 mt-1 flex-wrap" style="direction:ltr;">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-fc-accent/20 text-fc-accent border border-fc-accent/30">${p.pos}</span>
+                            ${(p.alt || []).map(a => `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-fc-dark text-gray-400 border border-fc-border">${a}</span>`).join('')}
+                        </div>
+                        ${(flag || logo) ? `<div class="flex items-center justify-center gap-1.5 mt-1.5">
+                            ${flag ? `<span class="inline-flex items-center justify-center w-5 h-5 rounded bg-white text-xs leading-none overflow-hidden" title="${cmpEsc(getNationName(p.nationId) || '')}">${flag}</span>` : ''}
+                            ${logo ? `<span class="inline-flex items-center justify-center w-5 h-5 rounded bg-white p-0.5 overflow-hidden"><img src="${logo}" class="w-full h-full object-contain" title="${cmpEsc(getLeagueName(p.leagueId) || '')}" onerror="this.parentElement.style.display='none'"></span>` : ''}
+                        </div>` : ''}
+                    </div>`;
+            }).join('');
+
+            // --- Position picker: positions any picked player can play first ---
+            const playable = [];
+            players.forEach(p => [p.pos, ...(p.alt || [])].forEach(x => { if (!playable.includes(x)) playable.push(x); }));
+            const others = COMPARE_POSITIONS.filter(x => !playable.includes(x));
+            const posChips = playable.map(x => {
+                const canAll = players.every(p => getPositionRelation(p, x));
+                const active = x === pos;
+                return `<button onclick="window.setComparePosition('${x}')" class="px-2.5 py-1 rounded-lg text-xs font-black border transition-all ${active ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border hover:border-fc-accent/50'}" title="${canAll ? (isAr ? 'يلعبه الجميع' : 'All can play it') : (isAr ? 'ليس الجميع' : 'Not everyone')}">${x}${canAll ? '' : '<span class="opacity-60">*</span>'}</button>`;
+            }).join('');
+            const otherSelect = others.length ? `
+                <select onchange="window.setComparePosition(this.value)" class="bg-fc-dark border border-fc-border rounded-lg px-2 py-1 text-xs font-bold text-gray-300 focus:outline-none focus:border-fc-accent">
+                    <option value="">${isAr ? 'مركز آخر…' : 'Other…'}</option>
+                    ${others.map(x => `<option value="${x}" ${x === pos ? 'selected' : ''}>${x}</option>`).join('')}
+                </select>` : '';
+            const posPicker = `
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-bold text-gray-400">${isAr ? 'قارن في مركز:' : 'Compare at:'}</span>
+                    <div class="flex items-center gap-1.5 flex-wrap" style="direction:ltr;">${posChips}${otherSelect}</div>
+                    <span class="text-[10px] text-gray-500">${isAr ? '* ليس كل اللاعبين يلعبون هذا المركز' : '* not every player can play it'}</span>
+                </div>`;
+
+            // --- Card overview ---
+            const coin = isAr ? 'ك' : 'c';
+            let overview = '';
+            overview += cmpRow('OVR', players.map(p => p.rating));
+            overview += cmpRow(isAr ? 'تقييم الميتا' : 'Meta Rating', players.map(p => typeof p.meta === 'number' ? p.meta : null), { fmt: v => v.toFixed(1) });
+            overview += cmpRow(isAr ? 'السعر' : 'Price', players.map(p => (p.price || 0) > 0 ? p.price : null), {
+                higherBetter: false, bestClass: 'text-fc-gold', fmt: v => `${Math.round(v).toLocaleString()}${coin}`
+            });
+            overview += cmpRow(isAr ? 'القدم الضعيفة' : 'Weak Foot', players.map(p => typeof p.weakFoot === 'number' ? p.weakFoot : null), { display: v => `<span class="text-fc-gold">${renderStarRating(v)}</span>`, noGap: true });
+            overview += cmpRow(isAr ? 'المهارات' : 'Skill Moves', players.map(p => typeof p.skillMoves === 'number' ? p.skillMoves : null), { display: v => `<span class="text-fc-gold">${renderStarRating(v)}</span>`, noGap: true });
+            overview += cmpTextRow(isAr ? 'القدم المفضلة' : 'Preferred Foot', players.map(p => p.foot
+                ? (isAr ? (String(p.foot).toLowerCase() === 'left' ? 'اليسرى' : 'اليمنى') : p.foot)
+                : '<span class="text-gray-500">—</span>'));
+
+            // --- At position: relation + key-attribute fit vs database average ---
+            const avgFit = getAverageFitScoreForPosition(pos);
+            const relRow = cmpTextRow(isAr ? 'العلاقة بالمركز' : 'Position Relation', players.map(p => {
+                const rel = getPositionRelation(p, pos);
+                const cls = rel === 'primary' ? 'text-fc-accent' : (rel === 'alt' ? 'text-blue-300' : 'text-orange-300');
+                const txt = rel === 'primary' ? (isAr ? 'أساسي' : 'Primary') : (rel === 'alt' ? (isAr ? 'بديل' : 'Alternative') : (isAr ? 'خارج مركزه' : 'Out of position'));
+                return `<span class="${cls}">${txt}</span>`;
+            }));
+            const fits = players.map(p => computeKeyAttrFitScore(p, pos));
+            const fitRow = cmpRow(
+                (isAr ? 'ملاءمة الخصائص الرئيسية (3–2–1)' : 'Key-Attribute Fit (3–2–1)') + (avgFit != null ? ` <span class="text-gray-500 font-normal">· ${isAr ? 'المتوسط' : 'avg'} ${avgFit.toFixed(1)}</span>` : ''),
+                fits, { fmt: v => v.toFixed(1), display: v => {
+                    if (avgFit == null) return v.toFixed(1);
+                    const d = v - avgFit;
+                    const c = d >= 3 ? 'text-green-400' : (d <= -3 ? 'text-orange-400' : 'text-gray-400');
+                    return `${v.toFixed(1)} <span class="text-[10px] ${c}">(${d >= 0 ? '+' : ''}${d.toFixed(1)})</span>`;
+                } }
+            );
+            const keyAttrs = getKeyAttributesForPosition(pos);
+            const keyLabels = keyAttrs.map(k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k).join(' › ');
+            const atPos = `<p class="text-[11px] text-gray-500">${isAr ? `الأولوية في ${pos}: ${keyLabels}` : `Priority at ${pos}: ${keyLabels}`}</p>${relRow}${fitRow}`;
+
+            // --- Face stats (GK set at GK, outfield set elsewhere) ---
+            const faceKeys = isGkPos ? ['div', 'han', 'kic', 'ref', 'spe', 'pos'] : ['pac', 'sho', 'pas', 'dri', 'def', 'phy'];
+            const faceTally = [];
+            const face = faceKeys.map(k => {
+                const lbl = ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k.toUpperCase();
+                const star = keyAttrs.includes(k) ? '<i class="fa-solid fa-star text-fc-gold text-[9px] mx-1"></i>' : '';
+                return cmpRow(star + lbl, players.map(p => p.att && typeof p.att[k] === 'number' ? p.att[k] : null), { bar: true, tally: faceTally });
+            }).join('');
+            compareTally.face = faceTally;
+
+            // --- PlayStyles: shared ones once, then each player's own ---
+            const psLists = players.map(p => {
+                const plus = (Array.isArray(p.playstylesPlus) ? p.playstylesPlus : []).map(formatPlaystyleEntry);
+                const base = (Array.isArray(p.playstyles) ? p.playstyles : []).map(formatPlaystyleEntry);
+                return { plus, base, all: new Set([...plus, ...base]) };
+            });
+            const shared = [...psLists[0].all].filter(name => psLists.every(l => l.all.has(name)));
+            const psCols = psLists.map(l => {
+                const own = [
+                    ...l.plus.filter(x => !shared.includes(x)).map(x => playstyleChipHtml(x, true, 'text-[10px] px-1.5 py-0.5')),
+                    ...l.base.filter(x => !shared.includes(x) && !l.plus.includes(x)).map(x => playstyleChipHtml(x, false, 'text-[10px] px-1.5 py-0.5'))
+                ];
+                return `<div class="bg-fc-dark/60 rounded-lg p-2 flex flex-wrap gap-1 justify-center content-start min-h-[2.5rem]">${own.length ? own.join('') : `<span class="text-[11px] text-gray-600">${isAr ? 'لا شيء إضافي' : 'Nothing extra'}</span>`}</div>`;
+            }).join('');
+            const anyPs = psLists.some(l => l.all.size > 0);
+            const psBody = !anyPs
+                ? `<p class="text-xs text-gray-500">${isAr ? 'لا توجد أنماط لعب في بيانات هذه البطاقات.' : 'No PlayStyles in these cards\' data.'}</p>`
+                : `${shared.length ? `<div class="flex items-center gap-1.5 flex-wrap"><span class="text-[11px] font-bold text-gray-400">${isAr ? 'مشتركة بين الجميع:' : 'Shared by all:'}</span>${shared.map(x => playstyleChipHtml(x, psLists.every(l => l.plus.includes(x)), 'text-[10px] px-1.5 py-0.5')).join('')}</div>` : ''}
+                   <div class="grid gap-2" style="${cols}">${psCols}</div>`;
+
+            content.innerHTML = `
+                <div class="space-y-4">
+                    ${titleHtml}
+                    ${searchBar}
+                    <div class="grid gap-2 md:gap-3" style="${cols}">${headers}</div>
+                    ${posPicker}
+                    ${cmpSection(isAr ? 'الملخص' : 'Summary', 'fa-scale-balanced', '<div id="cmp-summary-body"></div>')}
+                    ${cmpSection(isAr ? `في مركز ${pos}` : `At ${pos}`, 'fa-location-crosshairs', `<div class="space-y-2.5">${atPos}</div>`)}
+                    ${cmpSection(isAr ? 'البطاقة' : 'Card', 'fa-id-card', `<div class="space-y-2.5">${overview}</div>`)}
+                    ${cmpSection(isAr ? 'الإحصاءات الأساسية' : 'Face Stats', 'fa-chart-simple', `<div class="space-y-2.5">${face}</div>`)}
+                    ${cmpSection(isAr ? 'إحصاءات داخل اللعبة' : 'In-Game Detail', 'fa-microscope', '<div id="cmp-detail-body" class="space-y-2"></div>')}
+                    ${cmpSection(isAr ? 'أنماط اللعب' : 'PlayStyles', 'fa-wand-magic-sparkles', psBody)}
+                </div>`;
+            if (compareSearchQuery) window.compareSearch(compareSearchQuery);
+            updateCompareAsyncSections();
+        }
+
+        // Initial tray state on load (picks persist across sessions; the
+        // tray fills in names/photos once the database is available).
+        document.addEventListener('DOMContentLoaded', () => { try { window.refreshCompareUi(); } catch (e) { /* ignore */ } });
 
         // Once every slot in the formation has a player, Manual Build Mode
         // is done — backfill squadState.budget to what was actually spent
@@ -17730,7 +18371,7 @@
                         ` : ''}
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">${statsLine}</p>
-                        ${ownToggleBtn}
+                        <div class="flex items-center gap-2 flex-wrap">${ownToggleBtn}${modalCompareBtnHtml(player)}</div>
                         ${(getNationFlag(player.nationId) || getLeagueLogoUrl(player.leagueId)) ? `
                             <div class="flex items-center gap-1.5 mt-1.5">
                                 ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white shadow-sm text-sm leading-none overflow-hidden shrink-0" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
