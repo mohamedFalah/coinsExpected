@@ -11606,10 +11606,10 @@
             const q = query.trim();
             if (q.length < 2) { resultsContainer.innerHTML = ''; return; }
 
-            const pooledIds = new Set(playerPool.map(p => playerIdentityKey(p)));
+            const pooledIds = new Set(playerPool.map(p => p.id));
             // Full database (never the pool itself) — accent-insensitive.
             const matches = getActiveDatabase({ requirePriced: false, ignorePool: true })
-                .filter(p => nameMatchesQuery(p.name, q) && !pooledIds.has(playerIdentityKey(p)))
+                .filter(p => nameMatchesQuery(p.name, q) && !pooledIds.has(p.id))
                 .sort((a, b) => (b.rating || 0) - (a.rating || 0))
                 .slice(0, 20);
             if (matches.length === 0) {
@@ -11638,7 +11638,9 @@
         window.addPlayerToPool = function(playerId) {
             const player = fc27Database.find(p => p.id === playerId);
             if (!player) return;
-            if (playerPool.some(p => playerIdentityKey(p) === playerIdentityKey(player))) return;
+            // Per CARD: you can own two versions of the same player (they
+            // just can't both start — the squad builders enforce that).
+            if (playerPool.some(p => p.id === player.id)) return;
             playerPool.push(player);
             poolAnalysis = null;
             savePlayerPool();
@@ -11741,8 +11743,11 @@
                     return { quality, chem: chem.total, overall: quality + chem.total * CHEM_VALUE_WEIGHT, chemFirst: chem.total * 100000 + quality };
                 };
                 const fixedIdx = new Set(Object.keys(o.fixed).map(Number));
-                const fixedIds = new Set(Object.values(o.fixed).map(p => p.id));
-                const free = players.filter(p => !fixedIds.has(p.id));
+                // One version of a player per XI: uniqueness is by player
+                // identity, so two owned cards of the same player never start together.
+                const idKey = p => playerIdentityKey(p) || p.id;
+                const fixedIds = new Set(Object.values(o.fixed).map(idKey));
+                const free = players.filter(p => !fixedIds.has(idKey(p)));
                 // candidates per slot: eligible players; if none, anyone (out of position)
                 const cands = slots.map(s => { const e = free.filter(p => eligibleFor(p, s.pos)); return e.length ? e : free; });
 
@@ -11750,23 +11755,26 @@
                     const xi = { ...o.fixed }; const used = new Set(fixedIds);
                     const order = slots.map((s, i) => i).filter(i => !fixedIdx.has(i)).sort((a, b) => cands[a].length - cands[b].length);
                     order.forEach(i => {
-                        const opts2 = cands[i].filter(p => !used.has(p.id)).map(p => ({ p, v: fit(p, slots[i].pos) + (bonus ? bonus(p) : 0) })).sort((a, b) => b.v - a.v);
-                        const pool2 = opts2.length ? opts2 : free.filter(p => !used.has(p.id)).map(p => ({ p, v: fit(p, slots[i].pos) }));
+                        const opts2 = cands[i].filter(p => !used.has(idKey(p))).map(p => ({ p, v: fit(p, slots[i].pos) + (bonus ? bonus(p) : 0) })).sort((a, b) => b.v - a.v);
+                        const pool2 = opts2.length ? opts2 : free.filter(p => !used.has(idKey(p))).map(p => ({ p, v: fit(p, slots[i].pos) }));
                         if (!pool2.length) return;
                         const pick = randomTop ? pool2[Math.floor(Math.random() * Math.min(randomTop, pool2.length))] : pool2[0];
-                        xi[i] = pick.p; used.add(pick.p.id);
+                        xi[i] = pick.p; used.add(idKey(pick.p));
                     });
                     return xi;
                 };
                 const localSearch = (start, key) => {
                     let xi = { ...start }; let cur = evaluate(xi);
                     for (let round = 0; round < 40; round++) {
-                        const used = new Set(Object.values(xi).map(p => p.id));
+                        const used = new Set(Object.values(xi).map(idKey));
                         let best = null;
                         slots.forEach((s, i) => {
                             if (fixedIdx.has(i)) return;
                             cands[i].forEach(p => {
-                                if (used.has(p.id)) return;
+                                // Allowed: an unused player, or another version of the
+                                // player already in THIS slot (a version swap).
+                                if (used.has(idKey(p)) && !(xi[i] && idKey(xi[i]) === idKey(p) && xi[i].id !== p.id)) return;
+                                if (xi[i] && xi[i].id === p.id) return;
                                 const t = { ...xi, [i]: p }; const e = evaluate(t);
                                 if (e[key] > cur[key] + 1e-6 && (!best || e[key] > best.e[key])) best = { t, e };
                             });
@@ -12682,19 +12690,21 @@
                 out.innerHTML = `<p class="text-xs text-orange-300">${clubT('The player database isn’t loaded yet — load it from the Database tab first.', 'قاعدة البيانات غير محمّلة بعد — حمّلها من تبويب قاعدة البيانات أولاً.')}</p>`;
                 return;
             }
-            const inClub = new Set(playerPool.map(p => playerIdentityKey(p)));
+            const inClub = new Set(playerPool.map(p => p.id));
+            const sameNameInClub = new Set(playerPool.map(p => playerIdentityKey(p)));
             const matches = getActiveDatabase({ requirePriced: false, ignorePool: true })
                 .filter(p => nameMatchesQuery(p.name, q))
                 .sort((a, b) => (b.rating || 0) - (a.rating || 0))
                 .slice(0, 15);
             if (!matches.length) { out.innerHTML = `<p class="text-xs text-gray-500 italic">${clubT('No matching players in the loaded database.', 'لا يوجد لاعبون مطابقون في قاعدة البيانات المحمّلة.')}</p>`; return; }
             out.innerHTML = matches.map(p => {
-                const already = inClub.has(playerIdentityKey(p));
+                const already = inClub.has(p.id);
+                const otherVersion = !already && sameNameInClub.has(playerIdentityKey(p));
                 return `
                     <div class="flex items-center gap-2 bg-fc-dark border border-fc-border rounded-xl p-2">
                         ${clubPhotoHtml(p, 'w-9 h-9')}
                         <div class="min-w-0 flex-1">
-                            <div class="text-xs font-bold text-white truncate">${clubEsc(p.name)}</div>
+                            <div class="text-xs font-bold text-white truncate">${clubEsc(p.name)}${otherVersion ? `<span class="ms-1.5 text-[9px] font-bold text-fc-gold">${clubT('another version in club', 'نسخة أخرى في النادي')}</span>` : ''}</div>
                             <div class="flex items-center gap-1 mt-0.5 flex-wrap"><span class="text-[10px] font-black text-fc-accent">${p.rating}</span>${clubPositionsOf(p).map((x, i) => `<span class="px-1 rounded text-[9px] font-bold ${i === 0 ? 'bg-fc-accent/20 text-fc-accent' : 'text-blue-300 border border-dashed border-blue-400/50'}">${x}</span>`).join('')}${typeof p.meta === 'number' ? `<span class="text-[10px] text-gray-500">MR ${p.meta.toFixed(1)}</span>` : ''}</div>
                         </div>
                         ${already
