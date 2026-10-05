@@ -12088,6 +12088,14 @@
         const COPY_RESULTS_PER_TIER = 5;
         const COPY_VERIFY_PER_TIER = 3;    // detail fetches per tier (lazy)
         const COPY_LEVEL_PENALTY = { A: 0.5, B: 0.25 }; // ranking weight of level drop
+        // Unpriced originals (untradeable reward / Hero / SBC cards, or
+        // missing price data) have no price to take a percentage of, so
+        // their tiers are LEVEL bands instead — drop in Key-Attribute Fit.
+        // Copies themselves must still be priced (buyable) cards.
+        const COPY_LEVEL_TIERS = [
+            { id: 'A', minDrop: -Infinity, maxDrop: 3 },
+            { id: 'B', minDrop: 3, maxDrop: 8 }
+        ];
         let copiesState = { originalId: null, pos: null };
         const copiesObjCache = new Map();
 
@@ -12119,15 +12127,17 @@
         }
 
         function findCopies(original, pos) {
+            if (!original.att) return null;
             const price = original.price || 0;
-            if (price <= 0 || !original.att) return null;
+            const mode = price > 0 ? 'price' : 'level';
             const keys = copyShapeKeys(pos);
             const weights = copyShapeWeights(pos);
             const origFit = computeKeyAttrFitScore(original, pos);
             const pool = getActiveDatabase({ requirePriced: true, ignorePool: true })
-                .filter(p => p.id !== original.id && (p.price || 0) > 0 && p.price < price && p.att
+                .filter(p => p.id !== original.id && (p.price || 0) > 0 && p.att
+                    && (mode === 'level' || p.price < price)
                     && (p.pos === pos || (Array.isArray(p.alt) && p.alt.includes(pos))));
-            const scored = [];
+            const all = [];
             pool.forEach(p => {
                 const diffs = {};
                 for (const k of keys) {
@@ -12135,17 +12145,34 @@
                     diffs[k] = p.att[k] - original.att[k];
                 }
                 const shapeGap = unevennessOf(diffs, weights);
-                if (shapeGap == null || shapeGap > COPY_MAX_SHAPE_GAP) return;
+                if (shapeGap == null) return;
                 const fit = computeKeyAttrFitScore(p, pos);
                 const levelDrop = (origFit != null && fit != null) ? origFit - fit : 0;
-                scored.push({ player: p, diffs, shapeGap, levelDrop, ratio: p.price / price });
+                all.push({ player: p, diffs, shapeGap, levelDrop, ratio: price > 0 ? p.price / price : null });
             });
-            return COPY_TIERS.map(t => {
-                const inBand = scored.filter(s => s.ratio >= t.minRatio && s.ratio < t.maxRatio);
+            const inTier = (s, t) => mode === 'price'
+                ? (s.ratio >= t.minRatio && s.ratio < t.maxRatio)
+                : (s.levelDrop >= t.minDrop && s.levelDrop < t.maxDrop);
+            const tiers = (mode === 'price' ? COPY_TIERS : COPY_LEVEL_TIERS).map(t => {
+                const band = all.filter(x => inTier(x, t));
+                const ok = band.filter(x => x.shapeGap <= COPY_MAX_SHAPE_GAP);
                 const pen = COPY_LEVEL_PENALTY[t.id] || 0.3;
-                inBand.sort((a, b) => (a.shapeGap + pen * Math.max(0, a.levelDrop)) - (b.shapeGap + pen * Math.max(0, b.levelDrop)));
-                return { tier: t, items: inBand.slice(0, COPY_RESULTS_PER_TIER) };
+                if (mode === 'price') {
+                    ok.sort((a, b) => (a.shapeGap + pen * Math.max(0, a.levelDrop)) - (b.shapeGap + pen * Math.max(0, b.levelDrop)));
+                } else {
+                    // Level is already bounded by the band; among similar
+                    // shapes prefer the cheaper card (shape first, then price).
+                    ok.sort((a, b) => (a.shapeGap - b.shapeGap) || (a.player.price - b.player.price));
+                }
+                // Nearest miss: when nothing in the band passes the shape
+                // cap, show the closest one that didn't, and why.
+                let nearestMiss = null;
+                if (ok.length === 0 && band.length) {
+                    nearestMiss = band.reduce((a, b) => (b.shapeGap < a.shapeGap ? b : a));
+                }
+                return { tier: t, items: ok.slice(0, COPY_RESULTS_PER_TIER), nearestMiss, bandSize: band.length };
             });
+            return { mode, tiers };
         }
 
         // "Keeps / loses / gains" — plain description of the differences.
@@ -12231,9 +12258,9 @@
         function modalCopiesBtnHtml(player) {
             if (!player || !player.id) return '';
             const isAr = currentLanguage === 'ar';
-            const priced = (player.price || 0) > 0;
-            return `<button onclick="window.openCopiesFromModal('${player.id}')" ${priced ? '' : 'disabled'}
-                title="${priced ? '' : (isAr ? 'لا يوجد سعر لهذه البطاقة' : 'This card has no price')}"
+            const hasAtt = !!player.att;
+            return `<button onclick="window.openCopiesFromModal('${player.id}')" ${hasAtt ? '' : 'disabled'}
+                title="${(player.price || 0) > 0 ? '' : (isAr ? 'بلا سعر — النسخ حسب المستوى' : 'No price — copies tiered by level')}"
                 class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-fc-dark text-gray-400 border border-fc-border hover:text-fc-gold hover:border-fc-gold/40 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                 <i class="fa-solid fa-clone"></i>${isAr ? 'نسخ أرخص' : 'Find Copies'}
             </button>`;
@@ -12307,37 +12334,59 @@
 
             const head = `
                 <div class="pr-10 rtl:pr-0 rtl:pl-10">
-                    <h3 class="text-lg md:text-xl font-black text-white flex items-center gap-2"><i class="fa-solid fa-clone text-fc-gold"></i>${isAr ? 'النسخ الأرخص' : 'Cheaper Copies'}</h3>
-                    <p class="text-xs text-gray-400 mt-1">${isAr
-                        ? 'لاعبون بنفس شكل الخصائص في هذا المركز، لكن بسعر أقل. النسخة A: من 20% إلى 50% من سعره. النسخة B: أقل من 20%.'
-                        : 'Players with the same attribute shape at this position, for less. Grade A: 20–50% of his price. Grade B: under 20%.'}</p>
+                    <h3 class="text-lg md:text-xl font-black text-white flex items-center gap-2"><i class="fa-solid fa-clone text-fc-gold"></i>${price > 0 ? (isAr ? 'النسخ الأرخص' : 'Cheaper Copies') : (isAr ? 'النسخ القابلة للشراء' : 'Buyable Copies')}</h3>
+                    <p class="text-xs text-gray-400 mt-1">${price > 0
+                        ? (isAr ? 'لاعبون بنفس شكل الخصائص في هذا المركز، لكن بسعر أقل. النسخة A: من 20% إلى 50% من سعره. النسخة B: أقل من 20%.'
+                                : 'Players with the same attribute shape at this position, for less. Grade A: 20–50% of his price. Grade B: under 20%.')
+                        : (isAr ? 'هذه البطاقة بلا سعر (غير قابلة للتداول أو بلا بيانات سعر)، لذا النسخ مرتّبة حسب المستوى بدلاً من السعر — وكلها بطاقات يمكن شراؤها.'
+                                : 'This card has no price (untradeable or missing price data), so copies are tiered by level instead of price — all of them are cards you can buy.')}</p>
                 </div>
                 <div class="flex items-center gap-3 bg-gradient-to-r from-fc-gold/10 to-fc-dark border border-fc-gold/30 rounded-2xl p-3">
                     <img src="${original.photo}" class="w-14 h-14 rounded-2xl object-cover border-2 border-fc-gold/60 bg-fc-dark shrink-0" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
                     <div class="min-w-0 flex-1">
                         <div class="text-[10px] font-black text-fc-gold">${isAr ? 'الأصلي' : 'ORIGINAL'}</div>
                         <div class="text-base font-extrabold text-white truncate">${cmpEsc(original.name)}</div>
-                        <div class="text-[11px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${original.rating} OVR${typeof original.meta === 'number' ? ` · MR ${original.meta.toFixed(1)}` : ''} · ${price.toLocaleString()}${coin}</div>
+                        <div class="text-[11px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${original.rating} OVR${typeof original.meta === 'number' ? ` · MR ${original.meta.toFixed(1)}` : ''} · ${price > 0 ? `${price.toLocaleString()}${coin}` : (isAr ? 'بلا سعر' : 'no price')}</div>
                     </div>
                     <div class="flex items-center gap-1.5 flex-wrap" style="direction:ltr;">${posChips}</div>
                 </div>`;
 
-            const tiers = findCopies(original, pos);
-            if (!tiers) {
-                content.innerHTML = `<div class="space-y-4">${head}<p class="text-sm text-gray-500 text-center py-6">${isAr ? 'لا يوجد سعر لهذه البطاقة، لذا لا يمكن تحديد نطاقات الأسعار.' : 'This card has no price, so price bands can\'t be set.'}</p></div>`;
+            const result = findCopies(original, pos);
+            if (!result) {
+                content.innerHTML = `<div class="space-y-4">${head}<p class="text-sm text-gray-500 text-center py-6">${isAr ? 'لا توجد خصائص لهذه البطاقة.' : 'This card has no attribute data.'}</p></div>`;
                 return;
             }
+            const { mode, tiers } = result;
+            const missLbl = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k;
 
             const tierHtml = tiers.map(({ tier, items }) => {
                 const lo = Math.round(price * tier.minRatio), hi = Math.round(price * tier.maxRatio);
                 const title = tier.id === 'A'
                     ? (isAr ? 'النسخة A' : 'Grade A Copy')
                     : (isAr ? 'النسخة B' : 'Grade B Copy');
-                const sub = tier.id === 'A'
-                    ? (isAr ? `${lo.toLocaleString()}–${hi.toLocaleString()}${coin} · أقرب ما يمكن بنصف السعر أو أقل` : `${lo.toLocaleString()}–${hi.toLocaleString()}${coin} · closest you can get for half the price or less`)
-                    : (isAr ? `أقل من ${hi.toLocaleString()}${coin} · نفس الأسلوب بمستوى أدنى` : `under ${hi.toLocaleString()}${coin} · same profile, lower level`);
+                const sub = mode === 'level'
+                    ? (tier.id === 'A'
+                        ? (isAr ? 'انخفاض المستوى حتى 3 نقاط · الأقرب له' : 'Level drop up to 3 · the closest to him')
+                        : (isAr ? 'انخفاض المستوى 3–8 نقاط · نفس الأسلوب بمستوى أدنى' : 'Level drop 3–8 · same profile, lower level'))
+                    : (tier.id === 'A'
+                        ? (isAr ? `${lo.toLocaleString()}–${hi.toLocaleString()}${coin} · أقرب ما يمكن بنصف السعر أو أقل` : `${lo.toLocaleString()}–${hi.toLocaleString()}${coin} · closest you can get for half the price or less`)
+                        : (isAr ? `أقل من ${hi.toLocaleString()}${coin} · نفس الأسلوب بمستوى أدنى` : `under ${hi.toLocaleString()}${coin} · same profile, lower level`));
+                const missHtml = (miss) => {
+                    if (!miss) return '';
+                    const worstK = Object.keys(miss.diffs).sort((a, b) => Math.abs(miss.diffs[b]) - Math.abs(miss.diffs[a]))[0];
+                    const wd = miss.diffs[worstK];
+                    return `<div class="text-[11px] text-gray-400 mt-1">${isAr ? 'الأقرب كان' : 'Closest was'}
+                        <button onclick="window.openPlayerFromCopies('${miss.player.id}')" class="font-bold text-white hover:text-fc-accent">${cmpEsc(miss.player.name)}</button>
+                        <bdi>(${miss.player.rating} · ${(miss.player.price || 0).toLocaleString()}${coin})</bdi> —
+                        ${isAr ? 'استُبعد لأن الشكل غير متساوٍ' : 'left out, shape too uneven'}
+                        <bdi>(${missLbl(worstK)} ${wd > 0 ? '+' : ''}${wd})</bdi>.
+                        <button onclick="window.compareCopyWithOriginal('${miss.player.id}')" class="text-fc-accent font-bold hover:underline">${isAr ? 'قارن' : 'Compare'}</button></div>`;
+                };
+                const emptyMsg = mode === 'level'
+                    ? (isAr ? 'لا توجد بطاقة قابلة للشراء بنفس الشكل في هذا المستوى.' : 'No buyable card with a close shape at this level.')
+                    : (isAr ? 'لا توجد نسخة قريبة بما يكفي في هذا النطاق السعري.' : 'No close-enough copy in this price band.');
                 const rows = items.length === 0
-                    ? `<p class="text-xs text-gray-500 italic py-2">${isAr ? 'لا توجد نسخة قريبة بما يكفي في هذا النطاق السعري.' : 'No close-enough copy in this price band.'}</p>`
+                    ? `<div class="py-2"><p class="text-xs text-gray-500 italic">${emptyMsg}${!tiers.find(x => x.tier === tier).bandSize ? (isAr ? ' (لا يوجد أي لاعب في هذا النطاق لهذا المركز.)' : ' (No players at this position in this band at all.)') : ''}</p>${missHtml(tiers.find(x => x.tier === tier).nearestMiss)}</div>`
                     : items.map((item, idx) => {
                         const p = item.player;
                         const m = shapeMatchLabel(item.shapeGap, isAr);
@@ -12354,7 +12403,7 @@
                                             <span class="text-sm font-bold text-white truncate">${cmpEsc(p.name)}</span>
                                             ${sameName ? `<span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-fc-gold/15 text-fc-gold border border-fc-gold/30">${isAr ? 'نسخة أخرى منه' : 'Another version of him'}</span>` : ''}
                                         </div>
-                                        <div class="text-[11px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${p.rating} OVR · ${p.pos} · ${(p.price || 0).toLocaleString()}${coin} <span class="text-fc-gold font-bold">(${Math.round(item.ratio * 100)}%)</span></div>
+                                        <div class="text-[11px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${p.rating} OVR · ${p.pos} · ${(p.price || 0).toLocaleString()}${coin}${item.ratio != null ? ` <span class="text-fc-gold font-bold">(${Math.round(item.ratio * 100)}%)</span>` : ''}</div>
                                         <div class="flex items-center gap-2 flex-wrap mt-1 text-[11px] font-bold">
                                             <span class="px-1.5 py-0.5 rounded border text-[10px] ${m.cls}">${m.txt}</span>${lvl}
                                         </div>
