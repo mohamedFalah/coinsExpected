@@ -1231,6 +1231,18 @@
         </div>
     </div>
 
+    <!-- PLAYER COPIES modal (Original → Grade A → Grade B); see renderCopiesModal. -->
+    <div id="copies-modal" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="window.closeCopiesModal()">
+        <div class="bg-fc-card border border-fc-border rounded-3xl max-w-3xl w-full max-h-[90vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <button onclick="window.closeCopiesModal()" class="absolute top-4 right-4 rtl:right-auto rtl:left-4 z-10 text-gray-300 hover:text-white text-base bg-fc-dark/90 backdrop-blur-sm border border-fc-border rounded-full w-8 h-8 flex items-center justify-center transition-all">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div id="copies-modal-scroll" class="flex-1 min-h-0 overflow-y-auto hide-scrollbar p-5 md:p-6">
+                <div id="copies-modal-content"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Add Player Modal (Manual Build Mode) -->
     <div id="add-player-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeAddPlayerModal()">
         <div class="bg-fc-card border border-fc-border rounded-3xl max-w-lg w-full max-h-[85vh] shadow-2xl relative flex flex-col overflow-hidden" onclick="event.stopPropagation()">
@@ -1971,6 +1983,7 @@
             window.calculatePackReturns();
             window.updateDatabaseStats();
             if (typeof window.refreshCompareUi === 'function') window.refreshCompareUi();
+            { const cm = document.getElementById('copies-modal'); if (cm && !cm.classList.contains('hidden')) renderCopiesModal(); }
 
             // Re-render whatever squad is already on screen in the new
             // language instead of rebuilding it. runSquadOptimizer() is
@@ -12046,6 +12059,335 @@
             updateCompareAsyncSections();
         }
 
+        // ===================================================================
+        // PLAYER COPIES — "Original → Grade A copy → Grade B copy".
+        // Tiers are PRICE bands (a copy must actually save coins); inside a
+        // band, candidates are ranked by how closely they reproduce the
+        // original's attribute SHAPE at his position.
+        //
+        // For a candidate, take D = candidate face stats − original's:
+        //   level drop = original fit − candidate fit, where fit is the
+        //                existing 3–2–1 Key-Attribute Fit (same definition
+        //                as everywhere else in the app).
+        //   shape gap  = weighted RMS of (D − weighted mean of D), i.e. how
+        //                UNEVEN the difference is. A uniform −4 everywhere
+        //                is shape gap 0 (same player profile, lower level);
+        //                −10 pace but +2 shooting is a different profile.
+        //   Weights: the position's key attributes 3/2/2, the others 1.
+        // Bulk data only for ranking; the top few per tier are then
+        // verified with the per-player detail fetch (sub-stat shape,
+        // AcceleRATE, height) — never a bulk detail fetch.
+        // Statistical description only: never claims a copy "plays like"
+        // or will perform like the original.
+        // ===================================================================
+        const COPY_TIERS = [
+            { id: 'A', minRatio: 0.20, maxRatio: 0.50 },
+            { id: 'B', minRatio: 0.00, maxRatio: 0.20 }
+        ];
+        const COPY_MAX_SHAPE_GAP = 7;      // beyond this it isn't a copy any more
+        const COPY_RESULTS_PER_TIER = 5;
+        const COPY_VERIFY_PER_TIER = 3;    // detail fetches per tier (lazy)
+        const COPY_LEVEL_PENALTY = { A: 0.5, B: 0.25 }; // ranking weight of level drop
+        let copiesState = { originalId: null, pos: null };
+        const copiesObjCache = new Map();
+
+        function copyShapeKeys(pos) {
+            return pos === 'GK' ? ['div', 'han', 'kic', 'ref', 'spe', 'pos'] : ['pac', 'sho', 'pas', 'dri', 'def', 'phy'];
+        }
+        function copyShapeWeights(pos) {
+            const key = getKeyAttributesForPosition(pos);
+            const w = {};
+            copyShapeKeys(pos).forEach(k => { w[k] = 1; });
+            key.forEach((k, i) => { w[k] = i === 0 ? 3 : 2; });
+            return w;
+        }
+        // Weighted RMS of a difference vector after removing its weighted mean.
+        function unevennessOf(diffs, weights) {
+            const keys = Object.keys(diffs);
+            let wSum = 0, mean = 0;
+            keys.forEach(k => { wSum += weights[k]; mean += diffs[k] * weights[k]; });
+            if (!wSum) return null;
+            mean /= wSum;
+            let sq = 0;
+            keys.forEach(k => { sq += weights[k] * Math.pow(diffs[k] - mean, 2); });
+            return Math.sqrt(sq / wSum);
+        }
+        function shapeMatchLabel(gap, isAr) {
+            if (gap <= 2.5) return { txt: isAr ? 'شكل مطابق تقريباً' : 'Very close shape', cls: 'text-green-400 border-green-500/40 bg-green-500/10' };
+            if (gap <= 4.5) return { txt: isAr ? 'شكل قريب' : 'Close shape', cls: 'text-fc-accent border-fc-accent/40 bg-fc-accent/10' };
+            return { txt: isAr ? 'شكل تقريبي' : 'Loose shape', cls: 'text-orange-300 border-orange-500/40 bg-orange-500/10' };
+        }
+
+        function findCopies(original, pos) {
+            const price = original.price || 0;
+            if (price <= 0 || !original.att) return null;
+            const keys = copyShapeKeys(pos);
+            const weights = copyShapeWeights(pos);
+            const origFit = computeKeyAttrFitScore(original, pos);
+            const pool = getActiveDatabase({ requirePriced: true, ignorePool: true })
+                .filter(p => p.id !== original.id && (p.price || 0) > 0 && p.price < price && p.att
+                    && (p.pos === pos || (Array.isArray(p.alt) && p.alt.includes(pos))));
+            const scored = [];
+            pool.forEach(p => {
+                const diffs = {};
+                for (const k of keys) {
+                    if (typeof p.att[k] !== 'number' || typeof original.att[k] !== 'number') return;
+                    diffs[k] = p.att[k] - original.att[k];
+                }
+                const shapeGap = unevennessOf(diffs, weights);
+                if (shapeGap == null || shapeGap > COPY_MAX_SHAPE_GAP) return;
+                const fit = computeKeyAttrFitScore(p, pos);
+                const levelDrop = (origFit != null && fit != null) ? origFit - fit : 0;
+                scored.push({ player: p, diffs, shapeGap, levelDrop, ratio: p.price / price });
+            });
+            return COPY_TIERS.map(t => {
+                const inBand = scored.filter(s => s.ratio >= t.minRatio && s.ratio < t.maxRatio);
+                const pen = COPY_LEVEL_PENALTY[t.id] || 0.3;
+                inBand.sort((a, b) => (a.shapeGap + pen * Math.max(0, a.levelDrop)) - (b.shapeGap + pen * Math.max(0, b.levelDrop)));
+                return { tier: t, items: inBand.slice(0, COPY_RESULTS_PER_TIER) };
+            });
+        }
+
+        // "Keeps / loses / gains" — plain description of the differences.
+        function copyKeepsLosesHtml(original, item, pos, isAr) {
+            const p = item.player;
+            const keys = copyShapeKeys(pos);
+            const keyAttrs = getKeyAttributesForPosition(pos);
+            const lbl = k => ATTRIBUTE_LABELS[k] ? (isAr ? ATTRIBUTE_LABELS[k].ar : ATTRIBUTE_LABELS[k].en) : k;
+            const kept = keys.filter(k => Math.abs(item.diffs[k]) <= 2);
+            const lost = keys.filter(k => item.diffs[k] <= -3).sort((a, b) => item.diffs[a] - item.diffs[b]);
+            const gained = keys.filter(k => item.diffs[k] >= 3).sort((a, b) => item.diffs[b] - item.diffs[a]);
+            const star = k => keyAttrs.includes(k) ? '★' : '';
+            const chip = (k, cls) => `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${cls}"><bdi>${star(k)}${lbl(k)}${item.diffs[k] ? ` ${item.diffs[k] > 0 ? '+' : ''}${item.diffs[k]}` : ''}</bdi></span>`;
+            const extras = [];
+            if (typeof p.skillMoves === 'number' && typeof original.skillMoves === 'number' && p.skillMoves !== original.skillMoves) {
+                const d = p.skillMoves - original.skillMoves;
+                extras.push(`<span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${d < 0 ? 'text-orange-300 border-orange-500/30' : 'text-green-400 border-green-500/30'}"><bdi>${isAr ? 'المهارات' : 'SM'} ${d > 0 ? '+' : ''}${d}★</bdi></span>`);
+            }
+            if (typeof p.weakFoot === 'number' && typeof original.weakFoot === 'number' && p.weakFoot !== original.weakFoot) {
+                const d = p.weakFoot - original.weakFoot;
+                extras.push(`<span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${d < 0 ? 'text-orange-300 border-orange-500/30' : 'text-green-400 border-green-500/30'}"><bdi>${isAr ? 'القدم الضعيفة' : 'WF'} ${d > 0 ? '+' : ''}${d}★</bdi></span>`);
+            }
+            const row = (title, inner) => inner ? `<div class="flex items-center gap-1 flex-wrap"><span class="text-[10px] font-bold text-gray-500 w-12 shrink-0">${title}</span>${inner}</div>` : '';
+            return `<div class="space-y-1 mt-2">
+                ${row(isAr ? 'يحافظ' : 'Keeps', kept.map(k => chip(k, 'text-gray-300 border-fc-border')).join(''))}
+                ${row(isAr ? 'يخسر' : 'Loses', lost.map(k => chip(k, 'text-orange-300 border-orange-500/30')).join('') + extras.filter(e => e.includes('orange')).join(''))}
+                ${row(isAr ? 'يكسب' : 'Gains', gained.map(k => chip(k, 'text-green-400 border-green-500/30')).join('') + extras.filter(e => e.includes('green')).join(''))}
+            </div>`;
+        }
+
+        function findCopiesOriginal(id) {
+            return getActiveDatabase({ requirePriced: false, ignorePool: true }).find(p => p.id === id)
+                || (Array.isArray(fc27Database) ? fc27Database.find(p => p.id === id) : null)
+                || copiesObjCache.get(id) || null;
+        }
+
+        window.openCopiesFromModal = function(id) {
+            const p = lastPlayerModalArgs && lastPlayerModalArgs[0];
+            if (p && p.id === id) copiesObjCache.set(id, p);
+            window.openCopiesModal(id);
+        };
+        window.openCopiesModal = function(id, pos) {
+            const original = findCopiesOriginal(id);
+            if (!original) return;
+            copiesState = { originalId: id, pos: pos || original.pos };
+            if (typeof window.closePlayerModal === 'function') window.closePlayerModal();
+            const modal = document.getElementById('copies-modal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            renderCopiesModal();
+            const sw = document.getElementById('copies-modal-scroll');
+            if (sw) requestAnimationFrame(() => { sw.scrollTop = 0; });
+        };
+        window.closeCopiesModal = function() {
+            const modal = document.getElementById('copies-modal');
+            if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+            copiesState.originalId = null;
+        };
+        window.setCopiesPosition = function(pos) {
+            copiesState.pos = pos;
+            renderCopiesModal();
+        };
+        window.compareCopyWithOriginal = function(copyId) {
+            const origId = copiesState.originalId;
+            const orig = findCopiesOriginal(origId);
+            if (orig) compareObjCache.set(origId, orig);
+            // The comparison is set to exactly these two cards.
+            compareIds = [origId, copyId];
+            compareSelectedPos = copiesState.pos;
+            persistCompareIds();
+            window.closeCopiesModal();
+            window.refreshCompareUi();
+            window.openCompareModal();
+        };
+        window.openPlayerFromCopies = function(id) {
+            const p = findCopiesOriginal(id);
+            if (!p) return;
+            window.closeCopiesModal();
+            window.openPlayerModal(p, null, undefined, false, true);
+        };
+
+        function modalCopiesBtnHtml(player) {
+            if (!player || !player.id) return '';
+            const isAr = currentLanguage === 'ar';
+            const priced = (player.price || 0) > 0;
+            return `<button onclick="window.openCopiesFromModal('${player.id}')" ${priced ? '' : 'disabled'}
+                title="${priced ? '' : (isAr ? 'لا يوجد سعر لهذه البطاقة' : 'This card has no price')}"
+                class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-fc-dark text-gray-400 border border-fc-border hover:text-fc-gold hover:border-fc-gold/40 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="fa-solid fa-clone"></i>${isAr ? 'نسخ أرخص' : 'Find Copies'}
+            </button>`;
+        }
+
+        // Verify pass: real sub-stats / AcceleRATE / height for the top few
+        // per tier, filled into their rows when each fetch settles.
+        function copyDetailOf(id) {
+            if (typeof id !== 'string' || !id.startsWith('easysbc_')) return Promise.resolve(null);
+            return getPlayerDetail(id.replace('easysbc_', '')).then(r => (r && r.data) || null).catch(() => null);
+        }
+        function verifyCopies(original, pos, tiers) {
+            const token = copiesState.originalId + '|' + pos;
+            const origPromise = copyDetailOf(original.id);
+            tiers.forEach(t => t.items.slice(0, COPY_VERIFY_PER_TIER).forEach(item => {
+                Promise.all([origPromise, copyDetailOf(item.player.id)]).then(([od, cd]) => {
+                    if (copiesState.originalId + '|' + copiesState.pos !== token) return;
+                    const el = document.getElementById(`copy-verify-${item.player.id}`);
+                    if (el) el.innerHTML = copyVerifyHtml(original, item.player, od, cd, pos);
+                });
+            }));
+        }
+        function copyVerifyHtml(original, cand, od, cd, pos) {
+            const isAr = currentLanguage === 'ar';
+            if (!od || !cd || !od.inGameAttributes || !cd.inGameAttributes) {
+                return `<span class="text-gray-500 italic">${isAr ? 'تعذّر التحقق من البيانات الفعلية.' : "Couldn't verify real data."}</span>`;
+            }
+            const parts = [];
+            const keys = getGranularKeys(pos, null).keys;
+            const diffs = {}, w = {};
+            keys.forEach(k => {
+                const def = GRANULAR_ATTR_DEFS[k];
+                if (!def) return;
+                const a = getGranularValue(od, def.candidates, k), b = getGranularValue(cd, def.candidates, k);
+                if (typeof a === 'number' && typeof b === 'number') { diffs[k] = b - a; w[k] = 1; }
+            });
+            const subGap = Object.keys(diffs).length >= 3 ? unevennessOf(diffs, w) : null;
+            if (subGap != null) {
+                const m = shapeMatchLabel(subGap, isAr);
+                const worst = Object.keys(diffs).sort((a, b) => diffs[a] - diffs[b]).slice(0, 2).filter(k => diffs[k] <= -5)
+                    .map(k => `${isAr ? GRANULAR_ATTR_DEFS[k].ar : GRANULAR_ATTR_DEFS[k].en} ${diffs[k]}`);
+                parts.push(`<span class="${m.cls.split(' ')[0]} font-bold">${isAr ? 'الإحصاءات التفصيلية' : 'Sub-stats'}: ${m.txt}</span>${worst.length ? ` <span class="text-orange-300"><bdi>(${worst.join(', ')})</bdi></span>` : ''}`);
+            }
+            if (pos !== 'GK') {
+                const ta = computeVerifiedAccelerateType(od), tb = computeVerifiedAccelerateType(cd);
+                if (ta && tb) {
+                    parts.push(ta.type === tb.type
+                        ? `<span class="text-green-400 font-bold">AcceleRATE ${tb.type} ✓ ${isAr ? 'نفس النوع' : 'same'}</span>`
+                        : `<span class="text-orange-300 font-bold">⚠ AcceleRATE ${tb.type} ${isAr ? 'بدلاً من' : 'vs'} ${ta.type}</span>`);
+                }
+            }
+            if (typeof od.height === 'number' && typeof cd.height === 'number') {
+                const dh = cd.height - od.height;
+                parts.push(`<span class="text-gray-400"><bdi>${isAr ? 'الطول' : 'Height'} ${cd.height}cm (${dh > 0 ? '+' : ''}${dh})</bdi></span>`);
+            }
+            return parts.join(' <span class="text-gray-600">·</span> ');
+        }
+
+        function renderCopiesModal() {
+            const content = document.getElementById('copies-modal-content');
+            if (!content) return;
+            const isAr = currentLanguage === 'ar';
+            const original = findCopiesOriginal(copiesState.originalId);
+            if (!original) { content.innerHTML = ''; return; }
+            const pos = copiesState.pos || original.pos;
+            const coin = isAr ? 'ك' : 'c';
+            const price = original.price || 0;
+
+            const positions = [original.pos, ...(original.alt || [])];
+            const posChips = positions.map(x => `<button onclick="window.setCopiesPosition('${x}')" class="px-2.5 py-1 rounded-lg text-xs font-black border transition-all ${x === pos ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border hover:border-fc-accent/50'}">${x}</button>`).join('');
+
+            const head = `
+                <div class="pr-10 rtl:pr-0 rtl:pl-10">
+                    <h3 class="text-lg md:text-xl font-black text-white flex items-center gap-2"><i class="fa-solid fa-clone text-fc-gold"></i>${isAr ? 'النسخ الأرخص' : 'Cheaper Copies'}</h3>
+                    <p class="text-xs text-gray-400 mt-1">${isAr
+                        ? 'لاعبون بنفس شكل الخصائص في هذا المركز، لكن بسعر أقل. النسخة A: من 20% إلى 50% من سعره. النسخة B: أقل من 20%.'
+                        : 'Players with the same attribute shape at this position, for less. Grade A: 20–50% of his price. Grade B: under 20%.'}</p>
+                </div>
+                <div class="flex items-center gap-3 bg-gradient-to-r from-fc-gold/10 to-fc-dark border border-fc-gold/30 rounded-2xl p-3">
+                    <img src="${original.photo}" class="w-14 h-14 rounded-2xl object-cover border-2 border-fc-gold/60 bg-fc-dark shrink-0" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[10px] font-black text-fc-gold">${isAr ? 'الأصلي' : 'ORIGINAL'}</div>
+                        <div class="text-base font-extrabold text-white truncate">${cmpEsc(original.name)}</div>
+                        <div class="text-[11px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${original.rating} OVR${typeof original.meta === 'number' ? ` · MR ${original.meta.toFixed(1)}` : ''} · ${price.toLocaleString()}${coin}</div>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap" style="direction:ltr;">${posChips}</div>
+                </div>`;
+
+            const tiers = findCopies(original, pos);
+            if (!tiers) {
+                content.innerHTML = `<div class="space-y-4">${head}<p class="text-sm text-gray-500 text-center py-6">${isAr ? 'لا يوجد سعر لهذه البطاقة، لذا لا يمكن تحديد نطاقات الأسعار.' : 'This card has no price, so price bands can\'t be set.'}</p></div>`;
+                return;
+            }
+
+            const tierHtml = tiers.map(({ tier, items }) => {
+                const lo = Math.round(price * tier.minRatio), hi = Math.round(price * tier.maxRatio);
+                const title = tier.id === 'A'
+                    ? (isAr ? 'النسخة A' : 'Grade A Copy')
+                    : (isAr ? 'النسخة B' : 'Grade B Copy');
+                const sub = tier.id === 'A'
+                    ? (isAr ? `${lo.toLocaleString()}–${hi.toLocaleString()}${coin} · أقرب ما يمكن بنصف السعر أو أقل` : `${lo.toLocaleString()}–${hi.toLocaleString()}${coin} · closest you can get for half the price or less`)
+                    : (isAr ? `أقل من ${hi.toLocaleString()}${coin} · نفس الأسلوب بمستوى أدنى` : `under ${hi.toLocaleString()}${coin} · same profile, lower level`);
+                const rows = items.length === 0
+                    ? `<p class="text-xs text-gray-500 italic py-2">${isAr ? 'لا توجد نسخة قريبة بما يكفي في هذا النطاق السعري.' : 'No close-enough copy in this price band.'}</p>`
+                    : items.map((item, idx) => {
+                        const p = item.player;
+                        const m = shapeMatchLabel(item.shapeGap, isAr);
+                        const sameName = p.name === original.name;
+                        const lvl = item.levelDrop <= 0.5
+                            ? `<span class="text-green-400">${isAr ? 'نفس المستوى أو أعلى' : 'Same level or higher'}</span>`
+                            : `<span class="${item.levelDrop >= 6 ? 'text-orange-300' : 'text-gray-300'}"><bdi>${isAr ? 'المستوى' : 'Level'} −${item.levelDrop.toFixed(1)}</bdi></span>`;
+                        return `
+                            <div class="bg-fc-dark/60 border border-fc-border rounded-xl p-3">
+                                <div class="flex items-center gap-3">
+                                    <button onclick="window.openPlayerFromCopies('${p.id}')" class="shrink-0"><img src="${p.photo}" class="w-11 h-11 rounded-full object-cover border border-fc-border bg-fc-dark" onerror="this.src='https://placehold.co/80x80/1b4d3e/ffffff?text=?'"></button>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="text-sm font-bold text-white truncate">${cmpEsc(p.name)}</span>
+                                            ${sameName ? `<span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-fc-gold/15 text-fc-gold border border-fc-gold/30">${isAr ? 'نسخة أخرى منه' : 'Another version of him'}</span>` : ''}
+                                        </div>
+                                        <div class="text-[11px] text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${p.rating} OVR · ${p.pos} · ${(p.price || 0).toLocaleString()}${coin} <span class="text-fc-gold font-bold">(${Math.round(item.ratio * 100)}%)</span></div>
+                                        <div class="flex items-center gap-2 flex-wrap mt-1 text-[11px] font-bold">
+                                            <span class="px-1.5 py-0.5 rounded border text-[10px] ${m.cls}">${m.txt}</span>${lvl}
+                                        </div>
+                                    </div>
+                                    <button onclick="window.compareCopyWithOriginal('${p.id}')" title="${isAr ? 'قارن مع الأصلي' : 'Compare with original'}" class="shrink-0 px-2.5 py-2 rounded-xl bg-fc-card border border-fc-border text-xs font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50 transition-all">
+                                        <i class="fa-solid fa-code-compare"></i><span class="hidden sm:inline ml-1 rtl:ml-0 rtl:mr-1">${isAr ? 'قارن' : 'Compare'}</span>
+                                    </button>
+                                </div>
+                                ${copyKeepsLosesHtml(original, item, pos, isAr)}
+                                ${idx < COPY_VERIFY_PER_TIER ? `<div id="copy-verify-${p.id}" class="mt-2 text-[11px] text-gray-500 italic animate-pulse">${isAr ? 'جارٍ التحقق من البيانات الفعلية…' : 'Verifying against real data…'}</div>` : ''}
+                            </div>`;
+                    }).join('');
+                return `
+                    <div class="space-y-2">
+                        <div>
+                            <div class="text-sm font-extrabold ${tier.id === 'A' ? 'text-white' : 'text-gray-300'}">${title}</div>
+                            <div class="text-[11px] text-gray-500" style="unicode-bidi:plaintext;">${sub}</div>
+                        </div>
+                        ${rows}
+                    </div>`;
+            }).join('');
+
+            content.innerHTML = `
+                <div class="space-y-5">
+                    ${head}
+                    ${tierHtml}
+                    <p ${isAr ? 'dir="rtl"' : ''} class="text-[10px] text-gray-500 italic leading-relaxed">${isAr
+                        ? '"الشكل" يقيس مدى تساوي الفرق بين الخصائص الست (★ = خصائص المركز الرئيسية)؛ "المستوى" هو الفرق في ملاءمة الخصائص الرئيسية (3–2–1). هذه مقارنة أرقام فقط — ولا تعني أن النسخة ستقدّم نفس الأداء في المباراة.'
+                        : '"Shape" measures how evenly the six stats differ (★ = the position\'s key attributes); "Level" is the drop in Key-Attribute Fit (3–2–1). This compares numbers only — it doesn\'t mean a copy will perform the same in a match.'}</p>
+                </div>`;
+            verifyCopies(original, pos, tiers);
+        }
+
         // Initial tray state on load (picks persist across sessions; the
         // tray fills in names/photos once the database is available).
         document.addEventListener('DOMContentLoaded', () => { try { window.refreshCompareUi(); } catch (e) { /* ignore */ } });
@@ -18371,7 +18713,7 @@
                         ` : ''}
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">${statsLine}</p>
-                        <div class="flex items-center gap-2 flex-wrap">${ownToggleBtn}${modalCompareBtnHtml(player)}</div>
+                        <div class="flex items-center gap-2 flex-wrap">${ownToggleBtn}${modalCompareBtnHtml(player)}${modalCopiesBtnHtml(player)}</div>
                         ${(getNationFlag(player.nationId) || getLeagueLogoUrl(player.leagueId)) ? `
                             <div class="flex items-center gap-1.5 mt-1.5">
                                 ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white shadow-sm text-sm leading-none overflow-hidden shrink-0" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
