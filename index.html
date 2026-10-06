@@ -8453,6 +8453,26 @@
             specialChemClubCache = { ref: db, len: db.length, ids };
             return ids;
         }
+        // MEN'S ↔ WOMEN'S CLUB LINKS. In FC, Arsenal and Arsenal Women
+        // link by Club, but EA's data gives the two teams different
+        // clubIds and has no club names to match them by. So the pairing
+        // is set by the user once (player modal → "Link to men's club"),
+        // saved in localStorage, and chemistry counts both ids as the
+        // men's club id. League links are never shared across genders —
+        // they already can't be, since women's leagues have their own ids.
+        const CLUB_LINKS_KEY = 'fc27_club_links';
+        const WOMEN_LEAGUE_IDS = new Set([2215, 2216, 2218, 2221, 2222, 2228, 2229, 2230, 2231, 2232, 2233, 2236, 2267, 2271, 2272, 2273]);
+        let clubLinks = (() => {
+            try { const v = JSON.parse(localStorage.getItem(CLUB_LINKS_KEY) || '{}'); return v && typeof v === 'object' ? v : {}; }
+            catch (e) { return {}; }
+        })();
+        function canonicalClubId(id) {
+            if (id == null) return null;
+            const linked = clubLinks[String(id)];
+            return typeof linked === 'number' ? linked : id;
+        }
+        function isWomensCard(p) { return !!p && p.leagueId != null && WOMEN_LEAGUE_IDS.has(p.leagueId); }
+
         function chemCardType(p) {
             if (!p) return 'normal';
             if (p.isIcon || p.leagueId === ICONS_LEAGUE_ID) return 'icon';
@@ -8490,7 +8510,8 @@
                     if (p.leagueId != null) leagueCount[p.leagueId] = (leagueCount[p.leagueId] || 0) + 1;
                     if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 1;
                 } else {
-                    if (p.clubId != null) clubCount[p.clubId] = (clubCount[p.clubId] || 0) + 1;
+                    const ck = canonicalClubId(p.clubId);
+                    if (ck != null) clubCount[ck] = (clubCount[ck] || 0) + 1;
                     if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 1;
                     if (p.leagueId != null) leagueCount[p.leagueId] = (leagueCount[p.leagueId] || 0) + 1;
                 }
@@ -8517,7 +8538,7 @@
                 if (cardType !== 'normal') {
                     points = 3;
                 } else {
-                    const cc = p.clubId != null ? (clubCount[p.clubId] || 0) : 0;
+                    const cc = p.clubId != null ? (clubCount[canonicalClubId(p.clubId)] || 0) : 0;
                     const nc = p.nationId != null ? (nationCount[p.nationId] || 0) : 0;
                     const lc = p.leagueId != null ? (leagueCount[p.leagueId] || 0) : 0;
                     const cPts = clubChemTier(cc), nPts = nationChemTier(nc), lPts = leagueChemTier(lc);
@@ -8619,7 +8640,7 @@
                     // share a club, nation or league with a needy locked player
                     // can help — prefiltering keeps this pass fast.
                     const sharesWithNeedy = p => needyLocked.some(n =>
-                        (p.clubId != null && p.clubId === n.player.clubId) ||
+                        (p.clubId != null && canonicalClubId(p.clubId) === canonicalClubId(n.player.clubId)) ||
                         (p.nationId != null && p.nationId === n.player.nationId) ||
                         (p.leagueId != null && p.leagueId === n.player.leagueId));
                     const candidates = getActiveDatabase().filter(p =>
@@ -12506,6 +12527,90 @@
             verifyCopies(original, pos, tiers);
         }
 
+        // ---- Men's ↔ women's club link UI (player modal, women's cards) ----
+        function findAnyPlayerByClub(clubId, wantWomen) {
+            const db = Array.isArray(fc27Database) ? fc27Database : [];
+            return db.filter(p => p.clubId === clubId && isWomensCard(p) === wantWomen)
+                .sort((a, b) => (b.rating || 0) - (a.rating || 0))[0] || null;
+        }
+        function clubLinkHtml(player) {
+            if (!player || player.clubId == null || !isWomensCard(player)) return '';
+            const isAr = currentLanguage === 'ar';
+            const linkedTo = clubLinks[String(player.clubId)];
+            if (typeof linkedTo === 'number') {
+                const ex = findAnyPlayerByClub(linkedTo, false);
+                return `<div id="club-link-slot" class="mt-2 text-xs flex items-center gap-2 flex-wrap">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-fc-accent/15 text-fc-accent border border-fc-accent/30 font-bold">
+                        <i class="fa-solid fa-link"></i>${isAr ? 'مرتبط بنادي الرجال' : "Linked to men's club"}${ex ? ` <span class="font-normal text-gray-300">(${isAr ? 'نادي' : 'club of'} ${cmpEsc(ex.name)})</span>` : ''}
+                    </span>
+                    <button onclick="window.removeClubLink(${player.clubId})" class="text-gray-500 hover:text-white text-[11px] underline">${isAr ? 'إلغاء الربط' : 'Unlink'}</button>
+                </div>`;
+            }
+            return `<div id="club-link-slot" class="mt-2 text-xs">
+                <button onclick="window.openClubLinkSearch(${player.clubId})" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-fc-dark text-gray-400 border border-fc-border hover:text-fc-accent hover:border-fc-accent/40 font-bold transition-all">
+                    <i class="fa-solid fa-link"></i>${isAr ? 'اربط بنادي الرجال' : "Link to men's club"}
+                </button>
+                <span class="text-[10px] text-gray-500 ml-1 rtl:ml-0 rtl:mr-1">${isAr ? 'في اللعبة يرتبط فريقا الرجال والسيدات لنفس النادي بكيمياء النادي' : "In-game, a club's men's and women's teams share Club chemistry"}</span>
+            </div>`;
+        }
+        function refreshClubLinkSlot() {
+            const slot = document.getElementById('club-link-slot');
+            const p = lastPlayerModalArgs && lastPlayerModalArgs[0];
+            if (slot && p) slot.outerHTML = clubLinkHtml(p) || '<div id="club-link-slot"></div>';
+        }
+        window.openClubLinkSearch = function(womenClubId) {
+            const slot = document.getElementById('club-link-slot');
+            if (!slot) return;
+            const isAr = currentLanguage === 'ar';
+            slot.innerHTML = `
+                <div class="mt-1 bg-fc-dark border border-fc-border rounded-xl p-2 max-w-sm">
+                    <div class="text-[11px] text-gray-400 mb-1.5">${isAr ? 'ابحث عن أي لاعب من فريق الرجال لهذا النادي:' : "Search any player from this club's men's team:"}</div>
+                    <input type="text" oninput="window.clubLinkSearch(${womenClubId}, this.value)" placeholder="${isAr ? 'مثال: أوديغارد' : 'e.g. Ødegaard'}"
+                        class="w-full bg-fc-card border border-fc-border rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-fc-accent">
+                    <div id="club-link-results" class="mt-1 max-h-48 overflow-y-auto hide-scrollbar"></div>
+                    <button onclick="refreshClubLinkSlot()" class="mt-1 text-[11px] text-gray-500 hover:text-white">${isAr ? 'إلغاء' : 'Cancel'}</button>
+                </div>`;
+            const inp = slot.querySelector('input');
+            if (inp) inp.focus();
+        };
+        window.refreshClubLinkSlot = refreshClubLinkSlot;
+        window.clubLinkSearch = function(womenClubId, q) {
+            const box = document.getElementById('club-link-results');
+            if (!box) return;
+            const query = (q || '').trim().toLowerCase();
+            if (query.length < 2) { box.innerHTML = ''; return; }
+            const isAr = currentLanguage === 'ar';
+            const special = getSpecialChemClubIds();
+            const seenClubs = new Set();
+            const matches = (Array.isArray(fc27Database) ? fc27Database : [])
+                .filter(p => p.clubId != null && !isWomensCard(p) && p.leagueId !== ICONS_LEAGUE_ID && !special.has(p.clubId) && nameMatchesQuery(p.name, query))
+                .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+                .filter(p => { if (seenClubs.has(p.clubId)) return false; seenClubs.add(p.clubId); return true; })
+                .slice(0, 6);
+            box.innerHTML = matches.length === 0
+                ? `<div class="text-[11px] text-gray-500 px-1 py-1">${isAr ? 'لا توجد نتائج' : 'No results'}</div>`
+                : matches.map(p => `
+                    <button onclick="window.setClubLink(${womenClubId}, ${p.clubId})" class="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-fc-cardHover text-left rtl:text-right">
+                        <img src="${p.photo}" class="w-6 h-6 rounded-full object-cover bg-fc-card" onerror="this.style.visibility='hidden'">
+                        <span class="text-xs text-white font-bold truncate flex-1">${cmpEsc(p.name)}</span>
+                        <span class="text-[10px] text-gray-500">${cmpEsc(getLeagueName(p.leagueId) || '')}</span>
+                    </button>`).join('');
+        };
+        function afterClubLinkChange() {
+            try { localStorage.setItem(CLUB_LINKS_KEY, JSON.stringify(clubLinks)); } catch (e) { /* ignore */ }
+            refreshClubLinkSlot();
+            if (typeof renderFootballPitch === 'function') renderFootballPitch();
+        }
+        window.setClubLink = function(womenClubId, menClubId) {
+            if (womenClubId == null || menClubId == null || womenClubId === menClubId) return;
+            clubLinks[String(womenClubId)] = menClubId;
+            afterClubLinkChange();
+        };
+        window.removeClubLink = function(womenClubId) {
+            delete clubLinks[String(womenClubId)];
+            afterClubLinkChange();
+        };
+
         // Initial tray state on load (picks persist across sessions; the
         // tray fills in names/photos once the database is available).
         document.addEventListener('DOMContentLoaded', () => { try { window.refreshCompareUi(); } catch (e) { /* ignore */ } });
@@ -12896,9 +13001,10 @@
                 // chemistry-seeded starts around the pool's biggest groups
                 ['clubId', 'leagueId', 'nationId'].forEach(field => {
                     const counts = {};
-                    free.forEach(p => { if (p[field] != null) counts[p[field]] = (counts[p[field]] || 0) + 1; });
+                    const keyOf = p => field === 'clubId' ? canonicalClubId(p.clubId) : p[field];
+                    free.forEach(p => { const k = keyOf(p); if (k != null) counts[k] = (counts[k] || 0) + 1; });
                     Object.entries(counts).filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]).slice(0, 2)
-                        .forEach(([val]) => starts.push(greedy(p => (String(p[field]) === val ? 60 : 0), 0)));
+                        .forEach(([val]) => starts.push(greedy(p => (String(keyOf(p)) === val ? 60 : 0), 0)));
                 });
                 for (let r = 0; r < o.randomStarts; r++) starts.push(greedy(null, 3));
 
@@ -18832,6 +18938,7 @@
                         <h3 class="text-xl font-extrabold text-white mt-1">${player.name}</h3>
                         <p class="text-xs text-gray-400">${statsLine}</p>
                         <div class="flex items-center gap-2 flex-wrap">${ownToggleBtn}${modalCompareBtnHtml(player)}${modalCopiesBtnHtml(player)}</div>
+                        ${clubLinkHtml(player)}
                         ${(getNationFlag(player.nationId) || getLeagueLogoUrl(player.leagueId)) ? `
                             <div class="flex items-center gap-1.5 mt-1.5">
                                 ${getNationFlag(player.nationId) ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-white shadow-sm text-sm leading-none overflow-hidden shrink-0" title="${getNationName(player.nationId) || ''}">${getNationFlag(player.nationId)}</span>` : ''}
