@@ -8408,16 +8408,57 @@
         // 0 for anyone not in a valid position (position lock — out-of-
         // position players earn nothing AND don't count toward anyone
         // else's thresholds either).
-        // Icons/Heroes auto-lock at 3 (when in position) and contribute
-        // increments per the spec instead of the normal club/nation/league
-        // count. NOTE: EasySBC's live feed has no Icon/Hero flag, so this
-        // only activates for manually-flagged/imported players — see the
-        // isIcon/isHero comment in mapEasySbcPlayer().
+        // Icons/Heroes/Hall of FUT auto-lock at 3 (when in position) and
+        // contribute increments instead of the normal club/nation/league
+        // count — FC 27 values (EA launch notes, Sept 2026):
+        //   Icon:              +1 Nation, +1 to EVERY League in the XI
+        //                      (FC 26 was +2 Nation)
+        //   Hero / Hall of FUT: +1 Nation, +1 to their own League
+        //                      (FC 26 Heroes were +2 League)
+        // Detection (EasySBC's feed has no card-type flag):
+        //   Icon  — leagueId 2118 (EA's "Icons" league), or isIcon set.
+        //   Hero / Hall of FUT — isHero / isHallOfFut set, or the card's
+        //   club is a "special" club: one clubId whose cards span 3+
+        //   different real leagues. Real clubs sit in one league; EA's
+        //   Heroes / Hall of FUT clubs hold players from many leagues.
+        //   See getSpecialChemClubIds().
         // Manager: +1 flat to any in-position starter sharing the manager's
         // exact nationId or leagueId (capped at 3 same as everyone else).
         function clubChemTier(count) { return count >= 7 ? 3 : count >= 4 ? 2 : count >= 2 ? 1 : 0; }
         function nationChemTier(count) { return count >= 8 ? 3 : count >= 5 ? 2 : count >= 2 ? 1 : 0; }
         function leagueChemTier(count) { return count >= 8 ? 3 : count >= 5 ? 2 : count >= 3 ? 1 : 0; }
+
+        const ICONS_LEAGUE_ID = 2118;
+        const SPECIAL_CLUB_MIN_LEAGUES = 3;
+        const SPECIAL_CLUB_MIN_PLAYERS = 5;
+        let specialChemClubCache = { ref: null, len: -1, ids: new Set() };
+        // clubIds that behave like EA's Heroes / Hall of FUT clubs: their
+        // cards span several different real leagues. Recomputed only when
+        // the database array changes.
+        function getSpecialChemClubIds() {
+            const db = Array.isArray(fc27Database) ? fc27Database : [];
+            if (specialChemClubCache.ref === db && specialChemClubCache.len === db.length) return specialChemClubCache.ids;
+            const leaguesByClub = new Map(), countByClub = new Map();
+            db.forEach(p => {
+                if (p.clubId == null || p.leagueId == null || p.leagueId === ICONS_LEAGUE_ID) return;
+                if (!leaguesByClub.has(p.clubId)) leaguesByClub.set(p.clubId, new Set());
+                leaguesByClub.get(p.clubId).add(p.leagueId);
+                countByClub.set(p.clubId, (countByClub.get(p.clubId) || 0) + 1);
+            });
+            const ids = new Set();
+            leaguesByClub.forEach((lgs, club) => {
+                if (lgs.size >= SPECIAL_CLUB_MIN_LEAGUES && (countByClub.get(club) || 0) >= SPECIAL_CLUB_MIN_PLAYERS) ids.add(club);
+            });
+            if (ids.size) console.info('[chemistry] Hero / Hall of FUT-style clubs detected:', [...ids]);
+            specialChemClubCache = { ref: db, len: db.length, ids };
+            return ids;
+        }
+        function chemCardType(p) {
+            if (!p) return 'normal';
+            if (p.isIcon || p.leagueId === ICONS_LEAGUE_ID) return 'icon';
+            if (p.isHero || p.isHallOfFut || (p.clubId != null && getSpecialChemClubIds().has(p.clubId))) return 'hero';
+            return 'normal';
+        }
 
         // Returns { perSlot: {slotIdx: {points, inPosition, clubCount, nationCount, leagueCount}}, total }
         function calculateSquadChemistry(hypotheticalXI) {
@@ -8436,16 +8477,17 @@
             // each have a real leagueId) — this is what Icons add +1 to.
             const leaguesPresent = new Set();
             active.forEach(e => {
-                if (!e.player.isIcon && e.player.leagueId != null) leaguesPresent.add(e.player.leagueId);
+                if (chemCardType(e.player) !== 'icon' && e.player.leagueId != null) leaguesPresent.add(e.player.leagueId);
             });
 
             const clubCount = {}, nationCount = {}, leagueCount = {};
             active.forEach(e => {
                 const p = e.player;
-                if (p.isIcon) {
-                    if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 2;
-                } else if (p.isHero) {
-                    if (p.leagueId != null) leagueCount[p.leagueId] = (leagueCount[p.leagueId] || 0) + 2;
+                const type = chemCardType(p);
+                if (type === 'icon') {
+                    if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 1;
+                } else if (type === 'hero') {
+                    if (p.leagueId != null) leagueCount[p.leagueId] = (leagueCount[p.leagueId] || 0) + 1;
                     if (p.nationId != null) nationCount[p.nationId] = (nationCount[p.nationId] || 0) + 1;
                 } else {
                     if (p.clubId != null) clubCount[p.clubId] = (clubCount[p.clubId] || 0) + 1;
@@ -8455,7 +8497,7 @@
             });
             // Icons add +1 to every league already present in the XI.
             active.forEach(e => {
-                if (e.player.isIcon) {
+                if (chemCardType(e.player) === 'icon') {
                     leaguesPresent.forEach(lg => { leagueCount[lg] = (leagueCount[lg] || 0) + 1; });
                 }
             });
@@ -8471,7 +8513,8 @@
                 const p = e.player;
                 let points;
                 let breakdown = null;
-                if (p.isIcon || p.isHero) {
+                const cardType = chemCardType(p);
+                if (cardType !== 'normal') {
                     points = 3;
                 } else {
                     const cc = p.clubId != null ? (clubCount[p.clubId] || 0) : 0;
@@ -8485,7 +8528,7 @@
                     }
                     points = Math.min(3, points);
                 }
-                perSlot[e.idx] = { points, inPosition: true, breakdown, isIcon: p.isIcon, isHero: p.isHero };
+                perSlot[e.idx] = { points, inPosition: true, breakdown, isIcon: cardType === 'icon', isHero: cardType === 'hero' };
                 total += points;
             });
             return { perSlot, total };
@@ -18681,7 +18724,7 @@
                         <div class="flex items-center gap-2 mt-1.5 text-[11px] ${currentLanguage === 'ar' ? 'flex-row-reverse justify-end' : ''}">
                             <span class="font-bold text-green-400 uppercase tracking-wide">${chemLabel} 3/3</span>
                             <div class="flex gap-0.5">${diamondsSmall}</div>
-                            <span class="text-gray-500">${chemInfo.isIcon ? (currentLanguage === 'ar' ? 'أيقونة — قفل تلقائي' : 'Icon — auto-locked') : (currentLanguage === 'ar' ? 'بطل — قفل تلقائي' : 'Hero — auto-locked')}</span>
+                            <span class="text-gray-500">${chemInfo.isIcon ? (currentLanguage === 'ar' ? 'أيقونة — قفل تلقائي' : 'Icon — auto-locked') : (currentLanguage === 'ar' ? 'بطل / Hall of FUT — قفل تلقائي' : 'Hero / Hall of FUT — auto-locked')}</span>
                         </div>
                     `;
                 } else {
@@ -19401,6 +19444,7 @@
                 // these flags set, the chemistry engine already honors them.
                 isIcon: p.isIcon === true,
                 isHero: p.isHero === true,
+                isHallOfFut: p.isHallOfFut === true,
                 photo: p.playerUrl || `https://placehold.co/120x120/1b4d3e/ffffff?text=${encodeURIComponent(p.name || 'Player')}`
             };
         }
