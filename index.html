@@ -4211,7 +4211,43 @@
             try { data = JSON.parse(localStorage.getItem(TACTICS_LAB_KEY) || 'null'); } catch (e) { data = null; }
             tacticsLab = (data && data.version === 1) ? data : { version: 1, reports: {}, skipped: {}, createdAt: new Date().toISOString() };
             if (!tacticsLab.seeded) seedTacticsLabFromScreenshot();
+            if (!tacticsLab.estimates4231v1) fill4231Estimates();
             return tacticsLab;
+        }
+        // One-time fill (Oct 2026) of the graph values missing from the
+        // 4-2-3-1 reports. Without the baseline's Length and Build-Up the
+        // empirical estimate ignored every 4-2-3-1 report. Each value is
+        // inferred from the game's own sentences in that report (warnings
+        // are the 3 lowest axes in ascending order, strengths the 3
+        // highest) plus the reports that got the same sentences. Only
+        // missing axes are filled; anything you entered is never touched.
+        // The note says which values are estimates, so they can be
+        // checked in game.
+        const LAB_4231_ESTIMATES = {
+            '4-2-3-1#base': { len: 5.5, bld: 6 },
+            '4-2-3-1#5-Holding-Ball-Winning': { len: 5 },
+            '4-2-3-1#5-Deep-Lying Playmaker-Defend': { len: 5, bld: 4.5 },
+            '4-2-3-1#5-Deep-Lying Playmaker-Roaming': { len: 5.5 },
+            '4-2-3-1#5-Deep-Lying Playmaker-Build-Up': { len: 5.5 },
+            '4-2-3-1#7-Wide Midfielder-Defend': { len: 6.5 },
+            '4-2-3-1#8-Classic 10-Attack': { len: 7 },
+            '4-2-3-1#8-Classic 10-Versatile': { len: 7 }
+        };
+        function fill4231Estimates() {
+            tacticsLab.estimates4231v1 = true;
+            let changed = 0;
+            Object.values(tacticsLab.reports || {}).forEach(r => {
+                const est = r && LAB_4231_ESTIMATES[r.testId];
+                if (!est || !r.axes) return;
+                const filled = Object.entries(est).filter(([ax]) => typeof r.axes[ax] !== 'number');
+                if (!filled.length) return;
+                filled.forEach(([ax, v]) => { r.axes[ax] = v; });
+                const what = filled.map(([ax, v]) => `${TACTIC_AXIS_LABEL[ax].short} ${v}`).join(', ');
+                r.notes = (`ESTIMATED by Claude, not from the game: ${what} (from this report's sentences and matching tests). Check in game.` + (r.notes ? ' ' + r.notes : '')).slice(0, 300);
+                changed++;
+            });
+            saveTacticsLab();
+            return changed;
         }
         function saveTacticsLab() {
             try { localStorage.setItem(TACTICS_LAB_KEY, JSON.stringify(tacticsLab)); return true; }
@@ -4419,36 +4455,42 @@
             labEmpiricalCache = { stamp, bases, deltas, slope, examples: acc, measuredCount: Object.keys(deltas).length };
             return labEmpiricalCache;
         }
-        function estimateTacticAxesEmpirical(setup) {
+        function estimateTacticAxesEmpirical(setup, opts) {
             if (!setup || !formationSlots[setup.formation]) return null;
             const idx = labEmpiricalIndex();
             const base = idx.bases[setup.formation];
             if (!base) return null;
-            const axes = { ...base.axes };
-            const add = d => TACTIC_AXES.forEach(ax => { axes[ax] += d[ax]; });
-            let measured = 0;
+            const zero = () => Object.fromEntries(TACTIC_AXES.map(ax => [ax, 0]));
+            // Team-setting and role shifts are kept apart (setD / roleD) so
+            // callers can tell how far a setup is from what was measured.
+            const setD = zero(), roleD = zero();
+            const addTo = (acc, d) => TACTIC_AXES.forEach(ax => { acc[ax] += d[ax]; });
+            let measured = 0, modelled = 0, roleChanges = 0;
             const keysUsed = [];
             const unmeasured = { ...base.setup, roles: { ...base.setup.roles } };
-            let modelled = 0;
             [['buildUp', setup.buildUp], ['approach', setup.approach]].forEach(([k, v]) => {
                 if (!v || v === base.setup[k]) return;
                 const d = idx.deltas[`set|${k}|${v}`];
-                if (d) { add(d); measured++; keysUsed.push(`set|${k}|${v}`); }
+                if (d) { addTo(setD, d); measured++; keysUsed.push(`set|${k}|${v}`); }
                 else { unmeasured[k] = v; if (k === 'approach') unmeasured.lineHeight = setup.lineHeight; modelled++; }
             });
             const slots = formationSlots[setup.formation];
             slots.forEach((slot, i) => {
                 const r = setup.roles && setup.roles[i], b = base.setup.roles[i];
                 if (!r || !b || (r.role === b.role && r.focus === b.focus)) return;
+                roleChanges++;
                 const rk = `role|${LAB_MIRROR[slot.pos] || slot.pos}|${r.role}|${r.focus}`;
                 const d = idx.deltas[rk];
-                if (d) { add(d); measured++; keysUsed.push(rk); }
+                if (d) { addTo(roleD, d); measured++; keysUsed.push(rk); }
                 else { unmeasured.roles[i] = { role: r.role, focus: r.focus }; modelled++; }
             });
             if (modelled) {
                 const a = estimateTacticAxesRaw(unmeasured), b0 = estimateTacticAxesRaw(base.setup);
-                TACTIC_AXES.forEach(ax => { axes[ax] += idx.slope[ax] * (a[ax] - b0[ax]); });
+                TACTIC_AXES.forEach(ax => { roleD[ax] += idx.slope[ax] * (a[ax] - b0[ax]); });
             }
+            const axes = {};
+            TACTIC_AXES.forEach(ax => { axes[ax] = base.axes[ax] + setD[ax] + roleD[ax]; });
+            const rawAxes = { ...axes };
             TACTIC_AXES.forEach(ax => { axes[ax] = Math.max(0, Math.min(10, axes[ax])); });
             // Exactly one measured change in the same formation (e.g. the
             // mirror slot of a tested role): the game's sentences for it
@@ -4458,7 +4500,7 @@
                 const ex = (idx.examples[keysUsed[0]] || []).find(x => x.formation === setup.formation);
                 if (ex) sentences = { strengths: ex.strengths, warnings: ex.warnings };
             }
-            return { axes, baseFormation: setup.formation, measured, modelled, sentences };
+            return { axes, rawAxes, setD, roleD, roleChanges, baseFormation: setup.formation, measured, modelled, sentences };
         }
 
         // Estimate + 3 strengths / 3 warnings. Graph: the empirical
@@ -14593,6 +14635,36 @@
         // aggressive line even if the squad is otherwise fast/physical —
         // there's no point pressing high with a back line that can't cope
         // with the space left in behind.
+        // ---- Lab check: your Tactics Lab reports applied to the squad ----
+        // The empirical estimate (your formation baseline + the measured
+        // shift of every setting/role that differs from it) for the squad's
+        // own formation and roles. null when the formation has no complete
+        // baseline report yet, or the squad has no roles.
+        const LAB_BUILDUP_FROM_SUGGEST = { possession: 'short', balanced: 'balanced', counter: 'counter' };
+        function squadRolesForLab() {
+            const roles = {};
+            (formationSlots[squadState.formation] || []).forEach((s, i) => {
+                const r = squadState.teamRoles && squadState.teamRoles[i];
+                if (r && r.role) roles[i] = { role: r.role, focus: r.focus };
+            });
+            return roles;
+        }
+        function labEstimateForSquad(buildUp, approach, lineHeight) {
+            try {
+                const roles = squadRolesForLab();
+                if (!Object.keys(roles).length) return null;
+                const setup = { formation: squadState.formation, buildUp, approach, lineHeight, roles };
+                const sig = tacticSetupSignature(setup);
+                const exact = labLearningReports().find(r => r.signature === sig && r.axes && TACTIC_AXES.every(a => typeof r.axes[a] === 'number'));
+                if (exact) return { axes: { ...exact.axes }, rawAxes: { ...exact.axes }, exact: true, measured: 0, modelled: 0 };
+                return estimateTacticAxesEmpirical(setup);
+            } catch (e) { return null; }
+        }
+        function labMeasuredSetting(setting, value) {
+            try { return labEmpiricalIndex().deltas[`set|${setting}|${value}`] || null; } catch (e) { return null; }
+        }
+        const fmtAx = v => (Math.round(v * 2) / 2).toString();
+
         function suggestSquadTactics(identity) {
             if (!identity) return null;
             const isAr = currentLanguage === 'ar';
@@ -14606,6 +14678,28 @@
             else if (identity.dominantNotable && identity.dominantAxis === 'defense') approach = 'aggressive';
             else if (identity.dominantNotable && identity.dominantAxis === 'pace') approach = 'high';
             else approach = 'balanced';
+
+            // Lab guard — Length. In your 4-3-3 tests a High line costs
+            // 3.5 Length and Aggressive 4.5. Formations whose own reported
+            // baseline is already short (Length ≤ 2 at a Balanced line:
+            // "Limited Playing Space") have nothing left to give, so a pace
+            // squad there gets a Balanced line instead. Not applied to other
+            // formations: your squad reports show attacking roles can keep
+            // Length up even with a High line (4-2-1-3 Counter · High 86
+            // stayed at 8), so the cost can't be assumed there.
+            let labLineNote = null;
+            if (approach === 'high' || approach === 'aggressive') {
+                let baseLen = null, hd = null;
+                try { const ix = labEmpiricalIndex(); const bb = ix.bases[squadState.formation]; baseLen = bb ? bb.axes.len : null; hd = ix.deltas[`set|approach|${approach}`] || null; } catch (e) { /* no lab */ }
+                if (baseLen != null && baseLen <= 2) {
+                    const orig = approach;
+                    approach = 'balanced';
+                    const cost = hd ? fmtAx(Math.abs(hd.len)) : (orig === 'high' ? '3.5' : '4.5');
+                    labLineNote = isAr
+                        ? `السرعة تناسب خطاً ${orig === 'high' ? 'مرتفعاً' : 'هجومياً'}، لكن ${squadState.formation} قصيرة أصلاً في مختبرك (الطول ${fmtAx(baseLen)} بخط متوازن)، والخط ${orig === 'high' ? 'المرتفع' : 'الهجومي'} كلّف ${cost} من الطول في اختبارك — لذا خط متوازن.`
+                        : `Pace would suit a ${orig === 'high' ? 'High' : 'Aggressive'} line, but ${squadState.formation} is already short in your Lab (Length ${fmtAx(baseLen)} at a Balanced line), and that line cost ${cost} Length in your test — so a Balanced line.`;
+                }
+            }
             // Line height: the approach's usual value, moved up for a back
             // line that's quicker than typical for its positions (more room
             // to recover) and down for a slower one — kept inside the
@@ -14630,19 +14724,64 @@
                 balanced: { en: 'Nothing specific to protect or exploit — hold a standard, flexible defensive shape.', ar: 'لا يوجد ما يستدعي الحماية أو الاستغلال تحديداً — حافظ على شكل دفاعي قياسي ومرن.' }
             };
 
+            // Counter's measured cost, from your reports.
+            let counterNote = '';
+            const cd = buildUp === 'counter' ? labMeasuredSetting('buildUp', 'counter') : null;
+            if (cd) counterNote = isAr
+                ? ` في اختباراتك، المرتد يخفض البناء ${fmtAx(Math.abs(cd.bld))} والطول ${fmtAx(Math.abs(cd.len))} — توقّع تحذير "Unimaginative Build-Up Play".`
+                : ` In your tests Counter costs ${fmtAx(Math.abs(cd.bld))} Build-Up and ${fmtAx(Math.abs(cd.len))} Length — expect "Unimaginative Build-Up Play".`;
+
             return {
                 buildUp,
                 buildUpLabel: isAr ? BUILDUP_LABELS[buildUp].ar : BUILDUP_LABELS[buildUp].en,
-                buildUpWhy: isAr ? BUILDUP_WHY[buildUp].ar : BUILDUP_WHY[buildUp].en,
+                buildUpWhy: (isAr ? BUILDUP_WHY[buildUp].ar : BUILDUP_WHY[buildUp].en) + counterNote,
                 approach,
                 approachLabel: isAr ? APPROACH_LABELS[approach].ar : APPROACH_LABELS[approach].en,
-                approachWhy: (isAr ? APPROACH_WHY[approach].ar : APPROACH_WHY[approach].en) + (lineHeight !== LINE_BASE[approach]
+                approachWhy: (labLineNote || (isAr ? APPROACH_WHY[approach].ar : APPROACH_WHY[approach].en)) + (lineHeight !== LINE_BASE[approach]
                     ? (isAr
                         ? ` الخط عند ${lineHeight} بدل ${LINE_BASE[approach]} لأن سرعة خطك الخلفي ${paceDev > 0 ? 'أعلى' : 'أقل'} من المعتاد لهذه المراكز (${paceDev > 0 ? '+' : '−'}${Math.abs(Math.round(paceDev))}).`
                         : ` Line set to ${lineHeight} instead of ${LINE_BASE[approach]} because your back line is ${paceDev > 0 ? 'quicker' : 'slower'} than typical for these positions (${paceDev > 0 ? '+' : '−'}${Math.abs(Math.round(paceDev))} pace).`)
                     : ''),
                 lineHeight
             };
+        }
+
+        // Estimated in-game Tactical Summary graph for the squad as set up
+        // now (formation, assigned roles, chosen tactics), from your Lab
+        // reports, with the causes your reports found for any weak axis.
+        function squadLabCheckHtml(t) {
+            const isAr = currentLanguage === 'ar';
+            const lab = (en, ar) => (isAr ? ar : en);
+            const est = labEstimateForSquad(t.buildUp, t.approach, t.lineHeight);
+            const slots = formationSlots[squadState.formation] || [];
+            const rolesBySlot = squadRolesForLab();
+            // Role notes straight from your one-change tests (each moved
+            // one axis by 4.5 or more), whatever else the squad does.
+            const notes = [];
+            const at = (pos, role, focus) => slots.some((s, i) => (LAB_MIRROR[s.pos] || s.pos) === pos && rolesBySlot[i] && rolesBySlot[i].role === role && (!focus || rolesBySlot[i].focus === focus));
+            const anyMid = role => slots.some((s, i) => ['CM', 'CDM', 'CAM'].includes(s.pos) && rolesBySlot[i] && rolesBySlot[i].role === role);
+            if (anyMid('Half Winger')) notes.push(lab('Half Winger in midfield: −4.5 to −5 Build-Up in your tests.', 'Half Winger في الوسط: −4.5 إلى −5 من البناء في اختباراتك.'));
+            if (t.buildUp === 'counter') notes.push(lab('Counter: −5 Build-Up in your tests; all 5 of your Counter squads showed Build-Up 1–1.5.', 'المرتد: −5 من البناء في اختباراتك؛ كل تشكيلاتك الخمس بالمرتد أظهرت بناء 1–1.5.'));
+            const narrow = slots.some((s, i) => { const r = rolesBySlot[i]; return r && ((['LM', 'RM'].includes(s.pos) && ((r.role === 'Wide Midfielder' && r.focus !== 'Build-Up') || (r.role === 'Wide Playmaker' && r.focus === 'Build-Up'))) || r.role === 'Centre Half'); });
+            if (narrow) notes.push(lab('A flank role that comes inside (Wide Midfielder, Wide Playmaker on Build-Up) or a Centre Half: −5 to −6 Width in your 4-2-3-1 tests.', 'دور جناح يدخل للعمق (Wide Midfielder، Wide Playmaker على Build-Up) أو Centre Half: −5 إلى −6 من العرض في اختبارات 4-2-3-1.'));
+            const notesHtml = notes.map(n => `<p class="text-[11px] text-orange-200/80 leading-snug">⚠ ${n}</p>`).join('');
+            const chipsOf = a => TACTIC_AXES.map(ax => {
+                const v = a[ax], weak = v <= 2.5, strong = v >= 7.5;
+                return `<span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${weak ? 'border-orange-500/40 text-orange-300' : strong ? 'border-fc-accent/40 text-fc-accent' : 'border-fc-border text-gray-300'}" style="direction:ltr;unicode-bidi:isolate;">${TACTIC_AXIS_LABEL[ax].short} ${fmtAx(v)}</span>`;
+            }).join('');
+            let head;
+            if (!est) {
+                head = `<p class="text-[10px] text-gray-600">${lab(`Lab check: no complete ${squadState.formation} baseline in your Tactics Lab yet.`, `فحص المختبر: لا يوجد تقرير أساسي كامل لـ ${squadState.formation} بعد.`)}</p>`;
+            } else if (est.exact) {
+                head = `<div class="flex items-center gap-1 flex-wrap"><span class="text-[11px] text-gray-400 me-1">${lab('In-game graph', 'الرسم داخل اللعبة')}</span>${chipsOf(est.axes)}<span class="text-[10px] text-gray-600 ms-1">${lab('reported by you for this exact setup', 'أبلغت عنه لهذا الإعداد بالضبط')}</span></div>`;
+            } else if (est.roleChanges <= 2 && !est.modelled) {
+                head = `<div class="flex items-center gap-1 flex-wrap"><span class="text-[11px] text-gray-400 me-1">${lab('Estimated in-game graph', 'الرسم المتوقع داخل اللعبة')}</span>${chipsOf(est.axes)}<span class="text-[10px] text-gray-600 ms-1">${lab(`${squadState.formation} baseline + ${est.measured} measured change(s)`, `أساس ${squadState.formation} + ${est.measured} تغيير مُقاس`)}</span></div>`;
+            } else {
+                head = `<p class="text-[10px] text-gray-500">${lab(
+                    `Lab check: this squad changes ${est.roleChanges} roles from the ${squadState.formation} defaults. Your squad reports show single-role effects don't add up reliably at that point, so no graph is estimated — test it in the Tactics Lab ("Test my current squad").`,
+                    `فحص المختبر: هذه التشكيلة تغيّر ${est.roleChanges} أدوار عن الافتراضي لـ ${squadState.formation}. تقارير تشكيلاتك تُظهر أن تأثيرات الأدوار المنفردة لا تُجمع بدقة عندها، فلا يُقدَّر الرسم — اختبرها في مختبر التكتيك ("اختبر تشكيلتي الحالية").`)}</p>`;
+            }
+            return `<div class="basis-full mt-1 space-y-1">${head}${notesHtml}</div>`;
         }
 
         function renderTacticsSummary() {
@@ -14677,6 +14816,7 @@
                 ${field(lab('Line', 'الخط'), `<input type="number" min="1" max="100" value="${t.lineHeight}" onchange="window.editSquadTactic('lineHeight', this.value)" class="${selCls('lineHeight')} w-16">`)}
                 ${editedNote}
                 <p class="text-[11px] text-gray-500 leading-snug basis-full mt-0.5">${t.anyEdited ? lab('Why the app suggested its setup: ', 'لماذا اقترح التطبيق إعداده: ') : ''}${t.suggestion.buildUpWhy} ${t.suggestion.approachWhy}</p>
+                ${squadLabCheckHtml(t)}
                 <p class="text-[10px] text-gray-600 basis-full">${lab('★ = suggested. Changing the Defensive Approach sets its default line; you can then fine-tune the line.', '★ = المقترح. تغيير النهج الدفاعي يضبط خطه الافتراضي، ثم يمكنك تعديل الخط.')}</p>
             `;
         }
