@@ -1661,7 +1661,7 @@
                 dbStatsPriorityLabel: "When picking, prioritize:",
                 dbStatsPriorityReason: "ranked by real spread among usable players — if two players tie on the first, move to the next; that's exactly where the real separation is",
                 dbStatsPlaystylesTitle: "Playstyles to look for",
-                dbStatsPlaystylesReason: "ranked rarest-first among usable players who actually carry recorded playstyles — a playstyle almost everyone already has isn't a real edge, a rare one is",
+                dbStatsPlaystylesReason: "ranked by your tier list (S first), then rarest-first within a tier — among usable players who carry recorded playstyles. S/A-tier traits that suit the position are included even if they aren't on its core list; D/F tiers are never recommended",
                 dbStatsPlaystylesSample: "based on {data} of {total} rated players with recorded playstyle data",
                 dbStatsPlaystylesLowConfidence: "small sample — treat with caution",
                 dbStatsPlaystylesNoData: "No players at this position have recorded playstyle data yet (EasySBC only tracks it for some cards).",
@@ -1878,7 +1878,7 @@
                 dbStatsPriorityLabel: "عند الاختيار، ركّز على:",
                 dbStatsPriorityReason: "مرتّبة حسب التفاوت الفعلي بين اللاعبين القابلين للاستخدام — إذا تعادل لاعبان في الأول، انتقل للتالي؛ فهناك يكمن الفارق الحقيقي",
                 dbStatsPlaystylesTitle: "أنماط لعب يجب البحث عنها",
-                dbStatsPlaystylesReason: "مرتّبة من الأندر إلى الأشيع بين اللاعبين القابلين للاستخدام ممن لديهم أنماط لعب مسجّلة — النمط الذي يملكه الجميع ليس ميزة حقيقية، أما النادر فهو الميزة",
+                dbStatsPlaystylesReason: "مرتّبة حسب قائمة التصنيف لديك (S أولاً)، ثم الأندر أولاً داخل كل فئة — بين اللاعبين القابلين للاستخدام ممن لديهم أنماط لعب مسجّلة. تُضاف أنماط S/A المناسبة للمركز حتى لو لم تكن في قائمته الأساسية، ولا تُرشَّح أنماط D/F أبداً",
                 dbStatsPlaystylesSample: "بناءً على {data} من {total} لاعب بتقييم 74+ لديهم بيانات أنماط لعب مسجّلة",
                 dbStatsPlaystylesLowConfidence: "عيّنة صغيرة — تعامل معها بحذر",
                 dbStatsPlaystylesNoData: "لا يوجد لاعبون في هذا المركز لديهم بيانات أنماط لعب مسجّلة بعد (EasySBC يسجّلها لبعض البطاقات فقط).",
@@ -7062,14 +7062,15 @@
                 .map(k => entry.stats[k] ? { key: k, ...entry.stats[k] } : null)
                 .filter(Boolean)
                 .sort((a, b) => b.stdDev - a.stdDev);
-            const relevant = [...new Set(keys.flatMap(k => getRelevantPlaystylesForPosition(k)))];
+            const relevant = getPlaystyleCandidatesForPositions(keys);
             const withData = pool.filter(playerHasRecordedPlaystyles);
             const chain = withData.length === 0 ? [] : relevant.map(name => {
                 const count = withData.filter(p =>
                     (p.playstylesPlus && p.playstylesPlus.includes(name)) || (p.playstyles && p.playstyles.includes(name))
                 ).length;
-                return { name, count, pct: count / withData.length };
-            }).filter(e => e.count > 0).sort((a, b) => a.pct - b.pct);
+                return { name, count, pct: count / withData.length, tier: PLAYSTYLE_TIER_BY_NAME[name] || 'F' };
+            }).filter(e => e.count > 0 && PLAYSTYLE_TIER_ORDER[e.tier] <= 3)   // never recommend D/F
+              .sort((a, b) => (PLAYSTYLE_TIER_ORDER[a.tier] - PLAYSTYLE_TIER_ORDER[b.tier]) || (a.pct - b.pct));
             const primaryCount = allPool.filter(p => getGroupRelation(p, keys) === 'primary').length;
             let elitePlaystyles = null;
             try {
@@ -8688,7 +8689,7 @@
                 const pInfo = summary.playstyleInfo;
                 let playstylesHtml = '';
                 if (pInfo && pInfo.dataSample > 0 && pInfo.chain.length > 0) {
-                    const topChain = pInfo.chain.slice(0, 4);
+                    const topChain = pInfo.chain.slice(0, 5);
                     const sampleLine = isAr
                         ? `بناءً على ${pInfo.dataSample} من ${pInfo.totalSample} من ${positionPopulationDesc(summary.population, label, true)}، بتقييم 74+، لديهم بيانات أنماط لعب مسجّلة`
                         : `based on ${pInfo.dataSample} of ${pInfo.totalSample} ${positionPopulationDesc(summary.population, label, false)}, rated 74+, with recorded PlayStyle data`;
@@ -8701,12 +8702,13 @@
                                 <span class="text-[9px] font-bold text-gray-400 bg-black/20 rounded px-1.5 py-0.5">${dbStatsPopulationShort(summary.population, isAr)}</span>
                             </div>
                             <div class="flex flex-wrap gap-1.5">
-                                ${topChain.map((p, i) => {
+                                ${topChain.map(p => {
                                     const icon = PLAYSTYLE_ICONS[p.name] || 'fa-star';
-                                    const opacity = i === 0 ? '' : (i === 1 ? 'opacity-85' : (i === 2 ? 'opacity-70' : 'opacity-55'));
+                                    const tc = PLAYSTYLE_TIER_COLORS[p.tier];
                                     return `
-                                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-purple-200 bg-purple-500/15 border border-purple-500/30 rounded-full px-2 py-1 ${opacity}">
+                                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-purple-200 bg-purple-500/15 border border-purple-500/30 rounded-full px-2 py-1">
                                             <i class="fa-solid ${icon} text-[9px]"></i>${p.name}
+                                            <span class="text-[9px] font-black rounded px-1 leading-tight" style="background:${tc}26;color:${tc}" title="Tier ${p.tier}">${p.tier}</span>
                                             <span class="text-purple-400">${Math.round(p.pct * 100)}%</span>
                                         </span>
                                     `;
@@ -8864,6 +8866,12 @@
             // pick a player — no need to touch each call site separately.
             if (playerPool.length > 0 && playerPool.some(p => playerIdentityKey(p) === playerIdentityKey(player))) {
                 base += 45;
+            }
+
+            // Tier-list nudge: your S-F PlayStyle ranking, weighted by relevance to
+            // the slot. Only ever adds (empty PlayStyle data = "not recorded").
+            if (PLAYSTYLE_TIER_SCORE_WEIGHT > 0 && (player.playstyles || player.playstylesPlus)) {
+                base += Math.min(playstyleTierScore(player, targetPos), PLAYSTYLE_TIER_SCORE_CAP) * PLAYSTYLE_TIER_SCORE_WEIGHT;
             }
 
             // EasySBC's metaRating already accounts for position-specific
@@ -19334,6 +19342,7 @@
                             ${psNamesBase.map(s => playstyleChipHtml(s, false, undefined, psRarityBadge(s, false))).join('')}
                         </div>
                         ${psCompareHtml}
+                        ${playstyleTierSummaryHtml(player, effectivePos, isArPs)}
                     </div>
                 </div>
             ` : '';
@@ -20062,7 +20071,98 @@
             }
         };
 
-        // Single source of truth for a PlayStyle chip's markup — used by the
+        // ===== PlayStyle tier list (community ranking, S best -> F worst) =====
+        // Edit names here if one is misplaced - nothing else needs to change.
+        const PLAYSTYLE_TIERS = {
+            S: ['Pinged Pass', 'Low Driven Shot', 'Rapid', 'Tiki Taka', 'Power Shot'],
+            A: ['Quick Step', 'Technical', 'First Touch', 'Incisive Pass', 'Bruiser', 'Intercept', 'Anticipate', 'Far Reach'],
+            B: ['Inventive', 'Finesse Shot', 'Block', 'Gamechanger', 'Long Ball Pass', 'Chip Shot', 'Footwork', 'Deflector', 'Jockey', 'Rush Out'],
+            C: ['Enforcer', 'Aerial Fortress', 'Whipped Pass', 'Relentless', 'Trickster', 'Press Proven', 'Dead Ball'],
+            D: ['Slide Tackle', 'Far Throw', 'Cross Claimer'],
+            F: ['Acrobatic', 'Precision Header', 'Long Throw']
+        };
+        const PLAYSTYLE_TIER_POINTS = { S: 10, A: 7, B: 4.5, C: 2.5, D: 1, F: 0 };
+        const PLAYSTYLE_TIER_COLORS = { S: '#f87171', A: '#fb923c', B: '#fbbf24', C: '#fde047', D: '#a3e635', F: '#22d3ee' };
+        const PLAYSTYLE_PLUS_MULT = 1.6;
+        // 0 = badges/readout/recommendations only, no effect on squad picks.
+        // EasySBC's Meta Rating already partly rewards PlayStyles, so keep this small.
+        const PLAYSTYLE_TIER_SCORE_WEIGHT = 1.0;
+        const PLAYSTYLE_TIER_SCORE_CAP = 40;
+        const PLAYSTYLE_TIER_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4, F: 5 };
+        const PLAYSTYLE_TIER_BY_NAME = Object.fromEntries(
+            Object.entries(PLAYSTYLE_TIERS).flatMap(([t, names]) => names.map(n => [n, t])));
+
+        const PS_POS_CATEGORIES = {
+            GK: ['Goalkeeper'], CB: ['Defending', 'Physical'],
+            LB: ['Defending', 'Physical', 'Passing'], RB: ['Defending', 'Physical', 'Passing'],
+            LWB: ['Defending', 'Physical', 'Passing'], RWB: ['Defending', 'Physical', 'Passing'],
+            CDM: ['Defending', 'Passing', 'Physical'], CM: ['Passing', 'Ball Control', 'Defending'],
+            CAM: ['Passing', 'Ball Control', 'Finishing'], LM: ['Ball Control', 'Passing', 'Physical'],
+            RM: ['Ball Control', 'Passing', 'Physical'], LW: ['Ball Control', 'Finishing', 'Physical'],
+            RW: ['Ball Control', 'Finishing', 'Physical'], ST: ['Finishing', 'Physical', 'Ball Control'],
+            CF: ['Finishing', 'Physical', 'Ball Control']
+        };
+        // How relevant a PlayStyle is to a position: 1 = on its priority list,
+        // 0.7 = same category as the position's job, 0.3 = unrelated, 0 = GK/outfield mismatch.
+        function playstyleRelevance(name, pos) {
+            const cat = PLAYSTYLE_CATEGORY[name];
+            if (cat === 'Goalkeeper') return pos === 'GK' ? 1 : 0;
+            if (pos === 'GK') return 0;
+            if ((POSITION_PRIORITY_PLAYSTYLES[pos] || []).includes(name)) return 1;
+            return (PS_POS_CATEGORIES[pos] || []).includes(cat) ? 0.7 : 0.3;
+        }
+        // Tier-weighted value of a player's recorded PlayStyles at a position.
+        function playstyleTierScore(player, pos) {
+            const plus = (player.playstylesPlus || []).map(formatPlaystyleEntry);
+            const base = (player.playstyles || []).map(formatPlaystyleEntry).filter(n => !plus.includes(n));
+            let sum = 0;
+            const add = (list, mult) => list.forEach(n => {
+                const t = PLAYSTYLE_TIER_BY_NAME[n];
+                if (t) sum += PLAYSTYLE_TIER_POINTS[t] * mult * playstyleRelevance(n, pos);
+            });
+            add(plus, PLAYSTYLE_PLUS_MULT);
+            add(base, 1);
+            return sum;
+        }
+        const psTierBaselineCache = {};
+        function playstyleTierBaseline(pos) {
+            const k = pos + '|' + fc27Database.length;
+            if (!(k in psTierBaselineCache)) {
+                const pool = getPositionPopulationPool([pos], 'all').filter(playerHasRecordedPlaystyles);
+                psTierBaselineCache[k] = pool.length >= 15 ? meanOf(pool.map(pl => playstyleTierScore(pl, pos))) : null;
+            }
+            return psTierBaselineCache[k];
+        }
+        function playstyleTierSummaryHtml(player, pos, isAr) {
+            if (!playerHasRecordedPlaystyles(player)) return '';
+            const score = playstyleTierScore(player, pos);
+            const avg = playstyleTierBaseline(pos);
+            const diff = avg != null ? score - avg : null;
+            const col = diff == null ? 'text-white' : diff >= 3 ? 'text-green-400' : diff <= -3 ? 'text-orange-400' : 'text-gray-300';
+            return `<div class="flex flex-wrap items-center gap-x-2 text-[11px]">
+                <span class="text-gray-500">${isAr ? 'قيمة أنماط اللعب' : 'PlayStyle Value'}</span>
+                <span class="font-black ${col}"><bdi>${score.toFixed(1)}</bdi></span>
+                ${avg != null ? `<span class="text-gray-500"><bdi>${isAr ? 'متوسط' : 'avg'} ${avg.toFixed(1)} (${diff >= 0 ? '+' : ''}${diff.toFixed(1)})</bdi></span>` : ''}
+                <span class="text-[10px] text-gray-600 w-full">${isAr
+                    ? `حسب قائمة التصنيف وصلة كل نمط بمركز ${pos}؛ PlayStyle+ يُحتسب ×${PLAYSTYLE_PLUS_MULT}.`
+                    : `From your tier list, weighted by how relevant each PlayStyle is to ${pos}; PlayStyle+ counts x${PLAYSTYLE_PLUS_MULT}.`}</span>
+            </div>`;
+        }
+        // Candidates for "PlayStyles to look for" at a position group: the curated
+        // list, plus S/A-tier traits whose category fits the position.
+        function getPlaystyleCandidatesForPositions(keys) {
+            const set = new Set();
+            keys.forEach(pos => {
+                getRelevantPlaystylesForPosition(pos).forEach(n => set.add(n));
+                Object.keys(PLAYSTYLE_TIER_BY_NAME).forEach(n => {
+                    const t = PLAYSTYLE_TIER_BY_NAME[n];
+                    if ((t === 'S' || t === 'A') && playstyleRelevance(n, pos) >= 0.7) set.add(n);
+                });
+            });
+            return [...set];
+        }
+
+                // Single source of truth for a PlayStyle chip's markup — used by the
         // player modal and the Meta Analyst panel, so both always render
         // identically. PlayStyle+ (the upgraded, more impactful version) is
         // gold, base PlayStyle is gray — matching the game's own convention.
@@ -20073,7 +20173,10 @@
                 ? 'bg-fc-gold/10 text-fc-gold border-fc-gold/30'
                 : 'bg-gray-500/10 text-gray-300 border-gray-500/30';
             const orderClass = currentLanguage === 'ar' ? 'flex-row-reverse' : '';
-            return `<span class="inline-flex items-center gap-1 rounded-lg font-bold border ${sizeClass} ${colorClass} ${orderClass}"><i class="fa-solid ${icon}"></i>${name}${isPlus ? '+' : ''}${suffixHtml || ''}</span>`;
+            const tier = PLAYSTYLE_TIER_BY_NAME[name];
+            const tc = tier ? PLAYSTYLE_TIER_COLORS[tier] : null;
+            const tierBadge = tier ? `<span class="text-[9px] font-black rounded px-1 leading-tight" style="background:${tc}26;color:${tc}" title="Tier ${tier}">${tier}</span>` : '';
+            return `<span class="inline-flex items-center gap-1 rounded-lg font-bold border ${sizeClass} ${colorClass} ${orderClass}"><i class="fa-solid ${icon}"></i>${name}${isPlus ? '+' : ''}${tierBadge}${suffixHtml || ''}</span>`;
         }
 
         // Turns one raw playstyle entry (shape varies: plain string, {name},
