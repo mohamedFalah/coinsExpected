@@ -264,9 +264,9 @@
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <span data-i18n="navPlayers">Players</span>
                 </button>
-                <button onclick="switchTab('market')" id="nav-market" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
-                    <i class="fa-solid fa-arrow-trend-up"></i>
-                    <span data-i18n="navMarket">Market</span>
+                <button onclick="switchTab('tactics')" id="nav-tactics" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
+                    <i class="fa-solid fa-chess-board"></i>
+                    <span data-i18n="navTactics">Tactics</span>
                 </button>
                 <button onclick="switchTab('club')" id="nav-club" class="px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center space-x-2 rtl:space-x-reverse text-gray-400 hover:text-white hover:bg-fc-card">
                     <i class="fa-solid fa-people-group"></i>
@@ -308,9 +308,9 @@
                 <i class="fa-solid fa-magnifying-glass text-base mb-0.5"></i>
                 <span data-i18n="navPlayers">Players</span>
             </button>
-            <button onclick="switchTab('market')" id="mob-nav-market" class="flex flex-col items-center text-xs font-bold text-gray-400">
-                <i class="fa-solid fa-arrow-trend-up text-base mb-0.5"></i>
-                <span data-i18n="navMarket">Market</span>
+            <button onclick="switchTab('tactics')" id="mob-nav-tactics" class="flex flex-col items-center text-xs font-bold text-gray-400">
+                <i class="fa-solid fa-chess-board text-base mb-0.5"></i>
+                <span data-i18n="navTactics">Tactics</span>
             </button>
             <button onclick="switchTab('club')" id="mob-nav-club" class="flex flex-col items-center text-xs font-bold text-gray-400">
                 <i class="fa-solid fa-people-group text-base mb-0.5"></i>
@@ -1007,168 +1007,10 @@
         </div>
 
 
-        <div id="view-market" class="hidden space-y-6">
-            <!-- MARKET TRADING — a standalone coin-trading tool. Not connected
-                 to the squad builder in any way. -->
-            <div class="bg-gradient-to-r from-fc-card to-fc-dark border border-fc-border rounded-2xl p-6 md:p-8 shadow-xl space-y-4">
-                <div>
-                    <h2 data-i18n="marketTitle" class="text-2xl md:text-3xl font-extrabold mb-2">Market Trading</h2>
-                    <p data-i18n="marketDesc" class="text-gray-400 text-sm md:text-base">
-                        Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax.
-                    </p>
-                </div>
-                <!-- Mode: original ranking vs. fast-selling cheap cards -->
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="inline-flex bg-fc-dark border border-fc-border rounded-xl p-1 gap-1">
-                        <button id="market-mode-margin" onclick="window.setMarketMode('margin')" class="px-3 py-1.5 rounded-lg text-xs font-black transition-all bg-fc-accent text-fc-dark"><i class="fa-solid fa-chart-line me-1"></i><span data-i18n="marketModeMargin">Best margin</span></button>
-                        <button id="market-mode-fast" onclick="window.setMarketMode('fast')" class="px-3 py-1.5 rounded-lg text-xs font-black transition-all text-gray-400 hover:text-white"><i class="fa-solid fa-bolt me-1"></i><span data-i18n="marketModeFast">Fast sell</span></button>
-                    </div>
-                    <span class="text-[11px] text-gray-500" data-i18n="marketModeHint">Best margin = biggest profit, often slower to sell. Fast sell = cheaper cards listed a little under the EA average, so they're more likely to sell quickly.</span>
-                </div>
-                <div class="flex flex-wrap items-end gap-3">
-                    <div>
-                        <label data-i18n="marketBudgetLbl" class="block text-xs font-bold text-gray-300 mb-1">Trading budget</label>
-                        <input type="number" id="market-budget-input" value="20000" min="0" step="1000" oninput="window.rerunMarketFilters()" class="w-32 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                    </div>
-                    <div>
-                        <label data-i18n="marketMinProfitLbl" class="block text-xs font-bold text-gray-300 mb-1">Min. profit</label>
-                        <input type="number" id="market-min-profit-input" value="500" min="0" step="100" oninput="window.rerunMarketFilters()" class="w-24 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                    </div>
-                    <div>
-                        <label data-i18n="marketMinRoiLbl" class="block text-xs font-bold text-gray-300 mb-1">Min. ROI %</label>
-                        <input type="number" id="market-min-roi-input" value="10" min="0" step="1" oninput="window.rerunMarketFilters()" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                    </div>
-                    <div>
-                        <label data-i18n="marketMinDiscountLbl" class="block text-xs font-bold text-gray-300 mb-1">Min. discount %</label>
-                        <input type="number" id="market-min-discount-input" value="10" min="0" max="100" step="1" oninput="window.rerunMarketFilters()" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                    </div>
-                    <div>
-                        <label data-i18n="marketSortLbl" class="block text-xs font-bold text-gray-300 mb-1">Sort by</label>
-                        <select id="market-sort-select" onchange="window.rerunMarketFilters()" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                            <option value="roi" data-i18n="marketSortRoi">ROI</option>
-                            <option value="profit" data-i18n="marketSortProfit">Potential profit</option>
-                            <option value="discount" data-i18n="marketSortDiscount">Discount</option>
-                        </select>
-                    </div>
-                    <div id="market-fast-options" class="hidden flex flex-wrap items-end gap-3 ps-3 border-s border-fc-accent/40">
-                        <div>
-                            <label data-i18n="marketMaxBuyLbl" class="block text-xs font-bold text-fc-accent mb-1">Max buy price</label>
-                            <input type="number" id="market-max-buy-input" value="5000" min="0" step="500" oninput="window.rerunMarketFilters()" class="w-24 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                        </div>
-                        <div>
-                            <label data-i18n="marketUndercutLbl" class="block text-xs font-bold text-fc-accent mb-1">List below EA avg %</label>
-                            <input type="number" id="market-undercut-input" value="5" min="0" max="30" step="1" oninput="window.rerunMarketFilters()" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                        </div>
-                        <div>
-                            <label data-i18n="marketTierLbl" class="block text-xs font-bold text-fc-accent mb-1">Card tier</label>
-                            <select id="market-tier-select" onchange="window.rerunMarketFilters()" class="bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent disabled:opacity-40">
-                                <option value="all" data-i18n="marketTierAll">All</option>
-                                <option value="bronze" data-i18n="marketTierBronze">Bronze (≤64)</option>
-                                <option value="silver" data-i18n="marketTierSilver">Silver (65–74)</option>
-                                <option value="gold" data-i18n="marketTierGold">Gold (75+)</option>
-                            </select>
-                        </div>
-                        <p id="market-tier-note" class="hidden basis-full text-[10px] text-gray-500" data-i18n="marketTierNote">Card tier needs ratings, and this scan didn't include them — to target bronze/silver, filter FUTBIN's market list by card type first, then scan.</p>
-                    </div>
-                    <div>
-                        <label data-i18n="marketPagesLbl" class="block text-xs font-bold text-gray-300 mb-1">Pages to scan</label>
-                        <input type="number" id="market-pages-input" value="30" min="1" max="200" class="w-20 bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-fc-accent">
-                    </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button onclick="window.openFutbinScan()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-sm font-black hover:bg-fc-accentHover flex items-center gap-2">
-                        <i class="fa-solid fa-magnifying-glass-dollar"></i>
-                        <span data-i18n="marketOpenScanBtn">Open FUTBIN &amp; Scan</span>
-                    </button>
-                    <button onclick="window.toggleMarketInstall()" class="px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-sm font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50 flex items-center gap-2">
-                        <i class="fa-solid fa-bookmark"></i>
-                        <span data-i18n="marketInstallBtn">Install Market Scanner</span>
-                    </button>
-                    <span class="text-[11px] text-gray-500" data-i18n="marketInstallOnceNote">The scanner bookmark only needs to be installed once.</span>
-                </div>
-                <p class="text-[11px] text-gray-500" data-i18n="marketFilterTip">Tip: to scan only bronze or silver cards, apply those filters on FUTBIN's market page (if it offers them) before clicking the bookmark — the scanner keeps the page's filters.</p>
-                <p class="text-[11px] text-gray-500 italic" data-i18n="marketDisclaimer">
-                    Market values move quickly. EA Average is a reference value, not a guaranteed sale price. Verify the current market price before buying.
-                </p>
-            </div>
-
-            <!-- Scan status — driven only by real events (see setMarketScanState). -->
-            <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-1">
-                <div class="flex flex-wrap items-center gap-2">
-                    <span id="market-state-badge" class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-wide bg-gray-500/15 text-gray-300 border-gray-500/30">Ready</span>
-                    <span id="market-state-text" class="text-xs text-gray-300">Waiting for a FUTBIN scan.</span>
-                </div>
-                <p id="market-last-scan" class="hidden text-[11px] text-gray-500"></p>
-            </div>
-
-            <!-- One-time install + how to trade -->
-            <div id="market-install-panel" class="hidden bg-fc-dark/80 border border-fc-border rounded-2xl p-4 grid gap-4 md:grid-cols-2">
-                <div class="space-y-2">
-                    <p class="text-xs font-black text-white uppercase tracking-wide" data-i18n="marketInstallTitle">How to install — once</p>
-                    <ol class="text-[11px] text-gray-400 space-y-1 list-decimal ps-4">
-                        <li data-i18n="marketInstallStep1">Click "Copy Market Scanner".</li>
-                        <li data-i18n="marketInstallStep2">Create a new browser bookmark.</li>
-                        <li data-i18n="marketInstallStep3">Name it "FC Market Scanner".</li>
-                        <li data-i18n="marketInstallStep4">Paste the copied code into the bookmark's URL field.</li>
-                        <li data-i18n="marketInstallStep5">Save it.</li>
-                    </ol>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <button onclick="window.copyMarketBookmarklet()" class="px-3 py-1.5 rounded-lg bg-fc-accent text-fc-dark text-xs font-black hover:bg-fc-accentHover flex items-center gap-1.5">
-                            <i class="fa-solid fa-copy"></i> <span id="market-copy-bookmarklet-label" data-i18n="marketCopyBookmarkletBtn">Copy Market Scanner</span>
-                        </button>
-                        <a id="market-bookmarklet-link" href="#" onclick="return false;" draggable="true" class="px-3 py-1.5 rounded-lg bg-fc-dark border border-dashed border-fc-accent/60 text-xs font-bold text-fc-accent cursor-grab" title="Drag me to your bookmarks bar">
-                            <i class="fa-solid fa-grip-vertical"></i> FC Market Scanner
-                        </a>
-                    </div>
-                    <p class="text-[10px] text-fc-gold" data-i18n="marketUpdateNote">Installed an earlier version? Copy it again and replace the old bookmark's URL — the new version keeps FUTBIN filters and reads card tiers.</p>
-                    <p class="text-[10px] text-gray-500" data-i18n="marketDragHint">Shortcut: drag the "FC Market Scanner" button onto your bookmarks bar instead of steps 1–5.</p>
-                    <textarea id="market-bookmarklet-code" readonly rows="2" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-500 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-xs font-black text-white uppercase tracking-wide" data-i18n="marketTradeTitle">How to trade</p>
-                    <ol class="text-[11px] text-gray-400 space-y-1 list-decimal ps-4">
-                        <li data-i18n="marketTradeStep1">Enter your trading budget.</li>
-                        <li data-i18n="marketTradeStep2">Click "Open FUTBIN &amp; Scan".</li>
-                        <li data-i18n="marketTradeStep3">On FUTBIN, click your "FC Market Scanner" bookmark.</li>
-                        <li data-i18n="marketTradeStep4">Return to this tab.</li>
-                        <li data-i18n="marketTradeStep5">Review the potential trading opportunities.</li>
-                    </ol>
-                </div>
-            </div>
-
-            <!-- Detailed log (manual parse messages) -->
-            <div id="market-status" class="hidden bg-fc-dark/80 border border-fc-border rounded-2xl p-4 space-y-1.5 text-xs text-gray-400 font-mono max-h-40 overflow-y-auto hide-scrollbar"></div>
-
-            <!-- MANUAL FALLBACK — the original console-script + paste workflow,
-                 unchanged. Use it when the automatic return isn't possible. -->
-            <details class="bg-fc-dark/80 border border-fc-border rounded-2xl">
-                <summary class="p-4 cursor-pointer text-xs font-bold text-gray-300 select-none" data-i18n="marketManualTitle">Manual fallback — console script &amp; paste</summary>
-                    <div class="p-4 pt-0 space-y-3">
-                    <div class="space-y-1.5">
-                        <p class="text-[11px] font-bold text-gray-300" data-i18n="marketPasteStep1">1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:</p>
-                        <p class="text-[10px] text-gray-500" data-i18n="marketPasteStep1Note">Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.</p>
-                        <div class="relative">
-                            <textarea id="market-console-script" readonly rows="3" class="w-full bg-black/60 border border-fc-border rounded-xl px-3 py-2 text-[10px] text-gray-400 font-mono focus:outline-none resize-none hide-scrollbar"></textarea>
-                            <button onclick="window.copyMarketConsoleScript()" class="absolute top-2 right-2 rtl:right-auto rtl:left-2 px-2.5 py-1 rounded-lg bg-fc-dark border border-fc-border text-[10px] font-bold text-gray-300 hover:text-fc-accent hover:border-fc-accent/50">
-                                <i class="fa-solid fa-copy"></i> <span id="market-copy-script-label" data-i18n="marketCopyScriptBtn">Copy Script</span>
-                            </button>
-                        </div>
-                        <a href="https://www.futbin.com/27/market-player-list" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-fc-accent hover:underline">
-                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                            <span data-i18n="marketOpenFutbinLink">Open the Futbin market page</span>
-                        </a>
-                    </div>
-                    <p class="text-[11px] text-gray-500" data-i18n="marketPasteStep2">2. It scrapes every page automatically and copies the result to your clipboard when it's done. Then just paste it here:</p>
-                    <textarea id="market-paste-input" rows="3" placeholder="Paste the copied result here…" class="w-full bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-fc-accent"></textarea>
-                    <button onclick="window.parseMarketPaste()" class="px-4 py-2 rounded-xl bg-fc-accent text-fc-dark text-sm font-black hover:bg-fc-accentHover flex items-center gap-2">
-                        <i class="fa-solid fa-code"></i>
-                        <span data-i18n="marketParsePasteBtn">Parse This</span>
-                    </button>
-                    <p class="text-[10px] text-gray-600 italic" data-i18n="marketPasteHtmlNote">(Also works if you paste a single page's raw HTML instead — right-click → "View Page Source" — but the script above covers every page in one go, which is almost always less work.)</p>
-                </div>
-            </details>
-
-            <div id="market-results"></div>
+        <div id="view-tactics" class="hidden space-y-6">
+            <!-- TACTICS GUIDE — explanations + interactive tools for the in-game
+                 Team Tactical Analysis. Rendered by renderTacticsGuide(). -->
+            <div id="tactics-root" class="space-y-6"></div>
         </div>
 
     </main>
@@ -1669,59 +1511,9 @@
                 dbStatsNoMatchups: "No notable cross-position gaps stand out right now.",
                 dbStatsNoData: "Not enough rated-74+ players loaded yet for this position.",
                 noPlayersFoundStandalone: "No matching players found.",
-                navMarket: "Market",
                 navLab: "Tactics Lab",
+                navTactics: "Tactics",
                 navClub: "Club",
-                marketTitle: "Market Trading",
-                marketDesc: "Find players listed below their expected market value, then estimate the potential profit from selling higher after EA tax. A pure coin-trading tool — separate from your squad.",
-                marketBudgetLbl: "Trading budget",
-                marketDisclaimer: "Market values move quickly. EA Average is a reference value, not a guaranteed sale price. Verify the current market price before buying.",
-                marketPasteStep1: "1. Open the Futbin market page, then open your browser's console (F12 or Ctrl/Cmd+Shift+J) and paste this script in:",
-                marketPasteStep1Note: "Want a different page range? Edit the START_PAGE and END_PAGE numbers near the top of the copied script before pasting it in — copy it fresh below any time you want to reset them.",
-                marketCopyScriptBtn: "Copy Script",
-                marketOpenFutbinLink: "Open the Futbin market page",
-                marketPasteStep2: "2. It scrapes every page automatically and copies the result to your clipboard when it's done. Then just paste it here:",
-                marketParsePasteBtn: "Parse This",
-                marketPasteHtmlNote: "(Also works if you paste a single page's raw HTML instead — right-click → \"View Page Source\" — but the script above covers every page in one go, which is almost always less work.)",
-                marketMinProfitLbl: "Min. profit",
-                marketMinRoiLbl: "Min. ROI %",
-                marketMinDiscountLbl: "Min. discount %",
-                marketSortLbl: "Sort by",
-                marketSortRoi: "ROI",
-                marketSortProfit: "Potential profit",
-                marketSortDiscount: "Discount",
-                marketPagesLbl: "Pages to scan",
-                marketOpenScanBtn: "Open FUTBIN & Scan",
-                marketInstallBtn: "Install Market Scanner",
-                marketInstallOnceNote: "The scanner bookmark only needs to be installed once.",
-                marketInstallTitle: "How to install — once",
-                marketInstallStep1: "Click \"Copy Market Scanner\".",
-                marketInstallStep2: "Create a new browser bookmark.",
-                marketInstallStep3: "Name it \"FC Market Scanner\".",
-                marketInstallStep4: "Paste the copied code into the bookmark's URL field.",
-                marketInstallStep5: "Save it.",
-                marketCopyBookmarkletBtn: "Copy Market Scanner",
-                marketDragHint: "Shortcut: drag the \"FC Market Scanner\" button onto your bookmarks bar instead of steps 1–5.",
-                marketTradeTitle: "How to trade",
-                marketTradeStep1: "Enter your trading budget.",
-                marketTradeStep2: "Click \"Open FUTBIN & Scan\".",
-                marketTradeStep3: "On FUTBIN, click your \"FC Market Scanner\" bookmark.",
-                marketTradeStep4: "Return to this tab.",
-                marketTradeStep5: "Review the potential trading opportunities.",
-                marketManualTitle: "Manual fallback — console script & paste",
-                marketModeMargin: "Best margin",
-                marketModeFast: "Fast sell",
-                marketModeHint: "Best margin = biggest profit, often slower to sell. Fast sell = cheaper cards listed a little under the EA average, so they're more likely to sell quickly.",
-                marketMaxBuyLbl: "Max buy price",
-                marketUndercutLbl: "List below EA avg %",
-                marketTierLbl: "Card tier",
-                marketTierAll: "All",
-                marketTierBronze: "Bronze (≤64)",
-                marketTierSilver: "Silver (65–74)",
-                marketTierGold: "Gold (75+)",
-                marketTierNote: "Card tier needs ratings, and this scan didn't include them — to target bronze/silver, filter FUTBIN's market list by card type first, then scan.",
-                marketFilterTip: "Tip: to scan only bronze or silver cards, apply those filters on FUTBIN's market page (if it offers them) before clicking the bookmark — the scanner keeps the page's filters.",
-                marketUpdateNote: "Installed an earlier version? Copy it again and replace the old bookmark's URL — the new version keeps FUTBIN filters and reads card tiers.",
                 shapeNormalBtn: "FORMATION",
                 shapeAttackBtn: "ATTACKING",
                 shapeDefendBtn: "DEFENDING",
@@ -1886,59 +1678,9 @@
                 dbStatsNoMatchups: "لا توجد فجوات ملحوظة بين المراكز حالياً.",
                 dbStatsNoData: "لا يوجد عدد كافٍ من اللاعبين بتقييم 74+ لهذا المركز بعد.",
                 noPlayersFoundStandalone: "لا توجد نتائج مطابقة.",
-                navMarket: "السوق",
                 navLab: "مختبر التكتيك",
+                navTactics: "التكتيك",
                 navClub: "النادي",
-                marketTitle: "تداول السوق",
-                marketDesc: "ابحث عن لاعبين معروضين بأقل من قيمتهم السوقية المتوقعة، ثم قدّر الربح المحتمل من بيعهم بسعر أعلى بعد ضريبة EA. أداة تداول كوينز بحتة — منفصلة عن تشكيلتك.",
-                marketBudgetLbl: "ميزانية التداول",
-                marketDisclaimer: "قيم السوق تتغير بسرعة. متوسط EA قيمة مرجعية وليس سعر بيع مضموناً. تحقّق من السعر الحالي في السوق قبل الشراء.",
-                marketPasteStep1: "1. افتح صفحة سوق Futbin، ثم افتح وحدة تحكم المتصفح (F12 أو Ctrl/Cmd+Shift+J) والصق هذا الكود فيها:",
-                marketPasteStep1Note: "تريد نطاق صفحات مختلف؟ عدّل رقمي START_PAGE و END_PAGE بالقرب من بداية الكود المنسوخ قبل لصقه — انسخه من جديد أدناه في أي وقت لإعادة ضبطهما.",
-                marketCopyScriptBtn: "نسخ الكود",
-                marketOpenFutbinLink: "افتح صفحة سوق Futbin",
-                marketPasteStep2: "2. سيقوم بفحص كل الصفحات تلقائياً وينسخ النتيجة إلى الحافظة عند الانتهاء. ثم الصقها هنا:",
-                marketParsePasteBtn: "تحليل هذا",
-                marketPasteHtmlNote: "(يعمل أيضاً إذا لصقت كود HTML لصفحة واحدة فقط — بالنقر بزر الفأرة الأيمن ← «عرض مصدر الصفحة» — لكن الكود أعلاه يغطي كل الصفحات دفعة واحدة، وهو غالباً أقل جهداً.)",
-                marketMinProfitLbl: "أدنى ربح",
-                marketMinRoiLbl: "أدنى عائد %",
-                marketMinDiscountLbl: "أدنى خصم %",
-                marketSortLbl: "الترتيب حسب",
-                marketSortRoi: "العائد",
-                marketSortProfit: "الربح المحتمل",
-                marketSortDiscount: "الخصم",
-                marketPagesLbl: "عدد الصفحات",
-                marketOpenScanBtn: "افتح FUTBIN وافحص",
-                marketInstallBtn: "تثبيت ماسح السوق",
-                marketInstallOnceNote: "تحتاج لتثبيت إشارة الماسح المرجعية مرة واحدة فقط.",
-                marketInstallTitle: "طريقة التثبيت — مرة واحدة",
-                marketInstallStep1: "اضغط «نسخ الماسح».",
-                marketInstallStep2: "أنشئ إشارة مرجعية جديدة في المتصفح.",
-                marketInstallStep3: "سمّها «FC Market Scanner».",
-                marketInstallStep4: "الصق الكود المنسوخ في حقل الرابط للإشارة المرجعية.",
-                marketInstallStep5: "احفظها.",
-                marketCopyBookmarkletBtn: "نسخ الماسح",
-                marketDragHint: "اختصار: اسحب زر «FC Market Scanner» إلى شريط الإشارات المرجعية بدلاً من الخطوات 1–5.",
-                marketTradeTitle: "طريقة التداول",
-                marketTradeStep1: "أدخل ميزانية التداول.",
-                marketTradeStep2: "اضغط «افتح FUTBIN وافحص».",
-                marketTradeStep3: "في FUTBIN، اضغط على إشارة «FC Market Scanner» المرجعية.",
-                marketTradeStep4: "عُد إلى هذه الصفحة.",
-                marketTradeStep5: "راجع فرص التداول المحتملة.",
-                marketManualTitle: "الطريقة اليدوية الاحتياطية — كود وحدة التحكم واللصق",
-                marketModeMargin: "أعلى هامش",
-                marketModeFast: "بيع سريع",
-                marketModeHint: "أعلى هامش = أكبر ربح، وغالباً بيع أبطأ. بيع سريع = بطاقات أرخص تُعرض بأقل قليلاً من متوسط EA، فتزيد فرصة بيعها بسرعة.",
-                marketMaxBuyLbl: "أعلى سعر شراء",
-                marketUndercutLbl: "اعرض أقل من متوسط EA %",
-                marketTierLbl: "فئة البطاقة",
-                marketTierAll: "الكل",
-                marketTierBronze: "برونزي (≤64)",
-                marketTierSilver: "فضي (65–74)",
-                marketTierGold: "ذهبي (75+)",
-                marketTierNote: "فئة البطاقة تحتاج التقييمات، وهذا الفحص لم يتضمنها — لاستهداف البرونزي/الفضي، فلتر قائمة سوق FUTBIN حسب نوع البطاقة أولاً ثم افحص.",
-                marketFilterTip: "نصيحة: لفحص البطاقات البرونزية أو الفضية فقط، طبّق هذه الفلاتر في صفحة سوق FUTBIN (إن كانت متاحة) قبل الضغط على الإشارة المرجعية — الماسح يحتفظ بفلاتر الصفحة.",
-                marketUpdateNote: "ثبّتَّ نسخة سابقة؟ انسخه مجدداً واستبدل رابط الإشارة القديمة — النسخة الجديدة تحتفظ بفلاتر FUTBIN وتقرأ فئات البطاقات.",
                 shapeNormalBtn: "التشكيلة",
                 shapeAttackBtn: "الهجوم",
                 shapeDefendBtn: "الدفاع",
@@ -1993,6 +1735,8 @@
             // yet (e.g. database still loading on first paint).
             const clubView = document.getElementById('view-club');
             if (clubView && !clubView.classList.contains('hidden') && typeof window.renderClubTab === 'function') window.renderClubTab();
+            const tacticsView = document.getElementById('view-tactics');
+            if (tacticsView && !tacticsView.classList.contains('hidden') && typeof window.renderTacticsGuide === 'function') window.renderTacticsGuide();
             if (squadState.selectedXI && Object.keys(squadState.selectedXI).length > 0) {
                 computeSlotAlternatives();
                 populateManagerDropdown();
@@ -5540,7 +5284,7 @@
         }
 
         window.switchTab = function(tabId) {
-            ['calculator', 'squad', 'database', 'mysquads', 'players', 'market', 'club'].forEach(t => {
+            ['calculator', 'squad', 'database', 'mysquads', 'players', 'tactics', 'club'].forEach(t => {
                 const view = document.getElementById(`view-${t}`);
                 const nav = document.getElementById(`nav-${t}`);
                 const mobNav = document.getElementById(`mob-nav-${t}`);
@@ -5570,6 +5314,9 @@
             }
             if (tabId === 'club' && typeof window.renderClubTab === 'function') {
                 window.renderClubTab();
+            }
+            if (tabId === 'tactics' && typeof window.renderTacticsGuide === 'function') {
+                window.renderTacticsGuide();
             }
         };
 
@@ -20835,757 +20582,342 @@
         });
 
         // ===================================================================
-        // MARKET FLIPS — Futbin market scraper
+        // TACTICS GUIDE — how the in-game Team Tactical Analysis works
         // ===================================================================
-        // Finds players priced well under their real value (EA's own
-        // tracked average sale price) on Futbin's market, sized to a coin
-        // budget the user wants to flip for profit. The actual scraping
-        // runs as a script the user pastes into their browser console on
-        // Futbin's own site (see FUTBIN_CONSOLE_SCRIPT below) rather than
-        // a fetch from this app — a cross-origin request to a full,
-        // Cloudflare-protected HTML site like Futbin is not reliable from
-        // here, so this file only holds the shared row-extraction/
-        // profit-scoring logic and the paste-result parser.
-        const FUTBIN_EA_TAX = 0.05; // EA deducts 5% tax on every successful sale
+        // Replaces the old Market tab. Everything here is read-only
+        // reference + small interactive tools built from 88 photographed
+        // in-game Team Tactical Analysis screens (graph values measured
+        // from the photos, accurate to about ±0.3). EA publishes no
+        // formula, so every rule below is an observed pattern, not EA's
+        // calculation — the page says so where it matters.
+        const TACTICS_DATA = {"pos":{"4-3-3":["GK","LB","CB","CB","RB","CM","CM","CM","LW","ST","RW"],"4-4-2":["GK","LB","CB","CB","RB","LM","CM","CM","RM","ST","ST"],"4-2-3-1":["GK","LB","CB","CB","RB","CDM","CDM","LM","CAM","RM","ST"],"4-1-2-1-2":["GK","LB","CB","CB","RB","CDM","CM","CM","CAM","ST","ST"],"4-3-1-2":["GK","LB","CB","CB","RB","CM","CM","CM","CAM","ST","ST"],"4-2-4":["GK","LB","CB","CB","RB","CM","CM","LW","ST","ST","RW"],"4-1-4-1":["GK","LB","CB","CB","RB","CDM","LM","CM","CM","RM","ST"],"3-5-2":["GK","CB","CB","CB","LM","CDM","CDM","RM","CAM","ST","ST"],"4-5-1":["GK","LB","CB","CB","RB","LM","CM","CM","CM","RM","ST"],"4-4-1-1":["GK","LB","CB","CB","RB","LM","CM","CM","RM","CAM","ST"],"3-1-4-2":["GK","CB","CB","CB","CDM","LM","CM","CM","RM","ST","ST"],"4-2-1-3":["GK","LB","CB","CB","RB","CDM","CDM","CAM","LW","ST","RW"],"4-2-2-2":["GK","LB","CB","CB","RB","CAM","CDM","CDM","CAM","ST","ST"],"4-4-2 (2)":["GK","LB","CB","CB","RB","LM","CDM","CDM","RM","ST","ST"],"5-4-1":["GK","LB","CB","CB","CB","RB","LM","CM","CM","RM","ST"],"5-3-2":["GK","LB","CB","CB","CB","RB","CM","CDM","CM","ST","ST"]},"rows":[{"f":"4-2-4","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Advanced Forward/Attack","Winger/Balanced"],"a":[6.3,1.7,8.7,9.1,7.5,2.4],"s":["Players Rarely Tire","Threatening Out Wide","Well Distributed Team"],"w":["Minimal Defensive Coverage","Unimaginative Build-Up Play","Cautious Approach"],"src":"lab"},{"f":"4-1-4-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Winger/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.3,6.7,4.4,9.0,2.7,5.2],"s":["Players Rarely Tire","Strong Defensive Focus","Solid Creativity in Roles"],"w":["Isolated Frontline","Dependency on Possession","Overload Centrally"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.3,7.5,6.1,9.6,4.0,4.2],"s":["Players Rarely Tire","Win the Ball Back Quickly","Good Wide Options"],"w":["Isolated Frontline","Compressed Team","Inconsistent Build-Up"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Ball-Winning","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.1,7.6,6.0,9.6,3.9,3.6],"s":["Players Rarely Tire","Win the Ball Back Quickly","Good Wide Options"],"w":["Isolated Frontline","Predictable in Possession","Limited Playing Space"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Deep-Lying Playmaker/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.2,7.5,6.2,9.3,3.6,3.5],"s":["Players Rarely Tire","Win the Ball Back Quickly","Good Wide Options"],"w":["Isolated Frontline","Predictable in Possession","Limited Playing Space"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Deep-Lying Playmaker/Roaming","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.6,6.9,6.6,9.1,3.8,4.5],"s":["Players Rarely Tire","Strong Defensive Focus","Attacks The Flanks"],"w":["Isolated Frontline","Compressed Team","Inconsistent Build-Up"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Deep-Lying Playmaker/Build-Up","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.5,6.6,5.9,9.1,3.7,4.4],"s":["Players Rarely Tire","Strong Defensive Focus","Good Wide Options"],"w":["Isolated Frontline","Compressed Team","Inconsistent Build-Up"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Wide Midfielder/Defend","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[1.9,8.0,2.6,9.3,2.6,4.1],"s":["Players Rarely Tire","Win the Ball Back Quickly","Solid Creativity in Roles"],"w":["Isolated Frontline","Approach Too Narrow","Limited Playing Space"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Classic 10/Attack","Winger/Balanced","Advanced Forward/Attack"],"a":[2.3,6.5,6.1,9.2,4.1,4.1],"s":["Players Rarely Tire","Strong Defensive Focus","Good Wide Options"],"w":["Isolated Frontline","Compressed Team","Inconsistent Build-Up"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Classic 10/Versatile","Winger/Balanced","Advanced Forward/Attack"],"a":[2.6,6.6,6.4,9.0,3.7,4.1],"s":["Players Rarely Tire","Strong Defensive Focus","Attacks The Flanks"],"w":["Isolated Frontline","Compressed Team","Inconsistent Build-Up"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":10,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.2,3.0,8.5,9.1,7.5,5.5],"s":["Players Rarely Tire","Threatening Out Wide","Well Distributed Team"],"w":["Minimal Defensive Coverage","Lack of Attacking Options","Inconsistent Build-Up"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":30,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.2,3.0,8.4,9.1,7.4,5.4],"s":["Players Rarely Tire","Threatening Out Wide","Well Distributed Team"],"w":["Minimal Defensive Coverage","Lack of Attacking Options","Inconsistent Build-Up"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":31,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.2,3.0,8.4,9.1,4.3,5.3],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Minimal Defensive Coverage","Lack of Attacking Options","Compressed Team"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":45,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.2,2.9,8.7,8.9,4.4,5.5],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Minimal Defensive Coverage","Lack of Attacking Options","Compressed Team"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":60,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.2,2.9,8.4,9.1,4.4,5.4],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Minimal Defensive Coverage","Lack of Attacking Options","Compressed Team"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":61,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.1,2.7,8.3,9.4,2.7,5.5],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Minimal Defensive Coverage","Limited Playing Space","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":80,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.1,2.8,8.3,9.3,2.7,5.4],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Minimal Defensive Coverage","Limited Playing Space","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":90,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.2,2.9,8.4,8.6,2.5,5.1],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Minimal Defensive Coverage","Limited Playing Space","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":91,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.1,2.8,8.3,9.4,1.8,5.6],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Dependency on Possession","Minimal Defensive Coverage","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":100,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.1,2.8,8.3,9.4,1.8,5.3],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Dependency on Possession","Minimal Defensive Coverage","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":25,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.0,2.8,8.4,9.3,7.5,2.2],"s":["Players Rarely Tire","Threatening Out Wide","Well Distributed Team"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":70,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.0,2.7,8.3,9.5,2.7,2.2],"s":["Players Rarely Tire","Threatening Out Wide","Front-Footed Approach"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Limited Playing Space"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[2.9,2.7,8.5,9.4,1.8,2.2],"s":["Players Rarely Tire","Threatening Out Wide","Front-Footed Approach"],"w":["Dependency on Possession","Unimaginative Build-Up Play","Minimal Defensive Coverage"],"src":"lab"},{"f":"4-3-3","bu":"short","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.5,2.8,8.3,9.1,1.7,7.9],"s":["Players Rarely Tire","Threatening Out Wide","Patient Build-Up"],"w":["Dependency on Possession","Minimal Defensive Coverage","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"short","l":70,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.3,2.8,8.3,9.3,2.7,7.7],"s":["Players Rarely Tire","Threatening Out Wide","Patient Build-Up"],"w":["Minimal Defensive Coverage","Limited Playing Space","Lack of Attacking Options"],"src":"lab"},{"f":"4-3-3","bu":"short","l":25,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[3.3,2.9,8.4,9.2,7.4,7.7],"s":["Players Rarely Tire","Threatening Out Wide","Patient Build-Up"],"w":["Minimal Defensive Coverage","Lack of Attacking Options","Compressed Team"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[8.2,2.2,7.5,6.1,7.5,4.4],"s":["Always Looking to Attack","Threatening Out Wide","Well Distributed Team"],"w":["Minimal Defensive Coverage","Inconsistent Build-Up","Demands Energy"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[4.8,2.7,8.1,8.1,6.3,3.1],"s":["Team Hardly Breaks A Sweat","Threatening Out Wide","Space Between The Lines"],"w":["Minimal Defensive Coverage","Predictable in Possession","Cautious Approach"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[8.3,2.4,7.6,3.6,7.4,3.2],"s":["Always Looking to Attack","Threatening Out Wide","Well Distributed Team"],"w":["Minimal Defensive Coverage","Predictable in Possession","Requires Good Stamina"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[6.8,2.7,7.8,5.7,6.1,4.5],"s":["Threatening Out Wide","Fast and Direct Football","Space Between The Lines"],"w":["Minimal Defensive Coverage","Inconsistent Build-Up","Demands Energy"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[2.5,3.3,8.3,8.7,4.6,2.1],"s":["Players Rarely Tire","Threatening Out Wide","Roles Spread Lengthwise"],"w":["Unimaginative Build-Up Play","Isolated Frontline","Defence Easy to Overload"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[6.8,2.7,7.9,5.7,5.9,2.1],"s":["Threatening Out Wide","Fast and Direct Football","Space Between The Lines"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Demands Energy"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[8.2,2.4,7.3,3.6,7.3,1.8],"s":["Always Looking to Attack","Threatening Out Wide","Well Distributed Team"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Requires Good Stamina"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[4.8,2.7,8.1,8.2,6.3,1.8],"s":["Team Hardly Breaks A Sweat","Threatening Out Wide","Space Between The Lines"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Cautious Approach"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[5.5,2.4,8.0,8.8,6.3,2.0],"s":["Players Rarely Tire","Threatening Out Wide","Space Between The Lines"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Cautious Approach"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[8.5,2.2,7.5,5.8,7.3,2.1],"s":["Always Looking to Attack","Threatening Out Wide","Well Distributed Team"],"w":["Minimal Defensive Coverage","Unimaginative Build-Up Play","Demands Energy"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[7.4,2.4,8.0,7.6,5.9,2.4],"s":["Threatening Out Wide","Team Hardly Breaks A Sweat","Always Looking to Attack"],"w":["Minimal Defensive Coverage","Unimaginative Build-Up Play","Compressed Team"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[7.3,2.4,7.9,7.6,2.3,2.4],"s":["Threatening Out Wide","Team Hardly Breaks A Sweat","Always Looking to Attack"],"w":["Minimal Defensive Coverage","Dependency on Possession","Unimaginative Build-Up Play"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[8.3,2.2,7.5,5.8,3.5,2.1],"s":["Always Looking to Attack","Threatening Out Wide","Consumes Little Energy"],"w":["Minimal Defensive Coverage","Unimaginative Build-Up Play","Limited Playing Space"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[5.5,2.4,8.0,8.8,2.6,2.0],"s":["Players Rarely Tire","Threatening Out Wide","Front-Footed Approach"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Dependency on Possession"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[4.7,2.7,8.2,8.1,2.5,1.6],"s":["Team Hardly Breaks A Sweat","Threatening Out Wide","Front-Footed Approach"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Dependency on Possession"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[7.9,2.4,7.6,3.6,3.3,1.7],"s":["Always Looking to Attack","Threatening Out Wide","Roles Spread Lengthwise"],"w":["Unimaginative Build-Up Play","Minimal Defensive Coverage","Requires Good Stamina"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[6.8,2.7,8.0,5.7,2.4,2.1],"s":["Threatening Out Wide","Fast and Direct Football","Consumes Little Energy"],"w":["Unimaginative Build-Up Play","Dependency on Possession","Minimal Defensive Coverage"],"src":"lab"},{"f":"4-3-3","bu":"counter","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[2.5,3.3,8.3,8.7,1.9,1.9],"s":["Players Rarely Tire","Threatening Out Wide","Defensively Solid"],"w":["Dependency on Possession","Unimaginative Build-Up Play","Isolated Frontline"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[2.5,3.3,8.5,8.7,1.9,4.6],"s":["Players Rarely Tire","Threatening Out Wide","Solid Creativity in Roles"],"w":["Dependency on Possession","Isolated Frontline","Defence Easy to Overload"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[6.9,2.7,7.8,5.7,2.3,4.5],"s":["Threatening Out Wide","Fast and Direct Football","Consumes Little Energy"],"w":["Dependency on Possession","Minimal Defensive Coverage","Inconsistent Build-Up"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[8.2,2.4,7.7,3.6,3.4,3.2],"s":["Always Looking to Attack","Threatening Out Wide","Roles Spread Lengthwise"],"w":["Minimal Defensive Coverage","Predictable in Possession","Requires Good Stamina"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Target Forward/Wide","Winger/Balanced"],"a":[4.6,2.7,8.2,8.1,2.6,3.1],"s":["Team Hardly Breaks A Sweat","Threatening Out Wide","Front-Footed Approach"],"w":["Minimal Defensive Coverage","Dependency on Possession","Predictable in Possession"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[5.6,2.4,8.1,8.7,2.6,4.2],"s":["Players Rarely Tire","Threatening Out Wide","Front-Footed Approach"],"w":["Minimal Defensive Coverage","Dependency on Possession","Inconsistent Build-Up"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Half Winger/Attack","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[8.3,2.1,7.7,6.0,3.5,4.4],"s":["Always Looking to Attack","Threatening Out Wide","Consumes Little Energy"],"w":["Minimal Defensive Coverage","Limited Playing Space","Inconsistent Build-Up"],"src":"lab"},{"f":"4-3-3","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Winger/Balanced"],"a":[7.6,2.4,7.7,7.9,2.4,5.4],"s":["Threatening Out Wide","Team Hardly Breaks A Sweat","Always Looking to Attack"],"w":["Minimal Defensive Coverage","Dependency on Possession","Inconsistent Build-Up"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Attack","Half Winger/Attack","Winger/Balanced","Advanced Forward/Attack"],"a":[2.8,6.6,7.4,8.9,5.8,2.9],"s":["Players Rarely Tire","Attacks The Flanks","Strong Defensive Focus"],"w":["Isolated Frontline","Predictable in Possession","Compressed Team"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Centre Half/Defend","Holding/Defend","Winger/Attack","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[1.8,7.5,3.8,9.1,4.5,4.7],"s":["Players Rarely Tire","Win the Ball Back Quickly","Solid Creativity in Roles"],"w":["Isolated Frontline","Lacking Wide Options","Compressed Team"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Centre Half/Defend","Holding/Defend","Winger/Attack","Half Winger/Attack","Winger/Balanced","Advanced Forward/Attack"],"a":[2.2,6.5,5.3,8.2,6.1,3.5],"s":["Team Hardly Breaks A Sweat","Strong Defensive Focus","Space Between The Lines"],"w":["Isolated Frontline","Predictable in Possession","Overload Centrally"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Attack","Half Winger/Attack","Winger/Balanced","Advanced Forward/Attack"],"a":[4.6,5.7,4.1,8.3,7.4,2.6],"s":["Team Hardly Breaks A Sweat","Well Distributed Team","Defensively Solid"],"w":["Unimaginative Build-Up Play","Lacking Wide Options","Cautious Approach"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Centre Half/Defend","Holding/Defend","Winger/Attack","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.2,6.7,3.8,8.4,6.5,3.8],"s":["Team Hardly Breaks A Sweat","Space Between The Lines","Strong Defensive Focus"],"w":["Isolated Frontline","Lacking Wide Options","Predictable in Possession"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Centre Half/Defend","Holding/Defend","Winger/Balanced","Half Winger/Attack","Winger/Balanced","Advanced Forward/Attack"],"a":[2.2,6.5,5.3,8.2,6.1,3.4],"s":["Team Hardly Breaks A Sweat","Strong Defensive Focus","Space Between The Lines"],"w":["Isolated Frontline","Predictable in Possession","Overload Centrally"],"src":"lab"},{"f":"4-2-3-1","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.2,7.5,6.0,9.5,4.0,1.9],"s":["Players Rarely Tire","Win the Ball Back Quickly","Good Wide Options"],"w":["Unimaginative Build-Up Play","Isolated Frontline","Compressed Team"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[2.4,7.6,6.1,9.6,1.8,4.2],"s":["Players Rarely Tire","Win the Ball Back Quickly","Good Wide Options"],"w":["Dependency on Possession","Isolated Frontline","Inconsistent Build-Up"],"src":"lab"},{"f":"4-2-3-1","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Winger/Balanced","Advanced Forward/Attack"],"a":[5.3,6.5,4.5,7.9,5.6,4.9],"s":["Team Hardly Breaks A Sweat","Strong Defensive Focus","Roles Spread Lengthwise"],"w":["Overload Centrally","Inconsistent Build-Up","Cautious Approach"],"src":"lab"},{"f":"4-4-2","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Winger/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[5.6,2.5,8.6,9.0,5.7,1.4],"s":["Players Rarely Tire","Threatening Out Wide","Front-Footed Approach"],"w":["No Discernible Style of Play","Minimal Defensive Coverage","Compressed Team"],"src":"lab"},{"f":"4-4-2","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Winger/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[5.8,2.5,8.6,9.0,2.3,2.2],"s":["Players Rarely Tire","Threatening Out Wide","Front-Footed Approach"],"w":["Minimal Defensive Coverage","Unimaginative Build-Up Play","Dependency on Possession"],"src":"lab"},{"f":"4-4-2","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Winger/Balanced","Box-to-Box/Balanced","Box-to-Box/Balanced","Winger/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[8.3,2.3,8.3,6.6,6.6,2.5],"s":["Always Looking to Attack","Threatening Out Wide","Space Between The Lines"],"w":["Minimal Defensive Coverage","Unimaginative Build-Up Play","Demands Energy"],"src":"lab"},{"f":"3-5-2","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Defender/Balanced","Defender/Balanced","Defender/Balanced","Winger/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[4.6,3.3,3.9,9.4,5.4,2.8],"s":["Players Rarely Tire","Roles Spread Lengthwise","Front-Footed Approach"],"w":["Predictable in Possession","Defence Easy to Overload","Lacking Wide Options"],"src":"lab"},{"f":"3-5-2","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Defender/Balanced","Defender/Balanced","Defender/Balanced","Winger/Balanced","Holding/Defend","Holding/Defend","Winger/Balanced","Playmaker/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[4.8,3.5,4.1,9.2,2.0,6.2],"s":["Players Rarely Tire","Strong Build-Up Play","Front-Footed Approach"],"w":["Dependency on Possession","Defence Easy to Overload","Lacking Wide Options"],"src":"lab"},{"f":"5-3-2","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Holding/Defend","Box-to-Box/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[2.1,7.5,2.3,9.3,6.9,3.7],"s":["Players Rarely Tire","Strong Defensive Focus","Space Between The Lines"],"w":["Isolated Frontline","Approach Too Narrow","Predictable in Possession"],"src":"lab"},{"f":"5-3-2","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Holding/Defend","Box-to-Box/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[2.1,7.3,2.5,9.1,2.9,7.4],"s":["Players Rarely Tire","Co-ordinated Build-Up","Strong Defensive Focus"],"w":["Isolated Frontline","Approach Too Narrow","Limited Playing Space"],"src":"lab"},{"f":"5-3-2","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Box-to-Box/Balanced","Holding/Defend","Box-to-Box/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[4.0,6.2,1.1,7.8,7.7,7.5],"s":["Team Hardly Breaks A Sweat","Well Distributed Team","Co-ordinated Build-Up"],"w":["Vulnerable to Wing Play","Lack of Attacking Options","Light at Defensive Roles"],"src":"lab"},{"f":"4-2-2-2","bu":"counter","l":50,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Playmaker/Balanced","Holding/Defend","Holding/Defend","Playmaker/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[3.6,4.2,6.4,9.1,7.5,2.7],"s":["Players Rarely Tire","Well Distributed Team","Attacks The Flanks"],"w":["Unimaginative Build-Up Play","Lack of Attacking Options","Light at Defensive Roles"],"src":"lab"},{"f":"4-2-2-2","bu":"balanced","l":95,"r":["Goalkeeper/Balanced","Fullback/Balanced","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Playmaker/Balanced","Holding/Defend","Holding/Defend","Playmaker/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[3.5,4.2,6.4,9.2,4.1,2.6],"s":["Players Rarely Tire","Attacks The Flanks","Roles Spread Lengthwise"],"w":["Unimaginative Build-Up Play","Lack of Attacking Options","Light at Defensive Roles"],"src":"lab"},{"f":"4-2-2-2","bu":"balanced","l":50,"r":["Goalkeeper/Balanced","Inverted Wingback/Attack","Defender/Balanced","Defender/Balanced","Fullback/Balanced","Playmaker/Balanced","Holding/Defend","Holding/Defend","Playmaker/Balanced","Advanced Forward/Attack","Advanced Forward/Attack"],"a":[7.5,3.5,5.4,7.2,7.9,6.6],"s":["Well Distributed Team","Always Looking to Attack","Plenty Left in the Tank"],"w":["Defence Easy to Overload","Overload Centrally","Inconsistent Build-Up"],"src":"lab"},{"f":"4-1-4-1","bu":"short","l":95,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Balanced","Holding/Defend","Wide Midfielder/Defend","Box-to-Box/Balanced","Deep-Lying Playmaker/Build-Up","Wide Playmaker/Build-Up","False 9/Build-Up"],"a":[0.9,9.0,2.5,7.6,0.2,9.8],"s":["Ultimate Passing Game","Intense Pressing","Team Hardly Breaks A Sweat"],"w":["Susceptible to Counters","Easy to Defend Against","Approach Too Narrow"],"src":"lab"},{"f":"4-1-4-1","bu":"balanced","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Balanced","Holding/Defend","Wide Midfielder/Defend","Box-to-Box/Balanced","Deep-Lying Playmaker/Build-Up","Wide Playmaker/Build-Up","False 9/Build-Up"],"a":[1.1,9.1,2.5,7.6,0.7,8.7],"s":["Intense Pressing","Co-ordinated Build-Up","Team Hardly Breaks A Sweat"],"w":["Susceptible to Counters","Easy to Defend Against","Approach Too Narrow"],"src":"lab"},{"f":"4-1-4-1","bu":"counter","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Balanced","Holding/Defend","Wide Midfielder/Defend","Box-to-Box/Balanced","Deep-Lying Playmaker/Build-Up","Wide Playmaker/Build-Up","False 9/Build-Up"],"a":[1.1,9.3,2.5,7.4,0.7,7.6],"s":["Intense Pressing","Team Hardly Breaks A Sweat","Direct Attacks"],"w":["Susceptible to Counters","Easy to Defend Against","Approach Too Narrow"],"src":"lab"},{"f":"4-5-1","bu":"short","l":95,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Box-to-Box/Balanced","Holding/Defend","Box-to-Box/Balanced","Wide Playmaker/Build-Up","Advanced Forward/Attack"],"a":[1.1,8.9,4.1,7.7,0.2,9.5],"s":["Ultimate Passing Game","Intense Pressing","Team Hardly Breaks A Sweat"],"w":["Susceptible to Counters","Easy to Defend Against","Lacking Wide Options"],"src":"lab"},{"f":"4-5-1","bu":"balanced","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Box-to-Box/Balanced","Holding/Defend","Box-to-Box/Balanced","Wide Playmaker/Build-Up","Advanced Forward/Attack"],"a":[1.2,9.0,4.1,7.9,0.5,8.6],"s":["Intense Pressing","Co-ordinated Build-Up","Team Hardly Breaks A Sweat"],"w":["Susceptible to Counters","Easy to Defend Against","Lacking Wide Options"],"src":"lab"},{"f":"4-5-1","bu":"counter","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Box-to-Box/Balanced","Holding/Defend","Box-to-Box/Balanced","Wide Playmaker/Build-Up","Advanced Forward/Attack"],"a":[1.3,9.2,4.1,7.9,0.5,7.3],"s":["Intense Pressing","Team Hardly Breaks A Sweat","Strong Build-Up Play"],"w":["Susceptible to Counters","Easy to Defend Against","Lacking Wide Options"],"src":"lab"},{"f":"4-4-2 (2)","bu":"short","l":95,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Holding/Defend","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","Advanced Forward/Support"],"a":[1.3,9.2,8.0,8.3,1.2,8.2],"s":["Intense Pressing","Team Hardly Breaks A Sweat","Patient Build-Up"],"w":["Easy to Defend Against","Susceptible to Counters","Overload Centrally"],"src":"lab"},{"f":"4-4-2 (2)","bu":"short","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Holding/Defend","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","Advanced Forward/Support"],"a":[1.3,9.0,8.0,8.1,2.6,8.1],"s":["Intense Pressing","Team Hardly Breaks A Sweat","Patient Build-Up"],"w":["Easy to Defend Against","Dependency on Possession","Overload Centrally"],"src":"lab"},{"f":"4-4-2 (2)","bu":"balanced","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Holding/Defend","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","Advanced Forward/Support"],"a":[1.3,9.0,7.9,8.1,2.5,6.9],"s":["Intense Pressing","Team Hardly Breaks A Sweat","Threatening Out Wide"],"w":["Easy to Defend Against","Dependency on Possession","Inconsistent Build-Up"],"src":"lab"},{"f":"4-4-2 (2)","bu":"counter","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Holding/Defend","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","Advanced Forward/Support"],"a":[1.2,9.2,7.9,8.3,2.5,3.2],"s":["Intense Pressing","Team Hardly Breaks A Sweat","Threatening Out Wide"],"w":["Easy to Defend Against","Dependency on Possession","Predictable in Possession"],"src":"lab"},{"f":"4-4-2 (2)","bu":"short","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Wide Half/Defend","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","False 9/Build-Up"],"a":[1.2,9.1,7.9,5.7,2.3,8.9],"s":["Intense Pressing","Ultimate Passing Game","Threatening Out Wide"],"w":["Easy to Defend Against","Dependency on Possession","Demands Energy"],"src":"lab"},{"f":"4-4-2 (2)","bu":"short","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Wide Half/Build-Up","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","False 9/Build-Up"],"a":[1.3,9.1,7.9,5.6,2.4,9.0],"s":["Intense Pressing","Ultimate Passing Game","Threatening Out Wide"],"w":["Easy to Defend Against","Dependency on Possession","Demands Energy"],"src":"lab"},{"f":"4-4-2 (2)","bu":"balanced","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Wide Half/Build-Up","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","False 9/Build-Up"],"a":[1.2,9.2,8.0,5.7,2.3,7.9],"s":["Intense Pressing","Co-ordinated Build-Up","Threatening Out Wide"],"w":["Easy to Defend Against","Dependency on Possession","Demands Energy"],"src":"lab"},{"f":"4-4-2 (2)","bu":"counter","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Wide Half/Build-Up","Holding/Defend","Wide Playmaker/Build-Up","False 9/Build-Up","False 9/Build-Up"],"a":[1.2,9.1,7.9,5.7,2.3,5.0],"s":["Intense Pressing","Threatening Out Wide","Consumes Little Energy"],"w":["Easy to Defend Against","Dependency on Possession","Inconsistent Build-Up"],"src":"lab"},{"f":"4-4-2","bu":"short","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Holding/Defend","Deep-Lying Playmaker/Build-Up","Wide Playmaker/Build-Up","False 9/Build-Up","False 9/Build-Up"],"a":[1.8,7.9,7.5,7.5,2.0,9.0],"s":["Ultimate Passing Game","Win the Ball Back Quickly","Team Hardly Breaks A Sweat"],"w":["Isolated Frontline","Dependency on Possession","Overload Centrally"],"src":"quick"},{"f":"5-4-1","bu":"short","l":50,"r":["Sweeper Keeper/Build-Up","Falseback/Defend","Defender/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Wide Midfielder/Defend","Holding/Defend","Deep-Lying Playmaker/Build-Up","Wide Playmaker/Build-Up","False 9/Build-Up"],"a":[0.6,9.6,4.1,8.0,1.3,9.3],"s":["Intense Pressing","Ultimate Passing Game","Team Hardly Breaks A Sweat"],"w":["Easy to Defend Against","Susceptible to Counters","Lacking Wide Options"],"src":"quick"},{"f":"4-3-1-2","bu":"counter","l":50,"r":["Goalkeeper/Defend","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Holding/Defend","Holding/Defend","Box-to-Box/Ball-Winning","Playmaker/Roaming","Advanced Forward/Support","Advanced Forward/Support"],"a":[1.9,8.3,1.5,7.7,4.2,5.0],"s":["Win the Ball Back Quickly","Team Hardly Breaks A Sweat","Solid Creativity in Roles"],"w":["Vulnerable to Wing Play","Isolated Frontline","Compressed Team"],"src":"quick"}],"cand":[{"f":"4-2-3-1","bu":"short","l":50,"name":"balanced","r":["Goalkeeper/Defend","Attacking Wingback/Support","Wide Back/Support","Defender/Defend","Fullback/Defend","Holding/Defend","Holding/Defend","Winger/Attack","Classic 10/Attack","Winger/Attack","Advanced Forward/Attack"]},{"f":"4-2-3-1","bu":"counter","l":50,"name":"press","r":["Goalkeeper/Defend","Falseback/Defend","Defender/Defend","Defender/Defend","Falseback/Defend","Holding/Defend","Holding/Defend","Wide Midfielder/Defend","Playmaker/Roaming","Wide Midfielder/Defend","Advanced Forward/Support"]}]};
+        const TG_LADDERS = {"atk":{"S":[[6.6,"Front-Footed Approach",10],[7.2,"Fast and Direct Football",4],[11,"Always Looking to Attack",13]],"W":[[1.6,"Easy to Defend Against",14],[2.9,"Isolated Frontline",21],[4.5,"Lack of Attacking Options",17],[11,"Cautious Approach",6]]},"def":{"S":[[6.4,"Defensively Solid",2],[7.45,"Strong Defensive Focus",12],[8.7,"Win the Ball Back Quickly",10],[11,"Intense Pressing",15]],"W":[[3.15,"Minimal Defensive Coverage",42],[3.9,"Defence Easy to Overload",5],[11,"Light at Defensive Roles",3]]},"wid":{"S":[[6.3,"Good Wide Options",7],[7.25,"Attacks The Flanks",5],[11,"Threatening Out Wide",51]],"W":[[1.6,"Vulnerable to Wing Play",2],[3.2,"Approach Too Narrow",6],[4.3,"Lacking Wide Options",9],[11,"Overload Centrally",9]]},"end":{"S":[[7.0,"Consumes Little Energy",5],[7.3,"Plenty Left in the Tank",1],[8.5,"Team Hardly Breaks A Sweat",24],[11,"Players Rarely Tire",44]],"W":[[4.5,"Requires Good Stamina",4],[11,"Demands Energy",9]]},"len":{"S":[[5.75,"Roles Spread Lengthwise",6],[7.1,"Space Between The Lines",10],[11,"Well Distributed Team",12]],"W":[[1.5,"Susceptible to Counters",8],[2.65,"Dependency on Possession",25],[3.7,"Limited Playing Space",11],[11,"Compressed Team",14]]},"bld":{"S":{"short":[[8.8,"Patient Build-Up",5],[11,"Ultimate Passing Game",6]],"balanced":[[6.0,"Solid Creativity in Roles",13],[7.35,"Strong Build-Up Play",2],[11,"Co-ordinated Build-Up",6]],"counter":[[6.0,"Solid Creativity in Roles",1],[7.0,"Strong Build-Up Play",2],[11,"Direct Attacks",1]]},"W":[[2.75,"Unimaginative Build-Up Play",24],[3.95,"Predictable in Possession",13],[11,"Inconsistent Build-Up",18]]}};
+        const TG_AXES = [
+            { k: 'atk', en: 'ATK', nEn: 'Attack', nAr: 'الهجوم',
+              dEn: 'How forward-committed the roles are. Low = "Easy to Defend Against" / "Isolated Frontline"; high = "Always Looking to Attack".',
+              dAr: 'مدى اندفاع الأدوار للأمام. المنخفض = «سهل الدفاع ضده» / «خط هجوم معزول»؛ المرتفع = «يبحث دائماً عن الهجوم».' },
+            { k: 'def', en: 'DEF', nEn: 'Defence', nAr: 'الدفاع',
+              dEn: 'How much of the team defends and presses. High = "Win the Ball Back Quickly" and, at the very top, "Intense Pressing".',
+              dAr: 'حجم مشاركة الفريق في الدفاع والضغط. المرتفع = «استعادة الكرة بسرعة» وفي القمة «ضغط مكثف».' },
+            { k: 'wid', en: 'WID', nEn: 'Width', nAr: 'العرض',
+              dEn: 'How much the setup uses the flanks. Wingers on Attack push it to 8+; a narrow midfield sits around 1–4.',
+              dAr: 'مدى استغلال الأطراف. الأجنحة بتركيز الهجوم ترفعه فوق 8؛ والوسط الضيق يبقى بين 1 و4.' },
+            { k: 'end', en: 'END', nEn: 'Endurance', nAr: 'التحمّل',
+              dEn: 'How little stamina the roles burn. High = "Players Rarely Tire"; stacking attacking roles drains it.',
+              dAr: 'قلة استهلاك اللياقة. المرتفع = «اللاعبون نادراً ما يتعبون»؛ وتكديس أدوار الهجوم يستنزفه.' },
+            { k: 'len', en: 'LEN', nEn: 'Length', nAr: 'الطول',
+              dEn: 'How the team is spread front to back. In your tests only the line height moved it: a deep line gave the highest value, an aggressive line the lowest.',
+              dAr: 'كيف يتوزع الفريق من الخلف للأمام. في اختباراتك لم يحرّكه إلا ارتفاع الخط: الخط العميق أعطى أعلى قيمة والهجومي أقل قيمة.' },
+            { k: 'bld', en: 'BLD', nEn: 'Build-up', nAr: 'البناء',
+              dEn: 'How well the team builds play. Build-Up focus roles raise it and the build-up style shifts it (Short Passing up, Counter down).',
+              dAr: 'جودة بناء اللعب. أدوار تركيز البناء ترفعه وأسلوب البناء يحرّكه (التمرير القصير يرفع والمرتد يخفض).' }
+        ];
+        const TG_ANGLE = { atk: -90, def: -30, wid: 30, end: 90, len: 150, bld: 210 };
+        const TG_STYLE_SHIFT = { short: 1.1, balanced: 0, counter: -1.3 };
+        // LEN change by line-height band, relative to the 31–60 band (4-3-3 line test: only LEN moved).
+        const TG_LINE_BANDS = [
+            { id: 'deep', max: 30, shift: 3.1, en: 'Deep (1–30)', ar: 'عميق (1–30)' },
+            { id: 'balanced', max: 60, shift: 0, en: 'Balanced (31–60)', ar: 'متوازن (31–60)' },
+            { id: 'high', max: 90, shift: -1.7, en: 'High (61–90)', ar: 'مرتفع (61–90)' },
+            { id: 'aggressive', max: 100, shift: -2.6, en: 'Aggressive (91–100)', ar: 'هجومي (91–100)' }
+        ];
+        const tgBand = line => TG_LINE_BANDS.find(b => line <= b.max) || TG_LINE_BANDS[3];
+        const tgClamp = (v, a, b) => Math.min(b, Math.max(a, v));
+        const tgEsc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const tgFmt = v => (Math.round(v * 10) / 10).toFixed(1);
 
-        // ONE scanning core, shared by both scripts that run on FUTBIN:
-        //   • FUTBIN_CONSOLE_SCRIPT  — the manual fallback (paste into the
-        //     console; ends by copying JSON to the clipboard, as before)
-        //   • FUTBIN_BOOKMARKLET_SOURCE — the "FC Market Scanner" bookmark
-        //     (sends the rows straight back to this app via postMessage)
-        // Both must be self-contained (they execute on futbin.com and can't
-        // call anything in this file), so the extraction lives here as a
-        // code string. It mirrors the app-side extractFutbinRows() used for
-        // pasted HTML, so every path produces identical rows. Deliberately
-        // free of backticks and "${" since it's embedded in template
-        // literals below.
-        const FUTBIN_SCANNER_CORE = `
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  function parseCoins(str) {
-    if (!str) return null;
-    str = str.replace(/coin/i, '').trim().replace(/,/g, '');
-    const mult = /M$/i.test(str) ? 1e6 : /K$/i.test(str) ? 1e3 : 1;
-    const num = parseFloat(str);
-    return isNaN(num) ? null : Math.round(num * mult);
-  }
-  function findMarketTable(doc) {
-    return [...doc.querySelectorAll('table')].find(function(t) {
-      return /player/i.test((t.querySelector('thead') && t.querySelector('thead').textContent) || (t.rows[0] && t.rows[0].textContent) || '');
-    });
-  }
-  function buildColumnMap(table) {
-    const headerRow = table.querySelector('thead tr') || table.rows[0];
-    const cells = [...headerRow.children];
-    const map = {};
-    cells.forEach(function(c, i) {
-      const t = c.textContent.trim().toLowerCase();
-      if (t.indexOf('player') !== -1) map.player = i;
-      else if (t.indexOf('difference') !== -1) map.difference = i;
-      else if (t.indexOf('ea average') !== -1) map.eaAverage = i;
-      else if (t.indexOf('after tax') !== -1) map.afterTax = i;
-      else if (t.indexOf('trend') !== -1) map.trend = i;
-      else if (t.indexOf('price') !== -1) map.price = i;
-    });
-    return map;
-  }
-  function extractRows(doc) {
-    const table = findMarketTable(doc);
-    if (!table) return [];
-    const colMap = buildColumnMap(table);
-    const body = table.tBodies[0] || table;
-    return [...body.rows].map(function(row) {
-      const cells = [...row.cells];
-      function text(i) { return (i != null && cells[i]) ? cells[i].textContent.trim() : null; }
-      const lines = (text(colMap.player) || '').split('\\n').map(function(l) { return l.trim(); }).filter(Boolean);
-      const name = lines[0] || '';
-      let rating = null;
-      for (let k = 1; k < lines.length && rating == null; k++) {
-        if (/^\\d{2}$/.test(lines[k]) && +lines[k] >= 40 && +lines[k] <= 99) rating = +lines[k];
-      }
-      return {
-        name: name,
-        price: parseCoins(text(colMap.price)),
-        eaAverage: parseCoins(text(colMap.eaAverage)),
-        diffText: text(colMap.difference),
-        afterTax: parseCoins(text(colMap.afterTax)),
-        trend: text(colMap.trend),
-        rating: rating
-      };
-    }).filter(function(r) { return r.name && r.price != null; });
-  }
-  function getNextPageUrl(doc, currentUrl) {
-    const cur = new URL(currentUrl);
-    const curPage = parseInt(cur.searchParams.get('page') || '1', 10);
-    const candidates = [...doc.querySelectorAll('a[href*="page="]')];
-    for (const a of candidates) {
-      try {
-        const u = new URL(a.getAttribute('href'), currentUrl);
-        if (parseInt(u.searchParams.get('page'), 10) === curPage + 1) return u.href;
-      } catch (e) {}
-    }
-    cur.searchParams.set('page', curPage + 1);
-    return cur.href;
-  }
-  function marketBaseUrl() {
-    try {
-      const here = new URL(location.href);
-      if (/futbin\\.com$/.test(here.hostname) && /market-player-list/.test(here.pathname)) return here;
-    } catch (e) {}
-    return new URL('https://www.futbin.com/27/market-player-list');
-  }
-  async function scanPages(startPage, endPage, onPage) {
-    const delayMs = 1200;
-    const start = marketBaseUrl();
-    start.searchParams.set('page', startPage);
-    let url = start.href;
-    let all = [];
-    let pages = 0;
-    const seen = new Set();
-    for (let i = 0; i < (endPage - startPage + 1); i++) {
-      if (seen.has(url)) break;
-      seen.add(url);
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) { console.warn('Stopped at', url, res.status); break; }
-      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-      const rows = extractRows(doc);
-      if (rows.length === 0) { console.warn('No rows parsed on', url); break; }
-      all = all.concat(rows);
-      pages++;
-      console.log('Page ' + (startPage + i) + ': ' + rows.length + ' players (total: ' + all.length + ')');
-      if (onPage) onPage(startPage + i, pages, all.length);
-      const next = getNextPageUrl(doc, url);
-      if (!next || next === url) break;
-      url = next;
-      await wait(delayMs);
-    }
-    return { rows: all, pages: pages };
-  }
-`;
-
-        // Manual fallback — paste into the browser console on FUTBIN. Same
-        // behaviour as before: walks the pages, copies JSON to the clipboard.
-        const FUTBIN_CONSOLE_SCRIPT = `(async () => {
-${FUTBIN_SCANNER_CORE}
-  // ====== EDIT THESE TWO NUMBERS TO CHANGE WHICH PAGES IT SCRAPES ======
-  const START_PAGE = 1;
-  const END_PAGE = 30;
-  // =======================================================================
-  const result = await scanPages(START_PAGE, END_PAGE);
-  const all = result.rows;
-  const json = JSON.stringify(all);
-  try {
-    await navigator.clipboard.writeText(json);
-    console.log('%cDone! ' + all.length + ' players scraped and COPIED TO CLIPBOARD. Go paste it into the Market tab.', 'color:lime;font-weight:bold;font-size:13px;');
-  } catch (e) {
-    console.log('Done! ' + all.length + ' players scraped. Clipboard copy failed, copy this manually:');
-    console.log(json);
-  }
-  window.__futbinScrapeResult = all;
-})();`;
-
-        // "FC Market Scanner" bookmarklet. Runs on FUTBIN (in the window this
-        // app opened), asks the app which pages to scan, scans them with the
-        // shared core, and posts the rows back to window.opener:
-        //   → FC_MARKET_HELLO            (no data; asks for settings)
-        //   ← FC_MARKET_CONFIG           (page range + the app's origin)
-        //   → FC_MARKET_PROGRESS × pages (real per-page progress)
-        //   → FC_MARKET_DATA | FC_MARKET_ERROR
-        // The data message is sent to the app's own origin when it has one;
-        // a file:// app has an opaque origin ("null"), which postMessage
-        // can't target, so there it has to be "*" — the app then relies on
-        // checking event.source/origin and the message shape on receipt.
-        // No opener (FUTBIN opened some other way, or the browser cut the
-        // link)? It falls back to the clipboard, like the console script.
-        const FUTBIN_BOOKMARKLET_SOURCE = `(async () => {
-  if (window.__fcMarketScanRunning) { alert('FC Market Scanner is already running on this page.'); return; }
-  if (!/(^|\\.)futbin\\.com$/.test(location.hostname)) { alert('FC Market Scanner only works on futbin.com - use "Open FUTBIN & Scan" in the app first.'); return; }
-  window.__fcMarketScanRunning = true;
-${FUTBIN_SCANNER_CORE}
-  const badge = document.createElement('div');
-  badge.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;padding:12px 14px;border-radius:12px;background:#0b1220;color:#e2e8f0;font:600 13px/1.45 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45);border:1px solid #334155';
-  const say = function(t) { badge.textContent = 'FC Market Scanner - ' + t; };
-  document.body.appendChild(badge);
-  const app = (window.opener && !window.opener.closed) ? window.opener : null;
-  const send = function(msg, origin) { try { app.postMessage(msg, origin || '*'); return true; } catch (e) { return false; } };
-  let cfg = { startPage: 1, endPage: 30, appOrigin: '*' };
-  if (app) {
-    say('connecting to the app...');
-    cfg = await new Promise(function(resolve) {
-      let timer = null;
-      const onMsg = function(ev) {
-        if (ev.source !== app || !ev.data || ev.data.type !== 'FC_MARKET_CONFIG') return;
-        finish({ startPage: ev.data.startPage, endPage: ev.data.endPage, appOrigin: ev.data.appOrigin });
-      };
-      const finish = function(c) { window.removeEventListener('message', onMsg); clearTimeout(timer); resolve(c); };
-      window.addEventListener('message', onMsg);
-      timer = setTimeout(function() { finish(cfg); }, 1500);
-      send({ type: 'FC_MARKET_HELLO' });
-    });
-  }
-  const startPage = Math.max(1, parseInt(cfg.startPage, 10) || 1);
-  const endPage = Math.min(startPage + 199, Math.max(startPage, parseInt(cfg.endPage, 10) || 30));
-  const appOrigin = (typeof cfg.appOrigin === 'string' && /^https?:[/][/]/.test(cfg.appOrigin)) ? cfg.appOrigin : '*';
-  say('scanning pages ' + startPage + '-' + endPage + '...');
-  try {
-    const result = await scanPages(startPage, endPage, function(page, done, total) {
-      say('page ' + page + ' of ' + endPage + ' (' + total + ' listings so far)');
-      if (app) send({ type: 'FC_MARKET_PROGRESS', page: page, pagesDone: done, pagesPlanned: endPage - startPage + 1, listings: total }, appOrigin);
-    });
-    const base = marketBaseUrl();
-    base.searchParams.delete('page');
-    const payload = { type: 'FC_MARKET_DATA', rows: result.rows, scannedPages: result.pages, scannedAt: new Date().toISOString(), scannerVersion: 2, filtered: base.search.length > 1 };
-    if (app && !app.closed && send(payload, appOrigin)) {
-      say('done - ' + result.rows.length + ' listings sent to the app. Switch back to it to see the results.');
-    } else {
-      window.__futbinScrapeResult = result.rows;
-      try {
-        await navigator.clipboard.writeText(JSON.stringify(result.rows));
-        say('done - could not reach the app automatically, so ' + result.rows.length + ' listings were COPIED to your clipboard. Paste them into the Market tab.');
-      } catch (e) {
-        say('done - could not reach the app or the clipboard. Open the console and run copy(window.__futbinScrapeResult), then paste into the Market tab.');
-      }
-    }
-  } catch (e) {
-    say('scan failed: ' + (e && e.message ? e.message : e));
-    if (app) send({ type: 'FC_MARKET_ERROR', message: String((e && e.message) || e).slice(0, 200) }, appOrigin);
-  } finally {
-    window.__fcMarketScanRunning = false;
-  }
-})();`;
-        const FUTBIN_BOOKMARKLET_URL = 'javascript:' + encodeURIComponent(FUTBIN_BOOKMARKLET_SOURCE);
-
-        window.copyMarketConsoleScript = function() {
-            const isAr = currentLanguage === 'ar';
-            const labelEl = document.getElementById('market-copy-script-label');
-            const revert = () => { if (labelEl) setTimeout(() => { labelEl.textContent = isAr ? 'نسخ الكود' : 'Copy Script'; }, 1500); };
-            const done = () => { if (labelEl) labelEl.textContent = isAr ? 'تم النسخ ✓' : 'Copied ✓'; revert(); };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(FUTBIN_CONSOLE_SCRIPT).then(done).catch(() => {
-                    const ta = document.getElementById('market-console-script');
-                    if (ta) { ta.select(); document.execCommand('copy'); done(); }
-                });
-            } else {
-                const ta = document.getElementById('market-console-script');
-                if (ta) { ta.select(); document.execCommand('copy'); done(); }
-            }
-        };
-
-        function marketLog(msg, type) {
-            const box = document.getElementById('market-status');
-            if (!box) return;
-            box.classList.remove('hidden');
-            const colors = { info: 'text-gray-400', ok: 'text-green-400', warn: 'text-fc-gold', err: 'text-red-400' };
-            const line = document.createElement('div');
-            line.className = colors[type] || colors.info;
-            line.textContent = msg;
-            box.appendChild(line);
-            box.scrollTop = box.scrollHeight;
+        // ---- engine: axes -> the six sentences --------------------------
+        // Top three axes get a strength wording, bottom three a warning
+        // wording; each axis then picks its sentence from the value ladder.
+        function tgPickLadder(list, v) {
+            for (const e of list) if (v < e[0]) return e;
+            return list[list.length - 1];
         }
-
-        function resetMarketLog() {
-            const box = document.getElementById('market-status');
-            if (box) { box.innerHTML = ''; box.classList.add('hidden'); }
-        }
-
-        function parseFutbinCoins(str) {
-            if (!str) return null;
-            str = String(str).replace(/coin/i, '').trim().replace(/,/g, '');
-            const mult = /M$/i.test(str) ? 1e6 : /K$/i.test(str) ? 1e3 : 1;
-            const num = parseFloat(str);
-            return isNaN(num) ? null : Math.round(num * mult);
-        }
-
-        function findFutbinMarketTable(doc) {
-            return [...doc.querySelectorAll('table')]
-                .find(t => /player/i.test(t.querySelector('thead')?.textContent || t.rows[0]?.textContent || ''));
-        }
-
-        function buildFutbinColumnMap(table) {
-            const headerRow = table.querySelector('thead tr') || table.rows[0];
-            const cells = [...headerRow.children];
-            const map = {};
-            cells.forEach((c, i) => {
-                const t = c.textContent.trim().toLowerCase();
-                if (t.includes('player')) map.player = i;
-                else if (t.includes('difference')) map.difference = i;
-                else if (t.includes('ea average')) map.eaAverage = i;
-                else if (t.includes('after tax')) map.afterTax = i;
-                else if (t.includes('trend')) map.trend = i;
-                else if (t.includes('price')) map.price = i;
+        function tgPredict(ax, style) {
+            const order = TG_AXES.map(a => a.k).sort((a, b) => ax[b] - ax[a]);
+            const top = new Set(order.slice(0, 3));
+            return TG_AXES.map(a => {
+                const isS = top.has(a.k);
+                let lad = TG_LADDERS[a.k][isS ? 'S' : 'W'];
+                if (a.k === 'bld' && isS) lad = lad[style] || lad.balanced;
+                const e = tgPickLadder(lad, ax[a.k]);
+                return { k: a.k, strength: isS, text: e[1], n: e[2] };
             });
-            return map;
         }
 
-        function extractFutbinRows(doc) {
-            const table = findFutbinMarketTable(doc);
-            if (!table) return [];
-            const colMap = buildFutbinColumnMap(table);
-            const body = table.tBodies[0] || table;
-            return [...body.rows].map(row => {
-                const cells = [...row.cells];
-                const text = (i) => (i != null && cells[i]) ? cells[i].textContent.trim() : null;
-                const lines = (text(colMap.player) || '').split('\n').map(l => l.trim()).filter(Boolean);
-                const name = lines[0] || '';
-                const ratingLine = lines.slice(1).find(l => /^\d{2}$/.test(l) && +l >= 40 && +l <= 99);
-                return {
-                    name,
-                    price: parseFutbinCoins(text(colMap.price)),
-                    eaAverage: parseFutbinCoins(text(colMap.eaAverage)),
-                    diffText: text(colMap.difference),
-                    afterTax: parseFutbinCoins(text(colMap.afterTax)),
-                    trend: text(colMap.trend),
-                    rating: ratingLine ? +ratingLine : null,
-                };
-            }).filter(r => r.name && r.price != null);
-        }
-
-        // Turns the raw scraped numbers into an actionable flip: expected
-        // profit assumes selling back up near Futbin's own tracked EA
-        // average price, minus the 5% tax EA takes on every sale — the
-        // same math anyone doing this manually would do by hand. Sorted by
-        // this margin, not the scraped "Difference" column, since that
-        // column's exact basis varies and margin-on-your-money is what
-        // actually answers "is this worth doing".
-        //   After-tax sale value = EA Average × (1 − 5%)
-        //   Potential profit     = after-tax sale − buy price
-        //   ROI                  = potential profit ÷ buy price × 100  (= marginPct)
-        //   Discount             = (EA Average − buy price) ÷ EA Average × 100
-        // `opts` (all optional) adds the trading filters and sort order;
-        // with no opts the behaviour is exactly the original one (any
-        // positive profit, sorted by ROI).
-        //
-        // FAST SELL (optional opts): FUTBIN's list has no sales-volume data,
-        // so "sells faster" is approximated with the two levers traders use:
-        //   • undercutPct — list the card X% BELOW the EA average (rounded
-        //     down to a real EA price step) so it's the cheaper one buyers
-        //     see; profit is then computed at that lower, more realistic
-        //     price, not at the EA average
-        //   • maxBuy — cheaper cards have many more buyers
-        //   • tier   — bronze / silver / gold, when the scan read ratings
-        // With none of these set, results are identical to before.
-        function roundDownToEaPriceStep(v) {
-            const step = v < 1000 ? 50 : v < 10000 ? 100 : v < 50000 ? 250 : v < 100000 ? 500 : 1000;
-            return Math.max(200, Math.floor(v / step) * step);
-        }
-        function cardTierOf(rating) {
-            if (typeof rating !== 'number') return null;
-            return rating >= 75 ? 'gold' : rating >= 65 ? 'silver' : 'bronze';
-        }
-        function computeFlipOpportunities(rows, budget, opts) {
-            const o = Object.assign({ minProfit: 0, minRoi: 0, minDiscount: 0, sortBy: 'roi', undercutPct: 0, maxBuy: Infinity, tier: 'all' }, opts || {});
-            const sortKey = { profit: 'profit', roi: 'marginPct', discount: 'discountPct' }[o.sortBy] || 'marginPct';
-            const cap = Math.min(budget, o.maxBuy > 0 ? o.maxBuy : Infinity);
-            return rows
-                .filter(r => r.price > 0 && r.price <= cap && typeof r.eaAverage === 'number' && r.eaAverage > 0)
-                .filter(r => o.tier === 'all' || cardTierOf(r.rating) === o.tier)
-                .map(r => {
-                    const sellTarget = o.undercutPct > 0 ? roundDownToEaPriceStep(r.eaAverage * (1 - o.undercutPct / 100)) : r.eaAverage;
-                    const projectedSale = Math.round(sellTarget * (1 - FUTBIN_EA_TAX));
-                    const profit = projectedSale - r.price;
-                    const marginPct = (profit / r.price) * 100;
-                    const discountPct = ((r.eaAverage - r.price) / r.eaAverage) * 100;
-                    return { ...r, sellTarget, projectedSale, profit, marginPct, roiPct: marginPct, discountPct, tier: cardTierOf(r.rating) };
-                })
-                .filter(r => r.profit > 0 && r.profit >= o.minProfit && r.marginPct >= o.minRoi && r.discountPct >= o.minDiscount)
-                .sort((a, b) => b[sortKey] - a[sortKey]);
-        }
-
-        // Scanned names come from another site (and, via the scanner, from
-        // another window) — never insert them into the page as HTML.
-        function escapeMarketHtml(str) {
-            return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        }
-        // Keeps only the expected fields, typed and bounded, from rows that
-        // arrive by paste or postMessage.
-        const MARKET_MAX_ROWS = 20000;
-        function sanitizeMarketRows(rows) {
-            const num = v => (typeof v === 'number' && isFinite(v) && v >= 0 && v < 1e10) ? Math.round(v) : null;
-            return rows.slice(0, MARKET_MAX_ROWS).map(r => (r && typeof r === 'object') ? {
-                name: typeof r.name === 'string' ? r.name.replace(/\s+/g, ' ').trim().slice(0, 80) : '',
-                price: num(r.price),
-                eaAverage: num(r.eaAverage),
-                afterTax: num(r.afterTax),
-                diffText: typeof r.diffText === 'string' ? r.diffText.slice(0, 40) : null,
-                trend: typeof r.trend === 'string' ? r.trend.slice(0, 20) : null,
-                rating: (Number.isInteger(r.rating) && r.rating >= 40 && r.rating <= 99) ? r.rating : null
-            } : null).filter(r => r && r.name && r.price != null);
-        }
-
-        function renderMarketResults(opportunities, scannedCount, isAr, budget, f) {
-            const fast = !!(f && f.fast);
-            const container = document.getElementById('market-results');
-            if (!container) return;
-
-            if (opportunities.length === 0) {
-                container.innerHTML = `
-                    <div class="bg-fc-dark/80 border border-fc-border rounded-2xl p-6 text-center text-sm text-gray-400">
-                        ${isAr
-                            ? `تم فحص ${scannedCount.toLocaleString()} عرضاً لكن لا توجد فرصة تطابق ميزانيتك والحد الأدنى للربح والعائد والخصم. جرّب خفض الحدود الدنيا أو رفع الميزانية أو فحص صفحات أكثر.`
-                            : `Scanned ${scannedCount.toLocaleString()} listings, but none match your budget and minimum profit / ROI / discount. Try lowering the minimums, raising the budget, or scanning more pages.`}
-                    </div>
-                `;
-                return;
-            }
-            const best = opportunities.reduce((b, o) => ({ profit: Math.max(b.profit, o.profit), roi: Math.max(b.roi, o.marginPct) }), { profit: 0, roi: 0 });
-            const stat = (label, value, cls) => `<div><div class="text-[9px] text-gray-500 uppercase tracking-wide">${label}</div><div class="text-sm font-black ${cls || 'text-white'}">${value}</div></div>`;
-            const summaryHtml = `
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-fc-dark/80 border border-fc-border rounded-2xl p-4 mb-3 text-center">
-                    ${stat(isAr ? 'العروض المفحوصة' : 'Listings scanned', scannedCount.toLocaleString())}
-                    ${stat(isAr ? 'ميزانية التداول' : 'Trading budget', (budget || 0).toLocaleString(), 'text-fc-gold')}
-                    ${stat(isAr ? 'فرص محتملة' : 'Potential opportunities', opportunities.length.toLocaleString(), 'text-fc-accent')}
-                    ${stat(isAr ? 'أعلى ربح محتمل' : 'Best potential profit', '+' + best.profit.toLocaleString(), 'text-green-400')}
-                    ${stat(isAr ? 'أعلى عائد' : 'Best ROI', best.roi.toFixed(1) + '%', 'text-green-400')}
-                </div>
-                ${fast ? `<p class="text-[11px] text-gray-400 mb-3 leading-snug">${isAr
-                    ? `وضع البيع السريع: يعرض بطاقات ${f.maxBuy !== Infinity ? `حتى ${f.maxBuy.toLocaleString()} كوينز ` : ''}مع سعر عرض أقل بـ${f.undercutPct}% من متوسط EA (مقرّب لخطوات أسعار EA) حتى تكون الأرخص أمام المشترين؛ الربح محسوب على هذا السعر. قائمة FUTBIN لا تتضمن حجم المبيعات، لذا «سريع» تقدير وليس ضماناً.`
-                    : `Fast sell: cards ${f.maxBuy !== Infinity ? `up to ${f.maxBuy.toLocaleString()} coins ` : ''}listed ${f.undercutPct}% under the EA average (rounded down to EA price steps) so yours is the cheaper one buyers see — profit is calculated at that lower price. FUTBIN's list has no sales-volume data, so "fast" is an estimate, not a guarantee.`}</p>` : ''}`;
-
-            // Numbers-first table — a name plus five aligned columns, no
-            // prose per row. Margin color-scaled (green = strong, gray =
-            // thin) is the only "read this at a glance" cue; a fuller take
-            // on any one flip is a click away in the player modal/Futbin
-            // itself, not something to force everyone to read past here.
-            const shown = opportunities.slice(0, 60);
-            const rowsHtml = shown.map((opp, i) => {
-                const marginColor = opp.marginPct >= 50 ? 'text-green-400' : opp.marginPct >= 25 ? 'text-green-400' : opp.marginPct >= 10 ? 'text-fc-gold' : 'text-gray-400';
-                return `
-                <tr class="border-b border-fc-border/60 hover:bg-fc-cardHover/40">
-                    <td class="py-2 pr-2 text-[11px] font-black text-gray-500 text-center">${i + 1}</td>
-                    <td class="py-2 px-2 font-bold text-white text-xs truncate max-w-[160px]" title="${escapeMarketHtml(opp.name)}">${opp.tier ? `<span class="inline-block w-2 h-2 rounded-full me-1.5 align-middle ${opp.tier === 'gold' ? 'bg-yellow-400' : opp.tier === 'silver' ? 'bg-gray-300' : 'bg-amber-700'}" title="${opp.tier} · ${opp.rating}"></span>` : ''}${escapeMarketHtml(opp.name)}</td>
-                    <td class="py-2 px-2 text-xs text-right font-bold text-white whitespace-nowrap">${opp.price.toLocaleString()}</td>
-                    <td class="py-2 px-2 text-xs text-right font-bold text-fc-gold whitespace-nowrap">${opp.eaAverage.toLocaleString()}</td>
-                    ${fast ? `<td class="py-2 px-2 text-xs text-right font-bold text-fc-accent whitespace-nowrap">${opp.sellTarget.toLocaleString()}</td>` : ''}
-                    <td class="py-2 px-2 text-xs text-right text-gray-400 whitespace-nowrap">${opp.projectedSale.toLocaleString()}</td>
-                    <td class="py-2 px-2 text-xs text-right font-black text-green-400 whitespace-nowrap">+${opp.profit.toLocaleString()}</td>
-                    <td class="py-2 px-2 text-xs text-right font-black ${marginColor} whitespace-nowrap">${opp.marginPct.toFixed(1)}%</td>
-                    <td class="py-2 pl-2 text-xs text-right font-bold text-gray-300 whitespace-nowrap">${opp.discountPct.toFixed(0)}%</td>
-                </tr>
-            `;
-            }).join('');
-
-            const headBuy = isAr ? 'الشراء' : 'Buy';
-            const headEaAvg = isAr ? 'متوسط EA' : 'EA Avg';
-            const headNet = isAr ? 'بعد الضريبة' : 'After Tax';
-            const headProfit = isAr ? 'الربح المحتمل' : 'Potential Profit';
-            const headMargin = isAr ? 'العائد' : 'ROI';
-            const headDiscount = isAr ? 'الخصم' : 'Discount';
-            const headName = isAr ? 'اللاعب' : 'Player';
-
-            container.innerHTML = `
-                ${summaryHtml}
-                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                    <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${isAr ? `أفضل ${shown.length} من ${opportunities.length} فرصة محتملة` : `Top ${shown.length} of ${opportunities.length} potential opportunities`}</span>
-                    <span class="text-[10px] text-gray-500">${fast
-                        ? (isAr ? 'بعد الضريبة = سعر العرض × 0.95 · الربح المحتمل = بعد الضريبة − الشراء' : 'After Tax = List at × 0.95 · Potential Profit = After Tax − Buy')
-                        : (isAr ? 'بعد الضريبة = متوسط EA × 0.95 · الربح المحتمل = بعد الضريبة − الشراء' : 'After Tax = EA Avg × 0.95 · Potential Profit = After Tax − Buy')}</span>
-                </div>
-                <div class="bg-fc-dark/80 border border-fc-border rounded-2xl overflow-hidden">
-                    <div class="overflow-x-auto hide-scrollbar">
-                        <table class="w-full border-collapse">
-                            <thead>
-                                <tr class="border-b border-fc-border bg-fc-dark">
-                                    <th class="py-2 pr-2 text-[10px] font-bold text-gray-500 uppercase text-center">#</th>
-                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-left rtl:text-right">${headName}</th>
-                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headBuy}</th>
-                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headEaAvg}</th>
-                                    ${fast ? `<th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${isAr ? 'اعرض بـ' : 'List at'}</th>` : ''}
-                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headNet}</th>
-                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headProfit}</th>
-                                    <th class="py-2 px-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headMargin}</th>
-                                    <th class="py-2 pl-2 text-[10px] font-bold text-gray-500 uppercase text-right">${headDiscount}</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rowsHtml}</tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Parses a manually pasted copy of the market page's HTML — the
-        // reliable fallback when the automated fetch gets blocked. Since
-        // this is the user's own browser loading the real page (not a
-        // datacenter proxy IP), it's never subject to whatever is blocking
-        // the automated scan, and reuses the exact same row-extraction and
-        // profit-scoring logic so results are identical either way.
-        window.parseMarketPaste = function() {
-            const isAr = currentLanguage === 'ar';
-            const pasteInput = document.getElementById('market-paste-input');
-            const budgetInput = document.getElementById('market-budget-input');
-            const html = pasteInput ? pasteInput.value.trim() : '';
-
-            resetMarketLog();
-            const resultsContainer = document.getElementById('market-results');
-            if (resultsContainer) resultsContainer.innerHTML = '';
-
-            if (!html) {
-                marketLog(isAr ? 'الصق كود HTML أولاً.' : 'Paste the page HTML first.', 'warn');
-                return;
-            }
-
-            const budget = Math.max(0, parseInt(budgetInput && budgetInput.value) || 3000);
-
-            // The console script's clipboard output is a JSON array of
-            // already-extracted rows — try that first (covers every page
-            // in one paste). Falls back to treating the input as raw page
-            // HTML (single page, extracted the same way the automated
-            // scan does) for anyone who still pastes View Page Source
-            // output instead.
-            let rows = null;
-            try {
-                const parsed = JSON.parse(html);
-                if (Array.isArray(parsed) && parsed.every(r => r && typeof r.name === 'string')) {
-                    rows = parsed;
-                }
-            } catch (e) { /* not JSON — fall through to HTML parsing below */ }
-
-            if (!rows) {
-                const doc = new DOMParser().parseFromString(html, 'text/html');
-                rows = extractFutbinRows(doc);
-            }
-
-            if (rows.length === 0) {
-                marketLog(isAr
-                    ? 'لم يتم إيجاد أي صفوف لاعبين في الكود الملصق — تأكد من نسخ نتيجة الكود بالكامل من وحدة التحكم، أو كود المصدر الكامل لصفحة قائمة السوق، أو أن Futbin غيّر شكل الصفحة.'
-                    : "No player rows found in what was pasted — make sure you copied the full console script output, or the full page source of the market list page, or Futbin may have changed their layout.", 'err');
-                return;
-            }
-
-            const cleanRows = sanitizeMarketRows(rows);
-            marketLog(isAr
-                ? `تم تحليل النص الملصق: ${cleanRows.length} عرضاً.`
-                : `Parsed the pasted data: ${cleanRows.length} listings.`, 'ok');
-            runMarketAnalysis(cleanRows, { source: 'paste', scannedAt: new Date().toISOString() });
-        };
-
-        // ===================================================================
-        // MARKET SCANNER — bookmarklet + postMessage
-        // ===================================================================
-        // The one pipeline every source feeds (bookmarklet or paste):
-        // rows → computeFlipOpportunities (with the current filters) →
-        // renderMarketResults. The last scan is kept in memory so changing a
-        // filter or the sort re-ranks instantly without rescanning.
-        let lastMarketScan = null; // { rows, scannedAt, scannedPages, source }
-        // 'margin' = the original ranking (sell at the EA average)
-        // 'fast'   = cheaper cards, listed a little under the EA average
-        let marketMode = 'margin';
-        const MARKET_MODE_DEFAULTS = {
-            margin: { minProfit: 500, minRoi: 10, minDiscount: 10, sortBy: 'roi' },
-            fast:   { minProfit: 100, minRoi: 5,  minDiscount: 5,  sortBy: 'profit' }
-        };
-        window.setMarketMode = function(mode) {
-            if (mode !== 'margin' && mode !== 'fast') return;
-            marketMode = mode;
-            const d = MARKET_MODE_DEFAULTS[mode];
-            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-            set('market-min-profit-input', d.minProfit); set('market-min-roi-input', d.minRoi);
-            set('market-min-discount-input', d.minDiscount); set('market-sort-select', d.sortBy);
-            ['margin', 'fast'].forEach(m => {
-                const b = document.getElementById('market-mode-' + m);
-                if (b) b.className = `px-3 py-1.5 rounded-lg text-xs font-black transition-all ${m === mode ? 'bg-fc-accent text-fc-dark' : 'text-gray-400 hover:text-white'}`;
+        // ---- drawing ------------------------------------------------------
+        function tgRadarSvg(vals, opt) {
+            opt = opt || {};
+            const size = opt.size || 180, c = size / 2, R = size * (opt.labels === false ? 0.42 : 0.34);
+            const pt = (k, v) => { const a = TG_ANGLE[k] * Math.PI / 180; return [c + Math.cos(a) * R * v / 10, c + Math.sin(a) * R * v / 10]; };
+            const ring = f => TG_AXES.map(a => pt(a.k, 10 * f).join(',')).join(' ');
+            let s = `<svg viewBox="0 0 ${size} ${size}" width="${opt.px || size}" height="${opt.px || size}" class="block mx-auto" role="img" aria-label="radar">`;
+            [1 / 3, 2 / 3, 1].forEach(f => { s += `<polygon points="${ring(f)}" fill="${f === 1 ? 'rgba(255,255,255,0.03)' : 'none'}" stroke="rgba(148,163,184,0.35)" stroke-width="${f === 1 ? 1.2 : 0.7}"/>`; });
+            TG_AXES.forEach(a => { const p = pt(a.k, 10); s += `<line x1="${c}" y1="${c}" x2="${p[0]}" y2="${p[1]}" stroke="rgba(148,163,184,0.3)" stroke-width="0.7"/>`; });
+            const poly = TG_AXES.map(a => pt(a.k, tgClamp(vals[a.k], 0, 10)).join(',')).join(' ');
+            s += `<polygon points="${poly}" fill="${opt.fill || 'rgba(0,242,254,0.18)'}" stroke="${opt.stroke || '#00f2fe'}" stroke-width="${opt.sw || 2}" stroke-linejoin="round"/>`;
+            if (opt.dots) TG_AXES.forEach(a => { const p = pt(a.k, tgClamp(vals[a.k], 0, 10)); s += `<circle cx="${p[0]}" cy="${p[1]}" r="2.6" fill="${opt.stroke || '#00f2fe'}"/>`; });
+            if (opt.labels !== false) TG_AXES.forEach(a => {
+                const p = pt(a.k, 10.0), a2 = TG_ANGLE[a.k] * Math.PI / 180;
+                const lx = c + Math.cos(a2) * (R + size * 0.075), ly = c + Math.sin(a2) * (R + size * 0.075) + size * 0.02;
+                const hi = opt.mark && opt.mark.has(a.k);
+                s += `<text x="${lx}" y="${ly}" text-anchor="middle" font-size="${size * 0.065}" font-weight="800" fill="${hi ? '#00f2fe' : '#94a3b8'}" font-family="Inter,sans-serif">${a.en}</text>`;
             });
-            const fastBox = document.getElementById('market-fast-options');
-            if (fastBox) fastBox.classList.toggle('hidden', mode !== 'fast');
-            renderLastMarketScan();
-        };
-        // Ratings only exist if FUTBIN's player cell shows them; the tier
-        // filter is offered only when most scanned rows actually have one.
-        function updateMarketTierAvailability() {
-            const el = document.getElementById('market-tier-select');
-            const note = document.getElementById('market-tier-note');
-            if (!el) return;
-            const rows = lastMarketScan ? lastMarketScan.rows : [];
-            const withRating = rows.filter(r => typeof r.rating === 'number').length;
-            const ok = rows.length > 0 && withRating / rows.length >= 0.5;
-            el.disabled = !ok;
-            if (!ok) el.value = 'all';
-            if (note) note.classList.toggle('hidden', ok || rows.length === 0);
+            return s + '</svg>';
         }
-        function readMarketFilters() {
-            const n = (id, d) => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isFinite(v) && v >= 0 ? v : d; };
-            const sortEl = document.getElementById('market-sort-select');
-            const tierEl = document.getElementById('market-tier-select');
-            const fast = marketMode === 'fast';
-            return {
-                budget: Math.round(n('market-budget-input', 20000)),
-                minProfit: n('market-min-profit-input', 0),
-                minRoi: n('market-min-roi-input', 0),
-                minDiscount: n('market-min-discount-input', 0),
-                sortBy: sortEl ? sortEl.value : 'roi',
-                undercutPct: fast ? Math.min(30, n('market-undercut-input', 5)) : 0,
-                maxBuy: fast ? n('market-max-buy-input', 0) || Infinity : Infinity,
-                tier: fast && tierEl && !tierEl.disabled ? tierEl.value : 'all',
-                fast
+
+        // ---- state --------------------------------------------------------
+        const TG = {
+            lab: { base: { atk: 1, def: 9.6, wid: 4.1, end: 8, len: 1.3, bld: 8.2 }, style: 'short', line: 50, goals: { pressing: true, passing: true } },
+            ex: { sentence: '', formation: '', style: '', shown: 18 },
+            built: false
+        };
+        function tgRowAxes(r) { const o = {}; TG_AXES.forEach((a, i) => { o[a.k] = r.a[i]; }); return o; }
+        function tgEffective() {
+            const L = TG.lab, ax = {};
+            TG_AXES.forEach(a => { ax[a.k] = L.base[a.k]; });
+            ax.bld += TG_STYLE_SHIFT[L.style];
+            ax.len += tgBand(L.line).shift;
+            TG_AXES.forEach(a => { ax[a.k] = tgClamp(ax[a.k], 0, 10); });
+            return ax;
+        }
+        function tgLoadRow(idx) {
+            const r = TACTICS_DATA.rows[idx]; if (!r) return;
+            const ax = tgRowAxes(r);
+            ax.bld -= TG_STYLE_SHIFT[r.bu] !== undefined ? TG_STYLE_SHIFT[r.bu] : 0;
+            ax.len -= tgBand(r.l).shift;
+            TG.lab.base = ax; TG.lab.style = r.bu; TG.lab.line = r.l;
+            tgRenderLab();
+            const el = document.getElementById('tg-lab'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        function tgRowIndexWhere(f, bu, l, hasS) {
+            return TACTICS_DATA.rows.findIndex(r => r.f === f && r.bu === bu && (l == null || r.l === l) && (!hasS || r.s.includes(hasS)));
+        }
+
+        // ---- sections -----------------------------------------------------
+        const tgCard = (inner, extra) => `<section class="bg-fc-card border border-fc-border rounded-2xl p-5 md:p-6 ${extra || ''}">${inner}</section>`;
+        const tgH = (en, ar, icon) => `<h3 class="text-lg md:text-xl font-extrabold text-white mb-3 flex items-center gap-2">${icon ? `<i class="fa-solid ${icon} text-fc-accent"></i>` : ''}<span>${tgEsc(LAB_T(en, ar))}</span></h3>`;
+        const tgP = (en, ar, cls) => `<p class="${cls || 'text-sm text-gray-300 leading-relaxed'}">${tgEsc(LAB_T(en, ar))}</p>`;
+        const tgChip = (txt, kind) => {
+            const c = kind === 'S' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : kind === 'W' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-fc-dark text-gray-300 border-fc-border';
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-lg border text-[11px] font-bold ${c}">${tgEsc(txt)}</span>`;
+        };
+
+        function tgSecIntro() {
+            const n = TACTICS_DATA.rows.length;
+            const both = TACTICS_DATA.rows.filter(r => r.s.includes('Intense Pressing') && r.s.includes('Ultimate Passing Game')).length;
+            return tgCard(`
+                <div class="flex flex-wrap items-center gap-3 justify-between">
+                    <div>
+                        <h2 class="text-2xl md:text-3xl font-extrabold text-white">${tgEsc(LAB_T('Team Tactical Analysis — how it works', 'التحليل التكتيكي للفريق — كيف يعمل'))}</h2>
+                        <p class="text-sm text-gray-400 mt-1">${tgEsc(LAB_T(`Built from ${n} photographed in-game screens. These are observed patterns, not EA's formula.`, `مبني على ${n} شاشة مصوّرة من اللعبة. هذه أنماط ملاحَظة وليست معادلة EA.`))}</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">${tgChip(LAB_T(`${n} measured screens`, `${n} شاشة مقاسة`))}${tgChip(LAB_T(`${both} with both goal sentences`, `${both} بالجملتين المطلوبتين معاً`), 'S')}</div>
+                </div>`, 'bg-gradient-to-r from-fc-card to-fc-dark');
+        }
+
+        function tgSecRead() {
+            const axes = TG_AXES.map(a => `
+                <div class="flex gap-3 py-2 border-b border-fc-border/60 last:border-0">
+                    <div class="w-12 shrink-0 text-center"><div class="text-sm font-black text-fc-accent">${a.en}</div><div class="text-[10px] text-gray-500">${tgEsc(LAB_T(a.nEn, a.nAr))}</div></div>
+                    <p class="text-xs text-gray-300 leading-relaxed">${tgEsc(LAB_T(a.dEn, a.dAr))}</p>
+                </div>`).join('');
+            const rules = [
+                [`One sentence per axis`, `جملة واحدة لكل محور`, `The screen shows six sentences and there are six axes — each axis speaks exactly once.`, `تعرض الشاشة ست جمل وهناك ستة محاور — كل محور يتكلم مرة واحدة بالضبط.`],
+                [`Top three axes = strengths`, `أعلى ثلاثة محاور = نقاط قوة`, `The three highest axes get the green-tick wording, the three lowest get the yellow warning wording. This matched 80 of 85 photos; the other 5 were ties within measuring error.`, `أعلى ثلاثة محاور تأخذ صياغة العلامة الخضراء وأقل ثلاثة تأخذ صياغة التحذير الأصفر. تطابق هذا في 80 من 85 صورة، والـ5 الباقية تعادلات ضمن هامش القياس.`],
+                [`Same axis, different wording`, `نفس المحور بصياغة مختلفة`, `A mid-range value reads as a strength if the axis is in the top three and as a warning if not — e.g. END 5.7 is "Consumes Little Energy" or "Demands Energy".`, `القيمة المتوسطة تظهر كنقطة قوة إن كان المحور ضمن الأعلى ثلاثة وكتحذير إن لم يكن — مثلاً التحمّل 5.7 يظهر «يستهلك طاقة قليلة» أو «يتطلب طاقة».`],
+                [`How accurate is it?`, `ما مدى الدقة؟`, `Graph values are measured from your photos (about ±0.3). The sentence engine below reproduces 96% of the 528 sentences on those screens.`, `قيم الرسم مقاسة من صورك (حوالي ±0.3). محرك الجمل أدناه يعيد 96% من الجمل الـ528 في تلك الشاشات.`]
+            ].map(r => `<div class="bg-fc-dark/60 border border-fc-border rounded-xl p-3"><p class="text-sm font-black text-white mb-1">${tgEsc(LAB_T(r[0], r[1]))}</p><p class="text-xs text-gray-400 leading-relaxed">${tgEsc(LAB_T(r[2], r[3]))}</p></div>`).join('');
+            return tgCard(`
+                ${tgH('How to read the screen', 'كيف تقرأ الشاشة', 'fa-book-open')}
+                <div class="grid gap-5 md:grid-cols-[220px_1fr_1fr] items-start">
+                    <div>${tgRadarSvg({ atk: 8, def: 6, wid: 7, end: 5, len: 3, bld: 7 }, { size: 220, px: 220, dots: true })}<p class="text-[10px] text-gray-500 text-center mt-1">${tgEsc(LAB_T('Rings = 3.3 / 6.7 / 10', 'الحلقات = 3.3 / 6.7 / 10'))}</p></div>
+                    <div>${axes}</div>
+                    <div class="space-y-2">${rules}</div>
+                </div>`);
+        }
+
+        // ---- interactive: sentence lab -----------------------------------
+        function tgGoalStatus() {
+            const ax = tgEffective(), L = TG.lab;
+            const order = TG_AXES.map(a => a.k).sort((a, b) => ax[b] - ax[a]);
+            const rank = k => order.indexOf(k) + 1;
+            const goals = [];
+            if (L.goals.pressing) {
+                const ok = ax.def >= 8.7 && rank('def') <= 3;
+                const miss = [];
+                if (ax.def < 8.7) miss.push(LAB_T(`DEF needs about ${tgFmt(8.7 - ax.def)} more (≈8.7+ needed)`, `الدفاع يحتاج حوالي ${tgFmt(8.7 - ax.def)} إضافية (يلزم ≈8.7 فأكثر)`));
+                if (rank('def') > 3) miss.push(LAB_T('DEF is not in the top three axes', 'الدفاع ليس ضمن أعلى ثلاثة محاور'));
+                goals.push({ name: 'Intense Pressing', ok, miss });
+            }
+            if (L.goals.passing) {
+                const ok = L.style === 'short' && ax.bld >= 8.8 && rank('bld') <= 3;
+                const miss = [];
+                if (L.style !== 'short') miss.push(LAB_T('Needs Short Passing build-up', 'يتطلب أسلوب بناء التمرير القصير'));
+                if (ax.bld < 8.8) miss.push(LAB_T(`BLD needs about ${tgFmt(8.8 - ax.bld)} more (≈8.8+ needed)`, `البناء يحتاج حوالي ${tgFmt(8.8 - ax.bld)} إضافية (يلزم ≈8.8 فأكثر)`));
+                if (rank('bld') > 3) miss.push(LAB_T('BLD is not in the top three axes', 'البناء ليس ضمن أعلى ثلاثة محاور'));
+                goals.push({ name: 'Ultimate Passing Game', ok, miss });
+            }
+            return goals;
+        }
+        function tgRenderLabOut() {
+            const ax = tgEffective(), sent = tgPredict(ax, TG.lab.style), top = new Set(sent.filter(s => s.strength).map(s => s.k));
+            const out = document.getElementById('tg-lab-out'); if (!out) return;
+            const nTag = n => n >= 10 ? '' : `<span class="text-[9px] text-gray-500 ms-1">${tgEsc(LAB_T(n >= 3 ? 'seen ' + n + '×' : 'seen ' + n + '× — thin', n >= 3 ? 'شوهدت ' + n + ' مرات' : 'شوهدت ' + n + ' — ضعيف'))}</span>`;
+            const rows = sent.map(s => `<div class="flex items-center gap-2 py-1.5 border-b border-fc-border/50 last:border-0">
+                <span class="w-5 text-center ${s.strength ? 'text-emerald-400' : 'text-amber-400'} font-black">${s.strength ? '✓' : '!'}</span>
+                <span class="text-sm font-bold ${s.strength ? 'text-white' : 'text-gray-300'} flex-1">${tgEsc(s.text)}${nTag(s.n)}</span>
+                <span class="text-[10px] font-black text-gray-500">${s.k.toUpperCase()}</span></div>`).join('');
+            const goals = tgGoalStatus().map(g => `<div class="rounded-xl border p-3 ${g.ok ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/5'}">
+                <p class="text-sm font-black ${g.ok ? 'text-emerald-300' : 'text-amber-300'}">${g.ok ? '✓' : '✗'} ${tgEsc(g.name)}</p>
+                ${g.ok ? '' : `<ul class="mt-1 space-y-0.5">${g.miss.map(m => `<li class="text-[11px] text-gray-300">• ${tgEsc(m)}</li>`).join('')}</ul>`}</div>`).join('');
+            out.innerHTML = `<div class="grid gap-4 sm:grid-cols-[200px_1fr] items-center">
+                <div>${tgRadarSvg(ax, { size: 200, px: 200, dots: true, mark: top })}</div>
+                <div>${rows}</div></div>
+                <div class="grid gap-2 sm:grid-cols-2 mt-3">${goals}</div>`;
+            TG_AXES.forEach(a => {
+                const lab = document.getElementById('tg-val-' + a.k); if (lab) lab.textContent = tgFmt(TG.lab.base[a.k]) + ' → ' + tgFmt(ax[a.k]);
+                const sl = document.getElementById('tg-sl-' + a.k); if (sl && document.activeElement !== sl) sl.value = TG.lab.base[a.k];
+            });
+            const bn = document.getElementById('tg-line-band'); if (bn) bn.textContent = LAB_T(tgBand(TG.lab.line).en, tgBand(TG.lab.line).ar) + ` · LEN ${tgBand(TG.lab.line).shift >= 0 ? '+' : ''}${tgBand(TG.lab.line).shift}`;
+            document.querySelectorAll('[data-tg-style]').forEach(b => {
+                const on = b.getAttribute('data-tg-style') === TG.lab.style;
+                b.className = 'px-3 py-1.5 rounded-lg text-xs font-black border transition-all ' + (on ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border hover:border-gray-500');
+            });
+            document.querySelectorAll('[data-tg-goal]').forEach(b => {
+                const on = TG.lab.goals[b.getAttribute('data-tg-goal')];
+                b.className = 'px-3 py-1.5 rounded-lg text-xs font-black border transition-all ' + (on ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-fc-dark text-gray-400 border-fc-border');
+            });
+        }
+        window.tgSetAxis = (k, v) => { TG.lab.base[k] = parseFloat(v); tgRenderLabOut(); };
+        window.tgSetStyle = s => { TG.lab.style = s; tgRenderLabOut(); };
+        window.tgSetLine = v => { TG.lab.line = parseInt(v, 10); const i = document.getElementById('tg-line-val'); if (i) i.textContent = v; tgRenderLabOut(); };
+        window.tgToggleGoal = g => { TG.lab.goals[g] = !TG.lab.goals[g]; tgRenderLabOut(); };
+        window.tgPreset = key => {
+            const P = {
+                both: () => tgRowIndexWhere('5-4-1', 'short', 50, 'Intense Pressing'),
+                passing: () => tgRowIndexWhere('4-4-2', 'short', 50, 'Ultimate Passing Game'),
+                capped: () => tgRowIndexWhere('4-3-1-2', 'counter', 50, 'Win the Ball Back Quickly'),
+                attack: () => tgRowIndexWhere('4-3-3', 'balanced', 50, 'Always Looking to Attack')
             };
-        }
-        function runMarketAnalysis(rows, meta) {
-            lastMarketScan = { rows, ...(meta || {}) };
-            updateMarketTierAvailability();
-            renderLastMarketScan();
-        }
-        function renderLastMarketScan() {
-            if (!lastMarketScan) return;
-            const isAr = currentLanguage === 'ar';
-            const f = readMarketFilters();
-            const opportunities = computeFlipOpportunities(lastMarketScan.rows, f.budget, f);
-            renderMarketResults(opportunities, lastMarketScan.rows.length, isAr, f.budget, f);
-            renderMarketLastScanLine();
-        }
-        window.rerunMarketFilters = function() { renderLastMarketScan(); };
-
-        function renderMarketLastScanLine() {
-            const el = document.getElementById('market-last-scan');
-            if (!el || !lastMarketScan || !lastMarketScan.scannedAt) return;
-            const isAr = currentLanguage === 'ar';
-            const d = new Date(lastMarketScan.scannedAt);
-            const when = isNaN(d) ? '' : d.toLocaleString(isAr ? 'ar' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const via = lastMarketScan.source === 'scanner' ? (isAr ? 'الماسح' : 'scanner') : (isAr ? 'لصق يدوي' : 'manual paste');
-            el.textContent = isAr ? `آخر فحص: ${when} (${via})` : `Last scan: ${when} (${via})`;
-            el.classList.remove('hidden');
-        }
-
-        // Scan status: only ever reflects real events (window opened, a
-        // real message from the scanner, the window closing). Progress
-        // numbers come from the scanner's own per-page messages.
-        const MARKET_STATE_STYLE = {
-            ready:     { cls: 'bg-gray-500/15 text-gray-300 border-gray-500/30' },
-            open:      { cls: 'bg-fc-gold/15 text-fc-gold border-fc-gold/30' },
-            scanning:  { cls: 'bg-fc-accent/15 text-fc-accent border-fc-accent/30' },
-            receiving: { cls: 'bg-fc-accent/15 text-fc-accent border-fc-accent/30' },
-            complete:  { cls: 'bg-green-500/15 text-green-400 border-green-500/30' },
-            failed:    { cls: 'bg-red-500/15 text-red-400 border-red-500/30' }
+            const i = P[key] ? P[key]() : -1; if (i >= 0) tgLoadRow(i);
         };
-        const MARKET_STATE_LABEL = {
-            ready:     { en: 'Ready', ar: 'جاهز' },
-            open:      { en: 'FUTBIN open', ar: 'FUTBIN مفتوح' },
-            scanning:  { en: 'Scanning', ar: 'جارٍ الفحص' },
-            receiving: { en: 'Receiving data', ar: 'استلام البيانات' },
-            complete:  { en: 'Complete', ar: 'اكتمل' },
-            failed:    { en: 'Needs attention', ar: 'يحتاج انتباهك' }
-        };
-        let marketScanState = 'ready';
-        function setMarketScanState(state, detail) {
-            marketScanState = state;
-            const badge = document.getElementById('market-state-badge');
-            const text = document.getElementById('market-state-text');
-            const isAr = currentLanguage === 'ar';
-            if (badge) {
-                badge.className = `inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-wide ${MARKET_STATE_STYLE[state].cls}`;
-                badge.textContent = isAr ? MARKET_STATE_LABEL[state].ar : MARKET_STATE_LABEL[state].en;
-            }
-            if (text) text.textContent = detail || '';
+        window.tgLoadRow = tgLoadRow;
+        function tgRenderLab() {
+            const el = document.getElementById('tg-lab'); if (!el) return;
+            const sliders = TG_AXES.map(a => `<div class="flex items-center gap-2">
+                <span class="w-9 text-xs font-black text-fc-accent">${a.en}</span>
+                <input id="tg-sl-${a.k}" type="range" min="0" max="10" step="0.1" value="${TG.lab.base[a.k]}" oninput="tgSetAxis('${a.k}', this.value)" class="flex-1 accent-cyan-400">
+                <span id="tg-val-${a.k}" class="w-24 text-end text-[11px] font-bold text-gray-300 tabular-nums"></span></div>`).join('');
+            const styles = ['short', 'balanced', 'counter'].map(s => `<button data-tg-style="${s}" onclick="tgSetStyle('${s}')">${tgEsc(LAB_T(BUILD_UP_STYLES[s].en, BUILD_UP_STYLES[s].ar))}</button>`).join('');
+            const presets = [['both', 'Pressing + passing (5-4-1)', 'ضغط + تمرير (5-4-1)'], ['passing', 'Passing only (4-4-2)', 'تمرير فقط (4-4-2)'], ['capped', 'Pressing capped (4-3-1-2)', 'الضغط محدود (4-3-1-2)'], ['attack', 'Attacking (4-3-3)', 'هجومي (4-3-3)']]
+                .map(p => `<button onclick="tgPreset('${p[0]}')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-fc-dark border border-fc-border text-gray-200 hover:border-fc-accent hover:text-fc-accent">${tgEsc(LAB_T(p[1], p[2]))}</button>`).join('');
+            el.innerHTML = tgH('Sentence lab — move the graph, see the six sentences', 'مختبر الجمل — حرّك الرسم وشاهد الجمل الست', 'fa-sliders') +
+                tgP('Drag the six values (they are the values at Balanced build-up and line height 50), then change build-up style and line height — they shift BLD and LEN the way they did in your photos. The sentences below come from the rules above.',
+                    'حرّك القيم الست (هي القيم عند البناء المتوازن وارتفاع الخط 50)، ثم غيّر أسلوب البناء وارتفاع الخط — يحرّكان البناء والطول كما في صورك. الجمل أدناه مأخوذة من القواعد أعلاه.', 'text-xs text-gray-400 mb-3') +
+                `<div class="flex flex-wrap gap-2 mb-4"><span class="text-[11px] text-gray-500 self-center">${tgEsc(LAB_T('Load a measured result:', 'حمّل نتيجة مقاسة:'))}</span>${presets}</div>
+                <div class="grid gap-5 lg:grid-cols-2">
+                    <div class="space-y-3">${sliders}
+                        <div class="pt-2"><p class="text-[11px] font-bold text-gray-400 mb-1">${tgEsc(LAB_T('Build-up style (BLD: Short +1.1, Counter −1.3)', 'أسلوب البناء (البناء: قصير +1.1، مرتد −1.3)'))}</p><div class="flex gap-2">${styles}</div></div>
+                        <div><p class="text-[11px] font-bold text-gray-400 mb-1 flex justify-between"><span>${tgEsc(LAB_T('Line height', 'ارتفاع الخط'))}: <span id="tg-line-val" class="text-white">${TG.lab.line}</span></span><span id="tg-line-band" class="text-fc-accent"></span></p>
+                            <input type="range" min="1" max="100" step="1" value="${TG.lab.line}" oninput="tgSetLine(this.value)" class="w-full accent-cyan-400"></div>
+                        <div class="flex flex-wrap gap-2 items-center pt-1"><span class="text-[11px] text-gray-500">${tgEsc(LAB_T('Goals to check:', 'الأهداف المراد فحصها:'))}</span>
+                            <button data-tg-goal="pressing" onclick="tgToggleGoal('pressing')">Intense Pressing</button><button data-tg-goal="passing" onclick="tgToggleGoal('passing')">Ultimate Passing Game</button></div>
+                    </div>
+                    <div id="tg-lab-out"></div>
+                </div>`;
+            tgRenderLabOut();
         }
 
-        let marketWindow = null;
-        let marketWatchTimer = null;
-        const FUTBIN_MARKET_URL = 'https://www.futbin.com/27/market-player-list';
-        const FUTBIN_ORIGIN_RE = /^https:\/\/(www\.)?futbin\.com$/;
+        // ---- explorer ------------------------------------------------------
+        function tgRoleLine(r, posList) {
+            return r.r.map((x, i) => `<div class="flex gap-1.5 text-[10px] leading-snug"><span class="w-8 shrink-0 font-black text-gray-500">${tgEsc(posList[i] || '')}</span><span class="text-gray-300 truncate">${tgEsc(x.replace('/', ' · '))}</span></div>`).join('');
+        }
+        function tgExplorerList() {
+            const E = TG.ex;
+            let idx = TACTICS_DATA.rows.map((r, i) => i).filter(i => {
+                const r = TACTICS_DATA.rows[i];
+                if (E.formation && r.f !== E.formation) return false;
+                if (E.style && r.bu !== E.style) return false;
+                if (E.sentence === '__both__') return r.s.includes('Intense Pressing') && r.s.includes('Ultimate Passing Game');
+                if (E.sentence && !(r.s.includes(E.sentence) || r.w.includes(E.sentence))) return false;
+                return true;
+            });
+            idx.sort((a, b) => (TACTICS_DATA.rows[b].src === 'quick') - (TACTICS_DATA.rows[a].src === 'quick'));
+            return idx;
+        }
+        function tgRenderExplorerOut() {
+            const out = document.getElementById('tg-ex-out'); if (!out) return;
+            const idx = tgExplorerList(), shown = idx.slice(0, TG.ex.shown);
+            const cards = shown.map(i => {
+                const r = TACTICS_DATA.rows[i], pos = TACTICS_DATA.pos[r.f] || [];
+                const sent = r.s.map(s => tgChip(s, 'S')).concat(r.w.map(s => tgChip(s, 'W'))).join(' ');
+                return `<div class="bg-fc-dark/60 border border-fc-border rounded-2xl p-3">
+                    <div class="flex items-start justify-between gap-2 mb-2"><div><p class="text-base font-black text-white">${tgEsc(r.f)}</p>
+                        <p class="text-[11px] text-gray-400">${tgEsc(LAB_T(BUILD_UP_STYLES[r.bu].en, BUILD_UP_STYLES[r.bu].ar))} · ${tgEsc(LAB_T('line', 'الخط'))} ${r.l}${r.src === 'quick' ? ' · ' + tgEsc(LAB_T('latest photo', 'آخر صورة')) : ''}</p></div>
+                        <div class="w-24 shrink-0">${tgRadarSvg(tgRowAxes(r), { size: 120, px: 96, labels: false, sw: 1.6 })}</div></div>
+                    <div class="flex flex-wrap gap-1 mb-2">${sent}</div>
+                    <div class="grid grid-cols-6 gap-1 text-[10px] text-gray-400 tabular-nums mb-2">${TG_AXES.map((a, k) => `<div class="text-center"><div class="font-black text-gray-500">${a.en}</div><div class="text-gray-200 font-bold">${tgFmt(r.a[k])}</div></div>`).join('')}</div>
+                    <details class="group"><summary class="text-[11px] font-bold text-fc-accent cursor-pointer">${tgEsc(LAB_T('Show roles', 'عرض الأدوار'))}</summary><div class="mt-2 grid grid-cols-1 gap-0.5">${tgRoleLine(r, pos)}</div></details>
+                    <button onclick="tgLoadRow(${i})" class="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-black bg-fc-accent/15 text-fc-accent border border-fc-accent/40 hover:bg-fc-accent/25">${tgEsc(LAB_T('Open in the lab', 'افتح في المختبر'))}</button></div>`;
+            }).join('');
+            out.innerHTML = `<p class="text-[11px] text-gray-500 mb-2">${tgEsc(LAB_T(`${idx.length} matching screen(s)`, `${idx.length} شاشة مطابقة`))}</p>
+                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">${cards || `<p class="text-sm text-gray-400">${tgEsc(LAB_T('Nothing matches these filters.', 'لا نتائج مطابقة لهذه المرشحات.'))}</p>`}</div>
+                ${idx.length > shown.length ? `<button onclick="tgMore()" class="mt-3 px-4 py-2 rounded-xl bg-fc-dark border border-fc-border text-xs font-bold text-gray-200 hover:border-fc-accent">${tgEsc(LAB_T('Show more', 'عرض المزيد'))} (${idx.length - shown.length})</button>` : ''}`;
+        }
+        window.tgMore = () => { TG.ex.shown += 18; tgRenderExplorerOut(); };
+        window.tgFilter = (k, v) => { TG.ex[k] = v; TG.ex.shown = 18; tgRenderExplorerOut(); };
+        function tgRenderExplorer() {
+            const el = document.getElementById('tg-ex'); if (!el) return;
+            const allS = [...new Set(TACTICS_DATA.rows.flatMap(r => r.s.concat(r.w)))].sort();
+            const forms = [...new Set(TACTICS_DATA.rows.map(r => r.f))].sort();
+            const sel = 'bg-fc-dark border border-fc-border rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-fc-accent';
+            el.innerHTML = tgH('Measured results — which setups produced what?', 'النتائج المقاسة — أي إعدادات أعطت ماذا؟', 'fa-magnifying-glass-chart') +
+                `<div class="flex flex-wrap gap-2 mb-3">
+                    <select class="${sel}" onchange="tgFilter('sentence', this.value)"><option value="">${tgEsc(LAB_T('Any sentence', 'أي جملة'))}</option><option value="__both__" ${TG.ex.sentence === '__both__' ? 'selected' : ''}>${tgEsc(LAB_T('Both: Intense Pressing + Ultimate Passing Game', 'الاثنتان: ضغط مكثف + تمرير مثالي'))}</option>${allS.map(s => `<option value="${tgEsc(s)}" ${TG.ex.sentence === s ? 'selected' : ''}>${tgEsc(s)}</option>`).join('')}</select>
+                    <select class="${sel}" onchange="tgFilter('formation', this.value)"><option value="">${tgEsc(LAB_T('Any formation', 'أي تشكيلة'))}</option>${forms.map(f => `<option value="${tgEsc(f)}" ${TG.ex.formation === f ? 'selected' : ''}>${tgEsc(f)}</option>`).join('')}</select>
+                    <select class="${sel}" onchange="tgFilter('style', this.value)"><option value="">${tgEsc(LAB_T('Any build-up', 'أي بناء'))}</option>${['short', 'balanced', 'counter'].map(s => `<option value="${s}" ${TG.ex.style === s ? 'selected' : ''}>${tgEsc(LAB_T(BUILD_UP_STYLES[s].en, BUILD_UP_STYLES[s].ar))}</option>`).join('')}</select>
+                </div><div id="tg-ex-out"></div>`;
+            tgRenderExplorerOut();
+        }
 
-        // Opened straight from the button's click handler so it counts as a
-        // user-initiated popup. The reference is what every incoming
-        // message is checked against.
-        window.openFutbinScan = function() {
-            const isAr = currentLanguage === 'ar';
-            marketWindow = window.open(FUTBIN_MARKET_URL, 'fcMarketScanner');
-            if (!marketWindow) {
-                setMarketScanState('failed', isAr
-                    ? 'منع المتصفح النافذة المنبثقة. اسمح بالنوافذ المنبثقة لهذه الصفحة ثم حاول مجدداً — أو استخدم الطريقة اليدوية أدناه.'
-                    : 'The browser blocked the popup. Allow popups for this page and try again — or use the manual method below.');
-                return;
-            }
-            setMarketScanState('open', isAr
-                ? 'على FUTBIN، اضغط على إشارة «FC Market Scanner» المرجعية.'
-                : 'On FUTBIN, click your "FC Market Scanner" bookmark.');
-            clearInterval(marketWatchTimer);
-            marketWatchTimer = setInterval(() => {
-                if (!marketWindow || !marketWindow.closed) return;
-                clearInterval(marketWatchTimer);
-                if (marketScanState !== 'complete') {
-                    setMarketScanState('failed', isAr
-                        ? 'أُغلقت نافذة FUTBIN قبل وصول نتيجة الفحص. فشل الإرجاع التلقائي — لا يزال بإمكانك لصق نتيجة الماسح في الطريقة اليدوية أدناه.'
-                        : 'The FUTBIN window closed before a scan arrived. Automatic return failed — you can still paste the scanner output in the manual section below.');
-                }
-            }, 1000);
-        };
+        // ---- findings + next tests -----------------------------------------
+        function tgSecFindings() {
+            const F = [
+                ['Intense Pressing needs DEF of about 8.7–8.9 or more, and DEF in the top three axes.', 'الضغط المكثف يحتاج دفاعاً بحدود 8.7–8.9 فأكثر، مع أن يكون الدفاع ضمن أعلى ثلاثة محاور.', 'All 15 sightings had DEF 8.9+; the highest DEF without it was 8.3, which showed "Win the Ball Back Quickly" instead.', 'كل الظهورات الـ15 كان الدفاع فيها 8.9+؛ وأعلى دفاع بدونها كان 8.3 وأظهر «استعادة الكرة بسرعة».'],
+                ['Ultimate Passing Game needs Short Passing and BLD of about 8.8–8.9 or more.', 'التمرير المثالي يحتاج التمرير القصير وبناءً بحدود 8.8–8.9 فأكثر.', 'It never appeared on Balanced or Counter build-up. At BLD 7.7–8.2 with Short Passing the sentence was "Patient Build-Up".', 'لم يظهر أبداً مع البناء المتوازن أو المرتد. عند 7.7–8.2 مع التمرير القصير كانت الجملة «بناء صبور».'],
+                ['Short Passing adds about 1.1 to BLD; Counter takes 1.1 to 3.7 off.', 'التمرير القصير يضيف حوالي 1.1 للبناء؛ والمرتد ينقص من 1.1 إلى 3.7.', 'The Short Passing step was the same in 4-1-4-1, 4-5-1 and 4-4-2 (2); the Counter drop varied by setup.', 'خطوة التمرير القصير كانت متطابقة في 4-1-4-1 و4-5-1 و4-4-2 (2)؛ أما هبوط المرتد فاختلف بحسب الإعداد.'],
+                ['Line height works in four bands and only moves LEN.', 'ارتفاع الخط يعمل بأربع نطاقات ولا يحرّك إلا الطول.', 'Versus the 31–60 band: 1–30 gives about +3.1, 61–90 about −1.7, 91–100 about −2.6 (4-3-3 test, other axes did not move).', 'مقارنة بنطاق 31–60: النطاق 1–30 يعطي حوالي +3.1 و61–90 حوالي −1.7 و91–100 حوالي −2.6 (اختبار 4-3-3، ولم تتحرك المحاور الأخرى).'],
+                ['More Defend-focus players do not always lift DEF.', 'زيادة لاعبي تركيز الدفاع لا ترفع الدفاع دائماً.', '4-3-1-2 stopped at 8.0–8.3 and 4-4-2 at 7.9 even with 6–7 defending roles. 4-1-4-1, 4-5-1, 5-4-1 and 4-4-2 (2) — one striker, or two defensive mids — reached 9+. This is a pattern, not a proven rule.', 'توقف 4-3-1-2 عند 8.0–8.3 و4-4-2 عند 7.9 رغم 6–7 أدوار دفاعية. أما 4-1-4-1 و4-5-1 و5-4-1 و4-4-2 (2) — مهاجم واحد أو لاعبا ارتكاز — فوصلت إلى 9+. هذا نمط وليس قاعدة مثبتة.'],
+                ['Role effects add up inside one formation, but do not carry between formations.', 'تأثيرات الأدوار تتجمع داخل التشكيلة الواحدة لكنها لا تنتقل بين التشكيلات.', 'Within one formation the DEF/WID/LEN/BLD effects are about ±0.3 additive; ATK tops out near 8.3 and END falls faster than the sum when attacking roles stack. Predicting an untested formation was off by about 1 point.', 'داخل التشكيلة الواحدة تتجمع آثار الدفاع/العرض/الطول/البناء بهامش ±0.3؛ والهجوم يتوقف قرب 8.3 والتحمّل يهبط أسرع من المجموع عند تكديس أدوار الهجوم. التنبؤ بتشكيلة غير مجرّبة أخطأ بحوالي نقطة.'],
+                ['Older hand-entered values were biased.', 'القيم القديمة المدخلة يدوياً كانت متحيزة.', 'Against photo measurements, typed-in WID ran about 1.1 too high and ATK about 0.7 too low — trust photographed screens first.', 'مقارنة بقياسات الصور كان العرض المدخل يدوياً أعلى بحوالي 1.1 والهجوم أقل بحوالي 0.7 — ثق بالشاشات المصوّرة أولاً.']
+            ];
+            return tgCard(tgH('What the data says', 'ماذا تقول البيانات', 'fa-lightbulb') +
+                `<div class="grid gap-3 md:grid-cols-2">${F.map((f, i) => `<div class="bg-fc-dark/60 border border-fc-border rounded-xl p-3"><p class="text-sm font-black text-white mb-1"><span class="text-fc-accent">${i + 1}.</span> ${tgEsc(LAB_T(f[0], f[1]))}</p><p class="text-xs text-gray-400 leading-relaxed">${tgEsc(LAB_T(f[2], f[3]))}</p></div>`).join('')}</div>`);
+        }
+        function tgSecNext() {
+            const names = { balanced: ['Most balanced candidate (4-2-3-1)', 'أكثر إعداد متوازن مرشّح (4-2-3-1)', 'From an older hand-entered result — every axis was typed in at 7.5–8 with "Well Distributed Team". Photograph it to confirm.', 'من نتيجة قديمة مدخلة يدوياً — كل المحاور 7.5–8 مع «فريق موزّع جيداً». صوّره للتأكيد.'],
+                press: ['Maximum-pressing candidate (4-2-3-1)', 'مرشّح أقصى ضغط (4-2-3-1)', 'Untested. Two defensive mids and every outfield role on Defend, aiming to pass the 8.7 Intense Pressing level in a mainstream formation.', 'غير مجرّب. لاعبا ارتكاز وكل لاعبي الميدان على الدفاع، بهدف تجاوز مستوى 8.7 للضغط المكثف في تشكيلة شائعة.'] };
+            const cards = TACTICS_DATA.cand.map(c => {
+                const n = names[c.name], pos = TACTICS_DATA.pos[c.f] || [];
+                return `<div class="bg-fc-dark/60 border border-fc-border rounded-2xl p-3">
+                    <div class="flex items-center gap-2 mb-1"><p class="text-sm font-black text-white">${tgEsc(LAB_T(n[0], n[1]))}</p>${tgChip(LAB_T('Unverified', 'غير مؤكد'), 'W')}</div>
+                    <p class="text-[11px] text-gray-400 mb-2">${tgEsc(LAB_T(BUILD_UP_STYLES[c.bu].en, BUILD_UP_STYLES[c.bu].ar))} · ${tgEsc(LAB_T('line', 'الخط'))} ${c.l}. ${tgEsc(LAB_T(n[2], n[3]))}</p>
+                    <div class="grid grid-cols-1 gap-0.5">${tgRoleLine({ r: c.r }, pos)}</div></div>`;
+            }).join('');
+            return tgCard(tgH('Next tests', 'الاختبارات القادمة', 'fa-flask') + tgP('Set these up in the game, photograph the Team Tactical Analysis, and the result goes into the measured results above.', 'جهّزها في اللعبة وصوّر شاشة التحليل التكتيكي للفريق وستُضاف النتيجة إلى النتائج المقاسة أعلاه.', 'text-xs text-gray-400 mb-3') + `<div class="grid gap-3 md:grid-cols-2">${cards}</div>`);
+        }
 
-        // The ONLY entry point for scanner messages. Accepted only if it
-        // comes from the FUTBIN window this app opened (event.source), from
-        // futbin.com (event.origin), and has the expected shape.
-        window.addEventListener('message', (event) => {
-            if (!marketWindow || event.source !== marketWindow) return;
-            if (!FUTBIN_ORIGIN_RE.test(event.origin)) return;
-            const data = event.data;
-            if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
-            const isAr = currentLanguage === 'ar';
-
-            if (data.type === 'FC_MARKET_HELLO') {
-                const pagesEl = document.getElementById('market-pages-input');
-                const endPage = Math.min(200, Math.max(1, parseInt(pagesEl && pagesEl.value, 10) || 30));
-                // Reply only to FUTBIN's exact origin; tell the scanner where
-                // to send results (a file:// app has no targetable origin).
-                event.source.postMessage({
-                    type: 'FC_MARKET_CONFIG', startPage: 1, endPage,
-                    appOrigin: (location.origin && location.origin !== 'null') ? location.origin : '*'
-                }, event.origin);
-                setMarketScanState('scanning', isAr ? 'جارٍ فحص صفحات سوق FUTBIN...' : 'Scanning FUTBIN market pages...');
-            } else if (data.type === 'FC_MARKET_PROGRESS') {
-                const page = parseInt(data.page, 10), planned = parseInt(data.pagesPlanned, 10), listings = parseInt(data.listings, 10);
-                if (!isFinite(page) || !isFinite(listings)) return;
-                setMarketScanState('scanning', isAr
-                    ? `جارٍ فحص صفحات سوق FUTBIN... الصفحة ${page}${isFinite(planned) ? ` من ${planned}` : ''} · ${listings.toLocaleString()} عرضاً حتى الآن`
-                    : `Scanning FUTBIN market pages... page ${page}${isFinite(planned) ? ` of ${planned}` : ''} · ${listings.toLocaleString()} listings so far`);
-            } else if (data.type === 'FC_MARKET_DATA') {
-                if (!Array.isArray(data.rows)) return;
-                setMarketScanState('receiving', isAr ? 'تم استلام بيانات السوق.' : 'Market data received.');
-                const rows = sanitizeMarketRows(data.rows);
-                const scannedAt = (typeof data.scannedAt === 'string' && !isNaN(new Date(data.scannedAt))) ? data.scannedAt : new Date().toISOString();
-                clearInterval(marketWatchTimer);
-                if (rows.length === 0) {
-                    setMarketScanState('failed', isAr
-                        ? 'اكتمل الفحص لكن لم تُقرأ أي عروض — ربما تغيّر تصميم صفحة FUTBIN. جرّب الطريقة اليدوية أدناه.'
-                        : 'The scan finished but no listings could be read — FUTBIN may have changed its page layout. Try the manual method below.');
-                    return;
-                }
-                runMarketAnalysis(rows, { source: 'scanner', scannedAt, scannedPages: parseInt(data.scannedPages, 10) || null });
-                const oldBookmark = !(data.scannerVersion >= 2);
-                setMarketScanState('complete', (isAr
-                    ? `تم فحص ${rows.length.toLocaleString()} عرضاً في السوق${data.scannedPages ? ` عبر ${parseInt(data.scannedPages, 10)} صفحة` : ''}.`
-                    : `${rows.length.toLocaleString()} market listings scanned${data.scannedPages ? ` across ${parseInt(data.scannedPages, 10)} pages` : ''}.`
-                    ) + (oldBookmark
-                        ? (isAr ? ' ⚠ إشارتك المرجعية نسخة قديمة — أعد نسخ الماسح وحدّث الإشارة لتفعيل فلاتر FUTBIN وفئة البطاقة.' : ' ⚠ Your bookmark is an older version — copy the Market Scanner again and update the bookmark to keep FUTBIN filters and card tiers.')
-                        : (data.filtered ? (isAr ? ' (مع الإبقاء على فلاتر صفحة FUTBIN)' : ' (FUTBIN page filters kept)') : '')));
-            } else if (data.type === 'FC_MARKET_ERROR') {
-                clearInterval(marketWatchTimer);
-                const msg = typeof data.message === 'string' ? data.message.slice(0, 200) : '';
-                setMarketScanState('failed', (isAr ? 'فشل الفحص على FUTBIN' : 'The scan failed on FUTBIN') + (msg ? ` (${msg})` : '') + (isAr
-                    ? '. لا يزال بإمكانك استخدام الطريقة اليدوية أدناه.'
-                    : '. You can still use the manual method below.'));
-            }
-        });
-
-        window.toggleMarketInstall = function() {
-            const panel = document.getElementById('market-install-panel');
-            if (panel) panel.classList.toggle('hidden');
-        };
-        window.copyMarketBookmarklet = function() {
-            const isAr = currentLanguage === 'ar';
-            const labelEl = document.getElementById('market-copy-bookmarklet-label');
-            const done = () => { if (labelEl) { labelEl.textContent = isAr ? 'تم النسخ ✓' : 'Copied ✓'; setTimeout(() => { labelEl.textContent = isAr ? 'نسخ الماسح' : 'Copy Market Scanner'; }, 1500); } };
-            const ta = document.getElementById('market-bookmarklet-code');
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(FUTBIN_BOOKMARKLET_URL).then(done).catch(() => { if (ta) { ta.select(); document.execCommand('copy'); done(); } });
-            } else if (ta) { ta.select(); document.execCommand('copy'); done(); }
+        window.renderTacticsGuide = function() {
+            const root = document.getElementById('tactics-root'); if (!root) return;
+            root.innerHTML = tgSecIntro() + tgSecRead() +
+                tgCard('<div id="tg-lab"></div>') + tgCard('<div id="tg-ex"></div>') + tgSecFindings() + tgSecNext();
+            tgRenderLab(); tgRenderExplorer();
+            TG.built = true;
         };
 
         window.addEventListener('DOMContentLoaded', async () => {
-            const marketScriptEl = document.getElementById('market-console-script');
-            if (marketScriptEl) marketScriptEl.value = FUTBIN_CONSOLE_SCRIPT;
             if (typeof updatePoolModeBanner === 'function') updatePoolModeBanner();
-            const bookmarkletEl = document.getElementById('market-bookmarklet-code');
-            if (bookmarkletEl) bookmarkletEl.value = FUTBIN_BOOKMARKLET_URL;
-            const bookmarkletLink = document.getElementById('market-bookmarklet-link');
-            if (bookmarkletLink) bookmarkletLink.setAttribute('href', FUTBIN_BOOKMARKLET_URL);
-            setMarketScanState('ready', currentLanguage === 'ar' ? 'بانتظار فحص FUTBIN.' : 'Waiting for a FUTBIN scan.');
             window.renderPresetPoints();
             window.calculatePackReturns();
             updateUndoButtonState();
