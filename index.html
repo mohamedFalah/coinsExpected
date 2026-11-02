@@ -12225,6 +12225,7 @@
             if (detailEl) detailEl.innerHTML = buildCompareDetailBody(players, pos);
             const sumEl = document.getElementById('cmp-summary-body');
             if (sumEl) sumEl.innerHTML = buildCompareSummary(players, pos);
+            if (typeof updateCompareDeepAsync === 'function') updateCompareDeepAsync(players, pos);
         }
 
         function renderCompareModal() {
@@ -12386,15 +12387,410 @@
                     ${searchBar}
                     <div class="grid gap-2 md:gap-3" style="${cols}">${headers}</div>
                     ${posPicker}
+                    ${cmpIndexChips()}
                     ${cmpSection(isAr ? 'الملخص' : 'Summary', 'fa-scale-balanced', '<div id="cmp-summary-body"></div>')}
                     ${cmpSection(isAr ? `في مركز ${pos}` : `At ${pos}`, 'fa-location-crosshairs', `<div class="space-y-2.5">${atPos}</div>`)}
                     ${cmpSection(isAr ? 'البطاقة' : 'Card', 'fa-id-card', `<div class="space-y-2.5">${overview}</div>`)}
                     ${cmpSection(isAr ? 'الإحصاءات الأساسية' : 'Face Stats', 'fa-chart-simple', `<div class="space-y-2.5">${face}</div>`)}
                     ${cmpSection(isAr ? 'إحصاءات داخل اللعبة' : 'In-Game Detail', 'fa-microscope', '<div id="cmp-detail-body" class="space-y-2"></div>')}
                     ${cmpSection(isAr ? 'أنماط اللعب' : 'PlayStyles', 'fa-wand-magic-sparkles', psBody)}
+                    ${cmpDeepSectionsHtml(players, pos)}
                 </div>`;
             if (compareSearchQuery) window.compareSearch(compareSearchQuery);
             updateCompareAsyncSections();
+        }
+
+        // ===================================================================
+        // DEEP COMPARISON — extra sections of the comparison modal.
+        // Everything here reads numbers the app already has (card stats, the
+        // 29 + 5 in-game sub-stats from the per-player detail fetch, role
+        // scores, PlayStyle tiers, chemistry, chem styles, body types). It
+        // describes the numbers; it never predicts who wins a match.
+        // ===================================================================
+        const CMP_GROUPS = [
+            { id: 'move', en: 'Pace & Movement', ar: 'السرعة والحركة', keys: ['acceleration', 'sprintSpeed', 'agility', 'balance', 'reactions'] },
+            { id: 'fin',  en: 'Finishing', ar: 'الإنهاء', keys: ['finishing', 'positioning', 'shotPower', 'longShots', 'volleys', 'penalties', 'freeKickAccuracy', 'composure'] },
+            { id: 'pass', en: 'Passing & Vision', ar: 'التمرير والرؤية', keys: ['shortPassing', 'longPassing', 'vision', 'crossing', 'curve'] },
+            { id: 'drib', en: 'Dribbling & Control', ar: 'المراوغة والتحكم', keys: ['dribbling', 'ballControl'] },
+            { id: 'def',  en: 'Defending', ar: 'الدفاع', keys: ['defensiveAwareness', 'standingTackles', 'slidingTackles', 'interceptions', 'headingAccuracy'] },
+            { id: 'phys', en: 'Physical', ar: 'البدنية', keys: ['strength', 'stamina', 'jumping', 'aggression'] },
+            { id: 'gk',   en: 'Goalkeeping', ar: 'حراسة المرمى', keys: ['gkDiving', 'gkHandling', 'gkKicking', 'gkPositioning', 'gkReflexes'], gk: true }
+        ];
+        const cmpGroupsFor = pos => CMP_GROUPS.filter(g => pos === 'GK' ? (g.gk || g.id === 'move') : !g.gk);
+        const cmpFmt1 = v => (Math.round(v * 10) / 10).toFixed(1);
+        const cmpPosCache = {};
+        function cmpDetailOf(p) { const s = compareDetailState.get(p.id); return s && s.status === 'ok' ? s.data : null; }
+        function cmpSubVal(d, key) {
+            const def = GRANULAR_ATTR_DEFS[key];
+            return d && def ? getGranularValue(d, def.candidates, key) : null;
+        }
+        function cmpGroupAvg(d, keys) {
+            const vs = keys.map(k => cmpSubVal(d, k)).filter(v => typeof v === 'number');
+            return vs.length >= Math.ceil(keys.length / 2) ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+        }
+        function cmpBestRole(p, pos) {
+            try {
+                if (!p.att) return null;
+                const list = getRoleCandidates(p, pos).filter(c => typeof c.score === 'number' && !isNaN(c.score));
+                return list.length ? list.slice().sort((a, b) => b.score - a.score)[0] : null;
+            } catch (e) { return null; }
+        }
+        function cmpOpenAny(id) {
+            const p = findComparePlayer(id) || fc27Database.find(x => x.id === id);
+            if (!p) return;
+            window.closeCompareModal();
+            window.openPlayerModal(p, null, undefined, false, true);
+        }
+        window.cmpOpenAny = cmpOpenAny;
+        function cmpJump(id) {
+            const el = document.getElementById(id), sc = document.getElementById('compare-modal-scroll');
+            if (el && sc) sc.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' });
+        }
+        window.cmpJump = cmpJump;
+        const cmpNames = (players, idxs) => idxs.map(i => `<b>${cmpEsc(players[i].name)}</b>`).join(currentLanguage === 'ar' ? ' و ' : ' & ');
+
+        // ---- the numbers the scoreboard compares -------------------------
+        function cmpDimensions(players, pos) {
+            const isAr = currentLanguage === 'ar';
+            const dims = [];
+            const push = (id, en, ar, vals, o) => { if (vals.filter(v => typeof v === 'number' && !isNaN(v)).length >= 2) dims.push(Object.assign({ id, en, ar, vals, tol: 0.5, hb: true, fmt: cmpFmt1 }, o || {})); };
+            push('ovr', 'OVR', 'التقييم', players.map(p => p.rating), { tol: 0.5, fmt: v => Math.round(v) });
+            push('meta', 'Meta Rating', 'تقييم الميتا', players.map(p => typeof p.meta === 'number' ? p.meta : null), { tol: 0.5 });
+            push('fit', `Key-Attribute Fit at ${pos}`, `ملاءمة الخصائص في ${pos}`, players.map(p => computeKeyAttrFitScore(p, pos)), { tol: 0.7 });
+            cmpGroupsFor(pos).forEach(g => push(g.id, g.en, g.ar, players.map(p => cmpGroupAvg(cmpDetailOf(p), g.keys)), { tol: 1, detail: true }));
+            if (players.every(playerHasRecordedPlaystyles)) push('ps', `PlayStyle Value at ${pos}`, `قيمة أنماط اللعب في ${pos}`, players.map(p => playstyleTierScore(p, pos)), { tol: 1.5 });
+            push('role', 'Best role score', 'أفضل درجة دور', players.map(p => { const r = cmpBestRole(p, pos); return r ? r.score : null; }), { tol: 2, fmt: v => Math.round(v) });
+            const prices = players.map(p => (p.price || 0) > 0 ? p.price : null);
+            if (prices.every(v => v != null)) push('price', 'Price (lower is better)', 'السعر (الأقل أفضل)', prices, { hb: false, tol: Math.max(...prices) * 0.03, fmt: v => Math.round(v).toLocaleString() });
+            return dims;
+        }
+
+        // ---- 1. Deep verdict -----------------------------------------------
+        function buildDeepVerdict(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length;
+            const detailPending = players.some(p => { const s = compareDetailState.get(p.id); return s && s.status === 'loading'; });
+            const dims = cmpDimensions(players, pos);
+            const wins = players.map(() => 0), equal = [];
+            const rows = dims.map(d => {
+                const nums = d.vals.filter(v => typeof v === 'number' && !isNaN(v));
+                const best = d.hb ? Math.max(...nums) : Math.min(...nums);
+                const worst = d.hb ? Math.min(...nums) : Math.max(...nums);
+                const spread = Math.abs(best - worst);
+                const level = spread <= d.tol;
+                const leaders = level ? [] : d.vals.map((v, i) => (typeof v === 'number' && Math.abs(v - best) <= d.tol * 0.01 + 1e-9) ? i : -1).filter(i => i >= 0);
+                leaders.forEach(i => { wins[i]++; });
+                if (level) equal.push(d);
+                const cells = d.vals.map((v, i) => {
+                    const has = typeof v === 'number' && !isNaN(v), lead = leaders.includes(i);
+                    return `<div class="text-center rounded-lg px-1 py-1 ${lead ? 'bg-green-500/10 ring-1 ring-green-500/40' : 'bg-fc-dark/60'}"><span class="text-sm font-black ${lead ? 'text-green-400' : (has ? 'text-white' : 'text-gray-600')}" style="direction:ltr;unicode-bidi:isolate;">${has ? d.fmt(v) : '—'}</span></div>`;
+                }).join('');
+                const tag = level ? `<span class="text-gray-500">${isAr ? '≈ متقاربون' : '≈ level'}</span>`
+                    : `<span class="${spread >= d.tol * 4 ? 'text-fc-accent' : 'text-gray-300'}" style="direction:ltr;unicode-bidi:isolate;">${isAr ? (spread >= d.tol * 4 ? 'فارق كبير' : 'أفضلية') : (spread >= d.tol * 4 ? 'clear gap' : 'edge')} ${d.id === 'price' ? Math.round(spread).toLocaleString() : cmpFmt1(spread)}</span>`;
+                return `<div><div class="flex items-center justify-between text-[11px] font-bold text-gray-400 mb-1"><span>${isAr ? d.ar : d.en}</span>${tag}</div><div class="grid gap-1.5" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${cells}</div></div>`;
+            }).join('');
+            const total = dims.length;
+            const tallyLine = players.map((p, i) => `<b>${cmpEsc(p.name)}</b> ${wins[i]}`).join(isAr ? '، ' : ' · ');
+            const top = Math.max(...wins), leaders = wins.map((w, i) => w === top ? i : -1).filter(i => i >= 0);
+            const sorted = wins.slice().sort((a, b) => b - a);
+            let headline;
+            if (top === 0) headline = isAr ? 'لا فارق واضح في أي بُعد — البطاقات متقاربة جداً.' : 'No clear gap on any dimension — these cards are very close.';
+            else if (leaders.length === 1 && top >= sorted[1] + 2) headline = isAr ? `${cmpNames(players, leaders)} متقدم في ${top} من ${total} بُعداً مقاسةً.` : `${cmpNames(players, leaders)} leads on ${top} of ${total} measured dimensions.`;
+            else headline = isAr ? 'لا يوجد فائز واحد — يعتمد الأفضل على ما تعطيه الأولوية (انظر الأبعاد أدناه).' : 'No single winner — the better card depends on what you prioritise (see the dimensions below).';
+            const bestFor = dims.filter(d => d.detail || d.id === 'fit' || d.id === 'ps').map(d => {
+                const nums = d.vals.filter(v => typeof v === 'number');
+                const best = Math.max(...nums), idxs = d.vals.map((v, i) => v === best ? i : -1).filter(i => i >= 0);
+                const gap = best - Math.min(...nums);
+                if (gap <= d.tol || idxs.length === n) return '';
+                return `<li>${isAr ? d.ar : d.en}: ${cmpNames(players, idxs)} <span class="text-gray-500" style="direction:ltr;unicode-bidi:isolate;">(+${cmpFmt1(gap)})</span></li>`;
+            }).join('');
+            return `<div class="space-y-3">
+                <p class="text-sm font-bold text-white">${headline}</p>
+                <p class="text-[11px] text-gray-400">${isAr ? 'عدد الأبعاد التي يتصدرها كل لاعب (الأبعاد المتقاربة لا تُحتسب): ' : 'Dimensions each player leads (level dimensions count for nobody): '}${tallyLine}${equal.length ? ` · ${isAr ? 'متقاربة' : 'level'} ${equal.length}` : ''}</p>
+                ${detailPending ? `<p class="text-[11px] text-gray-500 italic animate-pulse">${isAr ? 'جارٍ جلب الإحصاءات التفصيلية لإكمال الأبعاد…' : 'Fetching sub-stats to complete the dimensions…'}</p>` : ''}
+                <div class="space-y-2">${rows}</div>
+                ${bestFor ? `<div><p class="text-[11px] font-black text-gray-300 mb-1">${isAr ? 'الأفضل في:' : 'Best at:'}</p><ul class="text-xs text-gray-300 space-y-0.5 list-disc ps-4">${bestFor}</ul></div>` : ''}
+                <p class="text-[10px] text-gray-500 italic">${isAr ? 'قراءة للأرقام فقط، لا تتنبأ بأداء المباراة. الفوارق الأصغر من حد التقارب لا تُعدّ أفضلية.' : 'Reads the numbers only, not match performance. Gaps smaller than each dimension\'s tolerance count as level.'}</p>
+            </div>`;
+        }
+
+        // ---- 2. Every sub-stat -------------------------------------------------
+        function buildSubStats(players, pos) {
+            const isAr = currentLanguage === 'ar';
+            const states = players.map(p => compareDetailState.get(p.id) || { status: 'loading' });
+            if (states.some(s => s.status === 'loading')) return `<div class="text-xs text-gray-500 italic animate-pulse text-center py-3">${isAr ? 'جارٍ جلب الإحصاءات…' : 'Fetching every sub-stat…'}</div>`;
+            const okCount = players.filter(p => cmpDetailOf(p)).length;
+            if (okCount < 2) return `<p class="text-xs text-gray-500">${isAr ? 'تعذّر جلب الإحصاءات التفصيلية لاثنين على الأقل — لا يمكن المقارنة التفصيلية.' : 'Detailed stats could not be fetched for at least two of these players, so a sub-stat comparison is not possible.'}</p>`;
+            const matter = new Set(getGranularKeys(pos, null).keys);
+            const keyFace = getKeyAttributesForPosition(pos);
+            const all = [];
+            const groupsHtml = cmpGroupsFor(pos).map(g => {
+                const rows = g.keys.filter(k => GRANULAR_ATTR_DEFS[k]).map(k => {
+                    const vals = players.map(p => cmpSubVal(cmpDetailOf(p), k));
+                    const nums = vals.filter(v => typeof v === 'number');
+                    if (nums.length >= 2) all.push({ k, vals, spread: Math.max(...nums) - Math.min(...nums), matters: matter.has(k) });
+                    const def = GRANULAR_ATTR_DEFS[k];
+                    const star = matter.has(k) ? '<i class="fa-solid fa-star text-fc-gold text-[9px] mx-1"></i>' : '';
+                    return cmpRow(star + (isAr ? def.ar : def.en), vals, { bar: true });
+                }).join('');
+                const avgs = players.map(p => cmpGroupAvg(cmpDetailOf(p), g.keys));
+                const hasMatter = g.keys.some(k => matter.has(k));
+                return `<details class="rounded-xl border border-fc-border/60 bg-fc-dark/30" ${hasMatter ? 'open' : ''}>
+                    <summary class="cursor-pointer px-3 py-2 flex items-center justify-between gap-2 text-xs font-black text-white"><span>${isAr ? g.ar : g.en}</span><span class="text-[11px] font-bold text-gray-400" style="direction:ltr;unicode-bidi:isolate;">${avgs.map(v => v == null ? '—' : cmpFmt1(v)).join(' · ')}</span></summary>
+                    <div class="px-3 pb-3 space-y-2.5">${rows}</div></details>`;
+            }).join('');
+            const big = all.filter(x => x.spread >= 3).sort((a, b) => (b.matters - a.matters) || (b.spread - a.spread)).slice(0, 8);
+            const bigHtml = big.length ? `<div class="rounded-xl border border-fc-accent/30 bg-fc-accent/5 p-3"><p class="text-[11px] font-black text-fc-accent mb-1.5">${isAr ? 'أكبر الفوارق (3+ نقاط)' : 'Biggest gaps (3+ points)'}</p><ul class="space-y-1">${big.map(x => {
+                const def = GRANULAR_ATTR_DEFS[x.k], mx = Math.max(...x.vals.filter(v => typeof v === 'number'));
+                const lead = x.vals.map((v, i) => v === mx ? i : -1).filter(i => i >= 0);
+                return `<li class="text-xs text-gray-300">${x.matters ? '<i class="fa-solid fa-star text-fc-gold text-[9px]"></i> ' : ''}<b>${isAr ? def.ar : def.en}</b>: ${cmpNames(players, lead)} <span class="text-gray-500" style="direction:ltr;unicode-bidi:isolate;">(+${x.spread})</span></li>`;
+            }).join('')}</ul><p class="text-[10px] text-gray-500 mt-1.5">${isAr ? `★ = يهم لمركز ${pos}` : `★ = matters at ${pos}`}</p></div>` : `<p class="text-xs text-gray-400">${isAr ? 'لا فارق بثلاث نقاط فأكثر في أي إحصاءة.' : 'No sub-stat differs by 3 or more points.'}</p>`;
+            const wonBy = players.map(() => 0);
+            all.forEach(x => { const mx = Math.max(...x.vals.filter(v => typeof v === 'number')); if (x.spread > 0) x.vals.forEach((v, i) => { if (v === mx) wonBy[i]++; }); });
+            return `<div class="space-y-3">${bigHtml}
+                <p class="text-[11px] text-gray-400">${isAr ? 'عدد الإحصاءات التي يتصدرها كل لاعب: ' : 'Sub-stats each player leads: '}${players.map((p, i) => `<b>${cmpEsc(p.name)}</b> ${wonBy[i]}`).join(isAr ? '، ' : ' · ')} <span class="text-gray-600">/ ${all.length}</span></p>
+                <div class="space-y-2">${groupsHtml}</div></div>`;
+        }
+
+        // ---- 3. Every position + foot & flair ----------------------------------
+        function buildPositionTable(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length;
+            const rel = (p, x) => getPositionRelation(p, x);
+            const list = COMPARE_POSITIONS.filter(x => players.some(p => rel(p, x)));
+            const diffs = players.map(() => []);
+            const rows = list.map(x => {
+                const avg = getAverageFitScoreForPosition(x);
+                const fits = players.map(p => rel(p, x) ? computeKeyAttrFitScore(p, x) : null);
+                const nums = fits.filter(v => v != null);
+                const best = nums.length >= 2 ? Math.max(...nums) : null;
+                const cells = players.map((p, i) => {
+                    const r = rel(p, x), f = computeKeyAttrFitScore(p, x);
+                    if (f != null && r && avg != null) diffs[i].push({ x, d: f - avg, f });
+                    const lead = best != null && r && fits[i] === best && nums.some(v => v !== best);
+                    const lbl = r === 'primary' ? (isAr ? 'أساسي' : 'Primary') : r === 'alt' ? (isAr ? 'بديل' : 'Alt') : (isAr ? 'خارج المركز' : 'Out of pos.');
+                    const col = r === 'primary' ? 'text-fc-accent' : r === 'alt' ? 'text-blue-300' : 'text-gray-600';
+                    return `<div class="rounded-lg px-1.5 py-1 text-center ${lead ? 'bg-green-500/10 ring-1 ring-green-500/40' : 'bg-fc-dark/60'} ${r ? '' : 'opacity-50'}"><div class="text-sm font-black ${lead ? 'text-green-400' : 'text-white'}" style="direction:ltr;unicode-bidi:isolate;">${r && f != null ? f.toFixed(1) : '—'}${r && f != null && avg != null ? `<span class="text-[10px] font-bold ${f - avg >= 3 ? 'text-green-400' : f - avg <= -3 ? 'text-orange-400' : 'text-gray-500'}"> ${f - avg >= 0 ? '+' : ''}${(f - avg).toFixed(1)}</span>` : ''}</div><div class="text-[9px] font-bold ${col}">${lbl}</div></div>`;
+                }).join('');
+                return `<div class="flex items-stretch gap-2"><button onclick="window.setComparePosition('${x}')" class="w-11 shrink-0 rounded-lg text-[11px] font-black border ${x === pos ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border hover:border-fc-accent/50'}">${x}</button><div class="grid gap-1.5 flex-1" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${cells}</div></div>`;
+            }).join('');
+            const bestLine = players.map((p, i) => {
+                const b = diffs[i].slice().sort((a, c) => c.d - a.d)[0];
+                return b ? `<li><b>${cmpEsc(p.name)}</b> — ${isAr ? 'أفضل مركز نسبةً لمتوسطه:' : 'strongest relative to the position average:'} <b class="text-fc-accent">${b.x}</b> <span class="text-gray-500" style="direction:ltr;unicode-bidi:isolate;">(${b.d >= 0 ? '+' : ''}${b.d.toFixed(1)})</span></li>` : '';
+            }).join('');
+            // Foot & flair
+            const star = v => typeof v === 'number' ? `<span class="text-fc-gold">${renderStarRating(v)}</span>` : '—';
+            const wfTxt = v => v == null ? '—' : v >= 4 ? (isAr ? 'ثنائي القدمين تقريباً' : 'near two-footed') : v === 3 ? (isAr ? 'القدم الضعيفة مقبولة' : 'usable weak foot') : (isAr ? 'يعتمد على قدم واحدة' : 'one-footed — can be forced onto his weak side');
+            const smTxt = v => v == null ? '—' : v >= 5 ? (isAr ? 'كل المهارات متاحة' : 'every skill move available') : v === 4 ? (isAr ? 'معظم المهارات' : 'most skill moves') : v === 3 ? (isAr ? 'مهارات أساسية' : 'basic skill moves') : (isAr ? 'مهارات محدودة جداً' : 'very limited skill moves');
+            const flair = `<div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${players.map(p => `<div class="bg-fc-dark/60 rounded-lg p-2 text-center space-y-0.5"><div class="text-[11px] text-gray-400">${isAr ? 'القدم الضعيفة' : 'Weak foot'} ${star(p.weakFoot)}</div><div class="text-[10px] text-gray-500">${wfTxt(p.weakFoot)}</div><div class="text-[11px] text-gray-400 pt-1">${isAr ? 'المهارات' : 'Skill moves'} ${star(p.skillMoves)}</div><div class="text-[10px] text-gray-500">${smTxt(p.skillMoves)}</div></div>`).join('')}</div>
+                <p class="text-[10px] text-gray-500">${isAr ? 'القدم الضعيفة والمهارات أهم عموماً في الأجنحة والمهاجمين وصانعي اللعب، وأقل أهمية للقلبان والحراس. وصف عام للّعبة، لا رقم مضاف.' : 'Weak foot and skill moves generally matter most for wingers, strikers and creators, and least for centre-backs and goalkeepers. A general in-game note, not an added number.'}</p>`;
+            return `<div class="space-y-3"><p class="text-[11px] text-gray-500">${isAr ? 'الرقم = ملاءمة الخصائص الرئيسية (3–2–1) في ذلك المركز، والفارق بجانبه عن متوسط المركز. اضغط على المركز لتعتمده للمقارنة.' : 'Number = key-attribute fit (3–2–1) at that position, with the gap to that position\'s average beside it. Tap a position to compare at it.'}</p><div class="space-y-1.5">${rows}</div><ul class="text-xs text-gray-300 space-y-0.5">${bestLine}</ul><div class="pt-2 border-t border-fc-border/50 space-y-2"><p class="text-[11px] font-black text-gray-300">${isAr ? 'القدم والمهارات' : 'Foot & flair'}</p>${flair}</div></div>`;
+        }
+
+        // ---- 4. Role fit -----------------------------------------------------------
+        function buildRoleFit(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length;
+            const per = players.map(p => { try { return p.att ? getRoleCandidates(p, pos) : []; } catch (e) { return []; } });
+            if (per.every(l => !l.length)) return `<p class="text-xs text-gray-500">${isAr ? 'لا تتوفر درجات الأدوار لهذا المركز.' : 'No role scores are available at this position.'}</p>`;
+            const roles = new Map();
+            per.forEach((l, i) => l.forEach(c => { if (typeof c.score !== 'number' || isNaN(c.score)) return; const r = roles.get(c.role) || { role: c.role, vals: players.map(() => null), focus: players.map(() => '') }; r.vals[i] = c.score; r.focus[i] = c.focus || ''; roles.set(c.role, r); }));
+            const ordered = [...roles.values()].sort((a, b) => Math.max(...b.vals.filter(v => v != null)) - Math.max(...a.vals.filter(v => v != null)));
+            const rows = ordered.slice(0, 8).map(r => {
+                const nums = r.vals.filter(v => v != null), best = Math.max(...nums), multi = nums.length >= 2 && nums.some(v => v !== best);
+                return `<div><div class="text-[11px] font-bold text-gray-400 text-center mb-1">${cmpEsc(r.role)}</div><div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${r.vals.map((v, i) => {
+                    const lead = multi && v === best;
+                    return `<div class="bg-fc-dark/60 rounded-lg px-2 py-1.5 text-center ${lead ? 'ring-1 ring-green-500/40' : ''}"><span class="text-sm font-black ${lead ? 'text-green-400' : 'text-white'}" style="direction:ltr;unicode-bidi:isolate;">${v == null ? '—' : Math.round(v)}</span>${v != null && r.focus[i] ? `<div class="text-[9px] text-gray-500">${cmpEsc(r.focus[i])}</div>` : ''}</div>`;
+                }).join('')}</div></div>`;
+            }).join('');
+            const bestCards = players.map((p, i) => {
+                const b = per[i].slice().sort((a, c) => c.score - a.score)[0];
+                if (!b) return `<div class="bg-fc-dark/60 rounded-lg p-2 text-center text-[11px] text-gray-600">—</div>`;
+                return `<div class="bg-fc-dark/60 rounded-lg p-2 text-center"><div class="text-xs font-black text-fc-accent">${cmpEsc(b.role)}</div><div class="text-[10px] text-gray-400">${cmpEsc(b.focus || '')}</div><div class="text-[10px] text-gray-500 mt-1 leading-snug">${cmpEsc(isAr ? b.ar : b.en)}</div></div>`;
+            }).join('');
+            return `<div class="space-y-3"><p class="text-[11px] text-gray-500">${isAr ? `درجة الدور من نظام الأدوار في التطبيق (الأعلى = ملاءمة أفضل لذلك الدور)، وتحتها أفضل تركيز. قارن داخل السطر الواحد فقط. المركز: ${pos}.` : `Role score from the app's own role system (higher = better fit for that role), best focus underneath. Compare within a row only. Position: ${pos}.`}</p>
+                <p class="text-[11px] font-black text-gray-300">${isAr ? 'أفضل دور لكل لاعب' : 'Best role for each'}</p><div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${bestCards}</div>
+                <p class="text-[11px] font-black text-gray-300 pt-1">${isAr ? 'كل الأدوار (الأعلى أولاً)' : 'All roles (strongest first)'}</p><div class="space-y-2">${rows}</div></div>`;
+        }
+
+        // ---- 5. PlayStyles in depth ------------------------------------------------
+        function buildPlaystyleDepth(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length;
+            const sets = players.map(p => ({
+                plus: new Set((p.playstylesPlus || []).map(formatPlaystyleEntry)),
+                base: new Set((p.playstyles || []).map(formatPlaystyleEntry))
+            }));
+            const names = new Set(); sets.forEach(s => { s.plus.forEach(x => names.add(x)); s.base.forEach(x => names.add(x)); });
+            if (!names.size) return `<p class="text-xs text-gray-500">${isAr ? 'لا توجد أنماط لعب مسجلة.' : 'No recorded PlayStyles.'}</p>`;
+            const tierOrder = PLAYSTYLE_TIER_ORDER || {};
+            const list = [...names].sort((a, b) => ((tierOrder[PLAYSTYLE_TIER_BY_NAME[a] || 'F'] ?? 9) - (tierOrder[PLAYSTYLE_TIER_BY_NAME[b] || 'F'] ?? 9)) || (playstyleRelevance(b, pos) - playstyleRelevance(a, pos)) || a.localeCompare(b));
+            const has = (i, nm) => sets[i].plus.has(nm) ? 2 : (sets[i].base.has(nm) ? 1 : 0);
+            const rows = list.map(nm => {
+                const t = PLAYSTYLE_TIER_BY_NAME[nm], tc = t ? PLAYSTYLE_TIER_COLORS[t] : '#9ca3af', rel = playstyleRelevance(nm, pos);
+                const relTxt = rel >= 1 ? (isAr ? 'أساسي للمركز' : 'key here') : rel >= 0.7 ? (isAr ? 'ذو صلة' : 'related') : (isAr ? 'هامشي' : 'minor');
+                const present = players.map((p, i) => has(i, nm));
+                const unique = present.filter(x => x > 0).length === 1;
+                const cells = present.map(v => `<div class="rounded-lg py-1 text-center text-xs font-black ${v === 2 ? 'bg-fc-gold/15 text-fc-gold' : v === 1 ? 'bg-gray-500/15 text-gray-200' : 'bg-fc-dark/40 text-gray-700'}">${v === 2 ? '+' : v === 1 ? '✓' : '—'}</div>`).join('');
+                return `<div class="flex items-center gap-2"><div class="w-40 md:w-52 shrink-0 min-w-0"><div class="flex items-center gap-1"><span class="text-[9px] font-black rounded px-1" style="background:${tc}26;color:${tc}">${t || '·'}</span><span class="text-[11px] font-bold text-white truncate">${cmpEsc(nm)}</span>${unique ? `<span class="text-[9px] text-fc-accent font-black">${isAr ? 'فريد' : 'only'}</span>` : ''}</div><div class="text-[9px] text-gray-500">${relTxt}</div></div><div class="grid gap-1.5 flex-1" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${cells}</div></div>`;
+            }).join('');
+            const scores = players.map(p => playerHasRecordedPlaystyles(p) ? playstyleTierScore(p, pos) : null);
+            const avg = playstyleTierBaseline(pos);
+            const topCnt = players.map((p, i) => list.filter(nm => has(i, nm) > 0 && ['S', 'A'].includes(PLAYSTYLE_TIER_BY_NAME[nm])).length);
+            const plusCnt = players.map((p, i) => sets[i].plus.size);
+            let html = cmpRow(isAr ? `قيمة أنماط اللعب في ${pos}` : `PlayStyle value at ${pos}`, scores, { fmt: cmpFmt1, display: v => avg != null ? `${cmpFmt1(v)} <span class="text-[10px] text-gray-500">(${v - avg >= 0 ? '+' : ''}${cmpFmt1(v - avg)})</span>` : cmpFmt1(v) });
+            html += cmpRow(isAr ? 'أنماط فئة S/A' : 'S/A-tier PlayStyles', topCnt, { noGap: false });
+            html += cmpRow(isAr ? 'أنماط PlayStyle+' : 'PlayStyle+ count', plusCnt);
+            return `<div class="space-y-3"><div class="space-y-2.5">${html}</div><p class="text-[11px] text-gray-500">${isAr ? '+ = PlayStyle+، ✓ = عادي. الحرف = فئة قائمتك (S الأعلى). «فريد» = لدى لاعب واحد فقط.' : '+ = PlayStyle+, ✓ = standard. Letter = your tier list (S highest). "only" = just one of them has it.'}</p><div class="space-y-1.5">${rows}</div></div>`;
+        }
+
+        // ---- 6. Value for money ----------------------------------------------------
+        const cmpCheaperCache = {};
+        function cmpCheaperEqual(p, pos) {
+            const key = [p.id, pos, p.price, fc27Database.length].join('|');
+            if (key in cmpCheaperCache) return cmpCheaperCache[key];
+            const fit = computeKeyAttrFitScore(p, pos), meta = typeof p.meta === 'number' ? p.meta : null;
+            let res = null;
+            if ((p.price || 0) > 0 && fit != null) {
+                const pool = getActiveDatabase({ requirePriced: true, ignorePool: true }).filter(q => q.id !== p.id && (q.price || 0) > 0 && q.price < p.price && (q.pos === pos || (q.alt || []).includes(pos)));
+                const ok = pool.filter(q => { const f = computeKeyAttrFitScore(q, pos); return f != null && f >= fit && (meta == null || typeof q.meta !== 'number' || q.meta >= meta); });
+                ok.sort((a, b) => a.price - b.price);
+                res = { count: ok.length, pool: pool.length, top: ok.slice(0, 3) };
+            }
+            return (cmpCheaperCache[key] = res);
+        }
+        function buildValue(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length, coin = isAr ? 'ك' : 'c';
+            const price = players.map(p => (p.price || 0) > 0 ? p.price : null);
+            const fit = players.map(p => computeKeyAttrFitScore(p, pos));
+            const per = (a, b) => a != null && b != null && b > 0 ? a / b : null;
+            let html = cmpRow(isAr ? 'السعر' : 'Price', price, { higherBetter: false, bestClass: 'text-fc-gold', fmt: v => `${Math.round(v).toLocaleString()}${coin}` });
+            html += cmpRow(isAr ? 'السعر لكل نقطة ملاءمة (الأقل أفضل)' : 'Price per fit point (lower is better)', players.map((p, i) => per(price[i], fit[i])), { higherBetter: false, bestClass: 'text-fc-gold', fmt: v => `${Math.round(v).toLocaleString()}${coin}` });
+            html += cmpRow(isAr ? 'السعر لكل نقطة ميتا (الأقل أفضل)' : 'Price per Meta point (lower is better)', players.map((p, i) => per(price[i], typeof p.meta === 'number' ? p.meta : null)), { higherBetter: false, bestClass: 'text-fc-gold', fmt: v => `${Math.round(v).toLocaleString()}${coin}` });
+            const cols = players.map(p => {
+                const r = cmpCheaperEqual(p, pos);
+                if (!r) return `<div class="bg-fc-dark/60 rounded-lg p-2 text-center text-[11px] text-gray-600">${isAr ? 'بلا سعر' : 'No price'}</div>`;
+                const lines = r.top.map(q => `<button onclick="window.cmpOpenAny('${q.id}')" class="w-full flex items-center justify-between gap-2 text-[10px] text-gray-300 hover:text-white"><span class="truncate">${cmpEsc(q.name)} <span class="text-gray-500">${q.rating}</span></span><span class="shrink-0 text-fc-gold" style="direction:ltr;unicode-bidi:isolate;">${q.price.toLocaleString()}${coin}</span></button>`).join('');
+                return `<div class="bg-fc-dark/60 rounded-lg p-2 space-y-1"><div class="text-center"><span class="text-base font-black ${r.count ? 'text-orange-300' : 'text-green-400'}">${r.count}</span><div class="text-[10px] text-gray-500">${isAr ? `بطاقات أرخص بملاءمة وميتا لا تقلّ في ${pos}` : `cheaper cards at ${pos} with equal-or-better fit & Meta`}</div></div>${lines}</div>`;
+            }).join('');
+            return `<div class="space-y-3"><div class="space-y-2.5">${html}</div><div><p class="text-[11px] font-black text-gray-300 mb-1">${isAr ? 'هل توجد بدائل أرخص بجودة مماثلة؟' : 'Is there a cheaper card that is at least as good?'}</p><div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${cols}</div></div><p class="text-[10px] text-gray-500">${isAr ? 'تُحسب من البطاقات المسعّرة في قاعدة البيانات فقط. «أقل أو مساوية» تعني ملاءمة الخصائص والميتا معاً.' : 'Counted among priced cards in the database only. "Equal-or-better" means both key-attribute fit and Meta Rating.'}</p></div>`;
+        }
+
+        // ---- 7. Physical & movement ------------------------------------------------
+        function buildPhysical(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length;
+            const states = players.map(p => compareDetailState.get(p.id) || { status: 'loading' });
+            if (states.some(s => s.status === 'loading')) return `<div class="text-xs text-gray-500 italic animate-pulse text-center py-3">${isAr ? 'جارٍ جلب البيانات البدنية…' : 'Fetching physical data…'}</div>`;
+            const D = players.map(cmpDetailOf);
+            if (D.filter(Boolean).length < 1) return `<p class="text-xs text-gray-500">${isAr ? 'تعذّر جلب البيانات البدنية.' : 'Physical data could not be fetched.'}</p>`;
+            let html = cmpRow(isAr ? 'الطول (سم)' : 'Height (cm)', D.map(d => d && typeof d.height === 'number' ? d.height : null), { noHighlight: true });
+            html += cmpTextRow(isAr ? 'نوع الجسم' : 'Body type', D.map(d => {
+                if (!d || d.bodyTypeId == null) return '<span class="text-gray-500">—</span>';
+                const pr = BODY_TYPE_PROFILE[d.bodyTypeId];
+                return pr ? (isAr ? pr.label.ar : pr.label.en) : `${isAr ? 'نوع' : 'Type'} ${d.bodyTypeId}`;
+            }));
+            const bodyNotes = players.map((p, i) => {
+                const d = D[i]; if (!d || d.bodyTypeId == null || pos === 'GK') return '';
+                try {
+                    const v = evaluateBodyTypeForRole(d.bodyTypeId, pos, p);
+                    const t = v.positive || v.negative;
+                    return t ? `<span class="${v.positive ? 'text-green-300' : 'text-orange-300'}">${cmpEsc(isAr ? t.ar : t.en)}</span>` : '';
+                } catch (e) { return ''; }
+            });
+            if (bodyNotes.some(Boolean)) html += `<div><div class="text-[11px] font-bold text-gray-400 text-center mb-1">${isAr ? `أثر نوع الجسم في ${pos}` : `Body type at ${pos}`}</div><div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${bodyNotes.map(t => `<div class="bg-fc-dark/60 rounded-lg p-2 text-[10px] leading-snug">${t || '<span class="text-gray-600">—</span>'}</div>`).join('')}</div></div>`;
+            html += cmpTextRow(isAr ? 'الإحساس الحركي (AcceleRATE)' : 'Movement feel (AcceleRATE)', players.map((p, i) => {
+                if (pos === 'GK' || p.pos === 'GK') return `<span class="text-gray-500">N/A</span>`;
+                const t = D[i] ? computeVerifiedAccelerateType(D[i]) : null;
+                return t ? `<span style="color:${t.color}">${t.type} ✓</span>` : `<span class="text-gray-500">${isAr ? 'تعذّر التحقق' : "Couldn't verify"}</span>`;
+            }));
+            ['acceleration', 'sprintSpeed', 'agility', 'balance', 'strength', 'jumping', 'stamina'].forEach(k => {
+                const def = GRANULAR_ATTR_DEFS[k]; if (!def) return;
+                html += cmpRow(isAr ? def.ar : def.en, D.map(d => cmpSubVal(d, k)), { bar: true });
+            });
+            const shape = D.map(d => {
+                const a = cmpSubVal(d, 'acceleration'), s = cmpSubVal(d, 'sprintSpeed');
+                if (a == null || s == null) return '<span class="text-gray-600">—</span>';
+                const g = a - s;
+                const txt = g >= 6 ? (isAr ? 'أقوى في الانطلاقة القصيرة' : 'stronger over the first steps') : g <= -6 ? (isAr ? 'أقوى في المسافات الطويلة' : 'stronger over long distance') : (isAr ? 'متوازن' : 'balanced');
+                return `<span class="text-white">${g >= 0 ? '+' : ''}${g}</span> <span class="text-gray-400">${txt}</span>`;
+            });
+            html += cmpTextRow(isAr ? 'التسارع − سرعة الركض' : 'Acceleration − Sprint speed', shape);
+            const ags = D.map(d => { const a = cmpSubVal(d, 'agility'), s = cmpSubVal(d, 'strength'); return a == null || s == null ? '<span class="text-gray-600">—</span>' : `<span class="text-white">${a - s >= 0 ? '+' : ''}${a - s}</span> <span class="text-gray-400">${a - s >= 10 ? (isAr ? 'رشيق أكثر من قوي' : 'agile over strong') : a - s <= -10 ? (isAr ? 'قوي أكثر من رشيق' : 'strong over agile') : (isAr ? 'متوازن' : 'balanced')}</span>`; });
+            html += cmpTextRow(isAr ? 'الرشاقة − القوة' : 'Agility − Strength', ags);
+            return `<div class="space-y-2.5">${html}</div>`;
+        }
+
+        // ---- 8. Chemistry & squad fit ----------------------------------------------
+        let compareSlotIdx = null;
+        window.setCompareSlot = i => { compareSlotIdx = i; const el = document.getElementById('cmp-chem-body'); if (el) el.innerHTML = buildChemistry(getComparePlayers(), getCompareEffectivePos(getComparePlayers())); };
+        function buildChemistry(players, pos) {
+            const isAr = currentLanguage === 'ar', n = players.length;
+            const xi = squadState.selectedXI || {};
+            const slots = formationSlots[squadState.formation] || [];
+            const filled = Object.keys(xi).filter(k => xi[k]).length;
+            if (!filled) return `<p class="text-xs text-gray-500">${isAr ? 'لا توجد تشكيلة حالياً — ابنِ تشكيلة أو حمّل واحدة لترى أثر كل لاعب على الكيمياء والتقييم.' : 'No squad on the pitch yet — build or load one to see how each player would change chemistry and rating.'}</p>`;
+            const idxs = slots.map((s, i) => s.pos === pos ? i : -1).filter(i => i >= 0);
+            if (!idxs.length) return `<p class="text-xs text-gray-500">${isAr ? `تشكيلتك (${squadState.formation}) ليس فيها مركز ${pos}. اختر مركزاً موجوداً فيها أعلاه.` : `Your ${squadState.formation} has no ${pos} slot. Pick a position it does have above.`}</p>`;
+            if (compareSlotIdx == null || !idxs.includes(compareSlotIdx)) compareSlotIdx = idxs[0];
+            const idx = compareSlotIdx, cur = xi[idx] || null;
+            const baseChem = calculateSquadChemistry(xi);
+            const ovrSum = x => Object.keys(x).reduce((s, k) => s + (x[k] ? x[k].rating : 0), 0);
+            const chips = idxs.length > 1 ? `<div class="flex flex-wrap items-center gap-1.5"><span class="text-[11px] text-gray-400">${isAr ? 'الخانة:' : 'Slot:'}</span>${idxs.map(i => `<button onclick="window.setCompareSlot(${i})" class="px-2 py-0.5 rounded-lg text-[11px] font-black border ${i === idx ? 'bg-fc-accent text-fc-dark border-fc-accent' : 'bg-fc-dark text-gray-300 border-fc-border'}">${cmpEsc(slots[i].label || (pos + (i + 1)))}</button>`).join('')}</div>` : '';
+            const rest = Object.keys(xi).filter(k => +k !== idx && xi[k]).map(k => xi[k]);
+            const cards = players.map(p => {
+                const same = (f) => rest.filter(q => q && f(q, p)).length;
+                const club = p.clubId != null ? same((q, a) => q.clubId != null && canonicalClubId(q.clubId) === canonicalClubId(a.clubId)) : 0;
+                const nat = p.nationId != null ? same((q, a) => q.nationId === a.nationId) : 0;
+                const lea = p.leagueId != null ? same((q, a) => q.leagueId === a.leagueId) : 0;
+                const hyp = Object.assign({}, xi, { [idx]: p });
+                const ch = calculateSquadChemistry(hyp);
+                const own = ch.perSlot[idx] ? ch.perSlot[idx].points : 0;
+                const dTot = ch.total - baseChem.total;
+                const dOvr = cur ? (p.rating - cur.rating) : null;
+                const rankStyle = (() => { try { return rankChemStyles(p, pos)[0] || null; } catch (e) { return null; } })();
+                let fitBoost = null, styleTxt = '';
+                if (rankStyle) {
+                    try {
+                        const st = chemBoostedStats(p, rankStyle.name, pos, own), ks = getKeyAttributesForPosition(pos), w = [3, 2, 1];
+                        let s = 0, t = 0; ks.forEach((k, i) => { if (st[k]) { s += st[k].boosted * (w[i] || 1); t += (w[i] || 1); } });
+                        fitBoost = t ? s / t : null;
+                        const gains = Object.entries(st).filter(([, v]) => v.gain > 0.05).map(([k, v]) => `+${cmpFmt1(v.gain)} ${k.toUpperCase()}`).join(' ');
+                        styleTxt = `${cmpEsc(rankStyle.name)}${own ? ` · ${gains || '—'}` : ''}`;
+                    } catch (e) { /* ignore */ }
+                }
+                const sign = v => v > 0 ? `+${v}` : `${v}`;
+                const line = (lbl, val, cls) => `<div class="flex items-center justify-between gap-2 text-[11px]"><span class="text-gray-400">${lbl}</span><span class="font-black ${cls || 'text-white'}" style="direction:ltr;unicode-bidi:isolate;">${val}</span></div>`;
+                return `<div class="bg-fc-dark/60 rounded-xl p-2.5 space-y-1">
+                    ${line(isAr ? 'روابط النادي' : 'Club links', club)}${line(isAr ? 'روابط الدولة' : 'Nation links', nat)}${line(isAr ? 'روابط الدوري' : 'League links', lea)}
+                    <div class="border-t border-fc-border/50 pt-1 space-y-1">
+                    ${line(isAr ? 'كيمياؤه هنا' : 'His chemistry here', `${own}/3`, own >= 3 ? 'text-green-400' : own === 0 ? 'text-orange-400' : 'text-white')}
+                    ${line(isAr ? 'تغيّر كيمياء التشكيلة' : 'Squad chemistry change', `${sign(dTot)} (${ch.total}/33)`, dTot > 0 ? 'text-green-400' : dTot < 0 ? 'text-orange-400' : 'text-gray-300')}
+                    ${dOvr != null ? line(isAr ? 'تغيّر متوسط التقييم' : 'Squad avg OVR change', `${dOvr >= 0 ? '+' : ''}${cmpFmt1(dOvr / 11)}`, dOvr > 0 ? 'text-green-400' : dOvr < 0 ? 'text-orange-400' : 'text-gray-300') : ''}
+                    ${cur && cur.price > 0 && p.price > 0 ? line(isAr ? 'فرق السعر عن الحالي' : 'Price vs current', `${p.price - cur.price >= 0 ? '+' : ''}${(p.price - cur.price).toLocaleString()}${isAr ? 'ك' : 'c'}`, p.price <= cur.price ? 'text-green-400' : 'text-gray-300') : ''}</div>
+                    ${rankStyle ? `<div class="border-t border-fc-border/50 pt-1"><div class="text-[10px] text-purple-300 font-black">${isAr ? 'أنسب نمط كيمياء' : 'Best chem style'}: ${styleTxt}</div>${fitBoost != null ? line(isAr ? `الملاءمة بعد النمط (كيمياء ${own})` : `Fit with style at ${own} chem`, cmpFmt1(fitBoost)) : ''}</div>` : ''}</div>`;
+            }).join('');
+            return `<div class="space-y-3"><p class="text-[11px] text-gray-500">${isAr ? `لو وُضع كل لاعب مكان ${cur ? `<b>${cmpEsc(cur.name)}</b>` : 'الخانة الفارغة'} في خانة ${cmpEsc(slots[idx].label || pos)} من تشكيلتك الحالية (${cmpEsc(squadState.formation)}):` : `If each player replaced ${cur ? `<b>${cmpEsc(cur.name)}</b>` : 'the empty spot'} at ${cmpEsc(slots[idx].label || pos)} in your current ${cmpEsc(squadState.formation)} squad:`}</p>${chips}<div class="grid gap-2" style="grid-template-columns:repeat(${n},minmax(0,1fr));">${cards}</div><p class="text-[10px] text-gray-500">${isAr ? 'الروابط = زملاء حاليون يشاركونه النادي/الدولة/الدوري. الكيمياء من نفس حاسبة التطبيق.' : 'Links = current teammates sharing his club / nation / league. Chemistry uses the app\'s own calculator.'}</p></div>`;
+        }
+
+        // Section index (sticky chips) shown above the sections.
+        function cmpIndexChips() {
+            const isAr = currentLanguage === 'ar';
+            const items = [['cmp-s-verdict', 'Verdict', 'الحكم'], ['cmp-s-pos', 'Positions', 'المراكز'], ['cmp-s-substats', 'Sub-stats', 'الإحصاءات'], ['cmp-s-roles', 'Roles', 'الأدوار'], ['cmp-s-ps', 'PlayStyles', 'الأنماط'], ['cmp-s-value', 'Value', 'القيمة'], ['cmp-s-phys', 'Physical', 'البدنية'], ['cmp-s-chem', 'Chemistry', 'الكيمياء']];
+            return `<div class="flex flex-wrap gap-1.5">${items.map(([id, en, ar]) => `<button onclick="window.cmpJump('${id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-fc-dark border border-fc-border text-gray-300 hover:border-fc-accent hover:text-fc-accent">${isAr ? ar : en}</button>`).join('')}</div>`;
+        }
+        function cmpDeepSectionsHtml(players, pos) {
+            const isAr = currentLanguage === 'ar';
+            const safe = fn => { try { return fn(players, pos); } catch (e) { console.error('compare section', e); return `<p class="text-xs text-gray-500">${isAr ? 'تعذّر عرض هذا القسم.' : 'This section could not be shown.'}</p>`; } };
+            return cmpSection(isAr ? 'الحكم المعمّق' : 'Deep verdict', 'fa-gavel', '<div id="cmp-deep-verdict"></div>', 'cmp-s-verdict') +
+                cmpSection(isAr ? 'كل المراكز والقدم' : 'Every position & foot', 'fa-location-dot', safe(buildPositionTable), 'cmp-s-pos') +
+                cmpSection(isAr ? 'كل الإحصاءات التفصيلية' : 'Every sub-stat', 'fa-table-list', '<div id="cmp-substats"></div>', 'cmp-s-substats') +
+                cmpSection(isAr ? 'ملاءمة الأدوار' : 'Role fit', 'fa-chess-knight', safe(buildRoleFit), 'cmp-s-roles') +
+                cmpSection(isAr ? 'أنماط اللعب بعمق' : 'PlayStyles in depth', 'fa-wand-magic-sparkles', safe(buildPlaystyleDepth), 'cmp-s-ps') +
+                cmpSection(isAr ? 'القيمة مقابل السعر' : 'Value for money', 'fa-coins', safe(buildValue), 'cmp-s-value') +
+                cmpSection(isAr ? 'البنية والحركة' : 'Physical & movement', 'fa-person-running', '<div id="cmp-physical"></div>', 'cmp-s-phys') +
+                cmpSection(isAr ? 'الكيمياء وتشكيلتك' : 'Chemistry & your squad', 'fa-link', `<div id="cmp-chem-body">${safe(buildChemistry)}</div>`, 'cmp-s-chem');
+        }
+        function updateCompareDeepAsync(players, pos) {
+            const set = (id, fn) => { const el = document.getElementById(id); if (!el) return; try { el.innerHTML = fn(players, pos); } catch (e) { el.innerHTML = `<p class="text-xs text-gray-500">${currentLanguage === 'ar' ? 'تعذّر عرض هذا القسم.' : 'This section could not be shown.'}</p>`; console.error('compare section', id, e); } };
+            set('cmp-deep-verdict', buildDeepVerdict);
+            set('cmp-substats', buildSubStats);
+            set('cmp-physical', buildPhysical);
         }
 
         // ===================================================================
